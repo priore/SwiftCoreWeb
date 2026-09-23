@@ -1,0 +1,34 @@
+name: HelloWorldApp
+options:
+  bundleIdPrefix: com.swiftcoreweb.showcase
+  deploymentTarget:
+    iOS: "15.0"
+
+packages:
+  SwiftCoreWeb:
+    path: ../..
+
+targets:
+  HelloWorldApp:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: www
+        type: folder
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: "This app runs a local web server so its Hello World page and API can be reached from this device on the same network."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.swiftcoreweb.showcase.helloworld
+        SWIFT_VERSION: 6.0
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - package: SwiftCoreWeb
+        product: SwiftCoreWeb
