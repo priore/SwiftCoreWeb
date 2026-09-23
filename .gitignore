@@ -5,6 +5,7 @@
 
 ## Build generated
 build/
+.build/
 DerivedData
 
 ## Various settings
@@ -23,3 +24,5 @@ xcuserdata
 *.moved-aside
 *.xcuserstate
 
+## Paths
+AI-Workspace/Prompts/

@@ -1,0 +1,39 @@
+<!--
+  SwiftCoreWeb
+  Copyright (c) 2026 SwiftCoreWeb contributors.
+  Licensed under the PolyForm Noncommercial License 1.0.0.
+  Free for noncommercial use; commercial use requires a separate license from the author.
+  See LICENSE at the repository root. Source-available, not open-source.
+
+  Required Info.plist keys for a SwiftCoreWeb-hosting app (spec the concurrency/lifecycle/network watchdog design). Merge
+  these <key>/<value> pairs into your app target's Info.plist (or the
+  generated Info.plist for a target that uses GENERATE_INFOPLIST_FILE, via
+  Xcode's target > Info tab / INFOPLIST_KEY_* build settings).
+-->
+<plist version="1.0">
+<dict>
+  <!-- WKWebView / HTTP calls to 127.0.0.1 or the LAN require this: iOS
+       blocks plain HTTP to non-HTTPS hosts by default (App Transport
+       Security), and local/loopback addresses need this explicit opt-in. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+
+  <!-- Required to reach the server over the LAN (Mode A: Vite on the Mac,
+       API on the device) or to advertise/discover via Bonjour. iOS shows
+       this string in the system permission prompt the first time the app
+       touches the local network. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>This app runs a local web server so its Vue frontend and API can be reached from this device and, during development, from your Mac on the same network.</string>
+
+  <!-- Required only if the app calls builder.advertise(name:) to advertise
+       itself via Bonjour (_http._tcp). Omit this key if the app never
+       advertises. -->
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_http._tcp</string>
+  </array>
+</dict>
+</plist>
