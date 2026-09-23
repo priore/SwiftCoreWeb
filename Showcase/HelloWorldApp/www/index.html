@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<!--
+  SwiftCoreWeb
+  Copyright (c) 2026 SwiftCoreWeb contributors.
+  Licensed under the PolyForm Noncommercial License 1.0.0.
+  Free for noncommercial use; commercial use requires a separate license from the author.
+  See LICENSE at the repository root. Source-available, not open-source.
+
+  This is a plain static file, not a Swift string embedded in
+  HelloWorldServer.swift: the framework's static-file/SPA hosting serves it
+  as-is (HelloWorldServer.swift: app.useSpa(root: .bundle("www"))), the same
+  way ShowcaseServer.swift serves its release-mode Vue build. Keeping HTML
+  out of Swift code means the framework's routing/DI/middleware pipeline
+  stays purely a backend concern, and this file can be edited, previewed, or
+  swapped out without recompiling the app.
+
+  Rendered with the framework's built-in Vue 3 runtime
+  (app.useVue() in HelloWorldServer.swift — serves /_framework/vue.js and
+  /_framework/api.js) instead of manual DOM manipulation
+  (document.getElementById, textContent, …): Vue's `{{ }}` bindings below
+  update automatically whenever the underlying data changes, and Vue is
+  already vendored inside the framework (no CDN, no npm install, no build
+  step), so there is no reason to reach for jQuery or hand-rolled DOM code
+  in a SwiftCoreWeb app.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hello World</title>
+</head>
+<body>
+    <!--
+      #app is the mount point Vue takes over below (app.mount('#app')).
+      Everything inside it becomes a Vue template: {{ expression }} is
+      "mustache" interpolation, re-evaluated and re-rendered into the DOM
+      every time the corresponding `data()` field changes — no manual
+      re-render code needed anywhere in this file.
+    -->
+    <div id="app">
+        <h1>Hello World</h1>
+        <!-- Computed once on page load, client-side — see `now` in
+             data() below. Deliberately NOT fetched from the server: the
+             device's local clock is what a "current date/time" demo should
+             show, and it avoids a network round trip for something the
+             browser already knows. -->
+        <p>Current date/time: {{ now }}</p>
+        <!-- Placeholder ('…') until the fetch in `mounted()` below resolves;
+             flips to the real value or "(unavailable)" once it does. -->
+        <p>Device name: {{ deviceName }}</p>
+        <p>Device IP: {{ ipAddress }}</p>
+        <!-- Copy-pasteable URL for testing the JSON API directly from
+             another machine on the same network, e.g. in Chrome's address
+             bar or as a Postman GET request — this is the whole point of
+             exposing ipAddress here rather than only showing it in Xcode's
+             console log. -->
+        <p>Try from Chrome/Postman on another device: <code>http://{{ ipAddress }}:8080/api/device-name</code></p>
+    </div>
+
+    <!--
+      type="module" is required: it's what makes `import` available in
+      plain <script> tags (no bundler involved), and it defers execution
+      until after the DOM above has parsed, so `#app` is guaranteed to
+      exist before `app.mount('#app')` runs.
+    -->
+    <script type="module">
+        // Both imports resolve against routes the framework registers via
+        // app.useVue() in HelloWorldServer.swift — not real files on disk,
+        // and not a CDN URL, so this page works fully offline on the
+        // device. See Sources/SwiftCoreWeb/VueRuntime.swift for exactly
+        // what each one serves.
+        import { createApp } from '/_framework/vue.js'
+        // `api` is a minimal fetch wrapper (api.get/post/put/patch/delete)
+        // that parses JSON responses and throws a real Error (with
+        // `.status`/`.problem`) on a non-2xx response, instead of every
+        // page hand-rolling fetch()+response.ok checks.
+        import { api } from '/_framework/api.js'
+
+        // createApp(options) builds a Vue application instance from a
+        // component-like options object; it is not mounted to the DOM
+        // until `.mount()` is called below. Kept in a local `app` const
+        // (module-scoped, not global) so it can't collide with the `#app`
+        // element id or with anything else on the page.
+        const app = createApp({
+            // `data()` returns the reactive state backing every {{ }}
+            // binding above. `now` is computed immediately and never
+            // updated again (a one-shot "page loaded at" timestamp, not a
+            // ticking clock) — good enough for this demo, and avoids
+            // wiring up a setInterval for something not asked for.
+            data: () => ({ now: new Date().toLocaleString(), deviceName: '…', ipAddress: '…' }),
+            // `mounted()` is a Vue lifecycle hook, called once right after
+            // the component is inserted into the DOM — the right place to
+            // kick off a data fetch that should run exactly once per page
+            // load.
+            async mounted() {
+                try {
+                    // Calls the /api/device-name route registered in
+                    // HelloWorldServer.swift. Same-origin request (the page
+                    // and the API are served by the same WebApplication on
+                    // the same port), so no CORS configuration is needed.
+                    const result = await api.get('/api/device-name')
+                    // Assigning to `this.<field>` mutates Vue's reactive
+                    // state, which is what triggers the {{ }} bindings
+                    // above to re-render with the real values.
+                    this.deviceName = result.deviceName
+                    this.ipAddress = result.ipAddress
+                } catch (err) {
+                    // Network failure or non-2xx response (see api.js):
+                    // surface it in the UI rather than leaving the
+                    // placeholder '…' up forever with no explanation.
+                    this.deviceName = '(unavailable)'
+                    this.ipAddress = '(unavailable)'
+                }
+            }
+        })
+        // Mounts the app onto the <div id="app"> above, replacing its
+        // static markup with Vue's reactive rendering of it.
+        app.mount('#app')
+    </script>
+</body>
+</html>

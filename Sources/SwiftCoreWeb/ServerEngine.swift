@@ -35,7 +35,10 @@ final class ServerEngine: @unchecked Sendable {
     private let listenerChannels = NIOLockedValueBox<[Channel]>([])
     private var bonjourListener: NWListener?
     #if canImport(UIKit)
-    private let keepAwake = KeepAwakeController()
+    // ponytail: KeepAwakeController is @MainActor (touches UIApplication);
+    // ServerEngine's init is not, so construction is deferred to first use
+    // on the main actor (applyKeepAwakeIfNeeded) instead of a stored default.
+    private var keepAwake: KeepAwakeController?
     #endif
     private var previousIdleTimerApplied = false
     private let group: NIOTSEventLoopGroup
@@ -498,7 +501,11 @@ final class ServerEngine: @unchecked Sendable {
     private func applyKeepAwakeIfNeeded() async {
         guard app.keepDeviceAwakeFlag else { return }
         #if canImport(UIKit)
-        await MainActor.run { keepAwake.applyKeepAwake() }
+        await MainActor.run {
+            let controller = keepAwake ?? KeepAwakeController()
+            keepAwake = controller
+            controller.applyKeepAwake()
+        }
         #endif
     }
 
@@ -514,7 +521,7 @@ final class ServerEngine: @unchecked Sendable {
         }
 
         #if canImport(UIKit)
-        await MainActor.run { keepAwake.restoreIdleTimer() }
+        await MainActor.run { keepAwake?.restoreIdleTimer() }
         #endif
 
         try? await group.shutdownGracefully()
