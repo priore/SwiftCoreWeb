@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SwiftCoreWeb Showcase</title>
+</head>
+<body>
+  <div id="app">
+    <h1>{{ message }}</h1>
+    <ul>
+      <li v-for="todo in todos" :key="todo.id">
+        <input type="checkbox" :checked="todo.isDone" disabled />
+        {{ todo.title }}
+      </li>
+    </ul>
+    <p v-if="error">{{ error }}</p>
+  </div>
+
+  <script type="module">
+    import { createApp } from '/_framework/vue.js'
+    import { api } from '/_framework/api.js'
+
+    createApp({
+      data: () => ({ message: 'Hello from SwiftCoreWeb', todos: [], error: null }),
+      async mounted() {
+        try {
+          this.todos = await api.get('/api/todos')
+        } catch (err) {
+          this.error = err.message
+        }
+      }
+    }).mount('#app')
+  </script>
+</body>
+</html>
