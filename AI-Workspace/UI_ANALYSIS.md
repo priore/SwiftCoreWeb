@@ -2,9 +2,15 @@
 
 ## Overview
 
-SwiftCoreWeb is a server-side framework, not a UI framework. It has **no SwiftUI component library, no design tokens, and no native UI layer of its own**. The only UI code in the repository is the minimal Showcase sample app. This document replaces an earlier draft that described a generic SwiftUI component system (buttons, toggles, pickers, toast notifications, dark mode palette) — none of that exists in this codebase; it was template content never checked against the source. 🟢
+SwiftCoreWeb (the core library, `Sources/SwiftCoreWeb/`) is a server-side framework, not a UI
+framework. It has **no SwiftUI component library, no design tokens, and no native UI layer of its
+own**. The repository's UI code lives in two places instead: the minimal `ShowcaseApp` sample and
+the optional `SwiftCoreWebDashboard` product (used by the newer `HelloWorldApp` sample) — see
+below. This document replaces an earlier draft that described a generic SwiftUI component system
+(buttons, toggles, pickers, toast notifications, dark mode palette) — none of that exists in this
+codebase; it was template content never checked against the source. 🟢
 
-## Showcase App UI (the only UI in this repository)
+## Showcase App UI (`Showcase/ShowcaseApp/`)
 
 `Showcase/ShowcaseApp/Sources/`:
 
@@ -17,7 +23,32 @@ SwiftCoreWeb is a server-side framework, not a UI framework. It has **no SwiftUI
 | `Models.swift`, `Controllers/TodoController.swift` | Example API model + one `@Controller` demonstrating macro routing. |
 | `www/index.html` | Static HTML/Vue page served by the framework and rendered inside the `WKWebView`. |
 
-That is the entire native UI surface: one status screen with three states (loading / running / error) and one web view. There are no reusable SwiftUI components, no theming system, and no custom view modifiers defined anywhere in `Sources/` or `Showcase/`. 🟢
+That is the entire native UI surface of this sample: one status screen with three states (loading /
+running / error) and one web view. There are no reusable SwiftUI components, no theming system, and
+no custom view modifiers defined anywhere in `Sources/SwiftCoreWeb/` or `Showcase/ShowcaseApp/`. 🟢
+
+## On-device Dashboard UI (`Sources/SwiftCoreWebDashboard/`, used by `Showcase/HelloWorldApp/`)
+
+A second, newer showcase (`Showcase/HelloWorldApp/`) replaces the `WKWebView` status screen above
+with a full native SwiftUI dashboard — this is a real, reusable SwiftUI component library, but it
+lives in its own opt-in SPM product (`SwiftCoreWebDashboard`), not in the core framework (see the
+exception documented in [swift-style.md](../.claude/swift-style.md)). `HelloWorldRootView.swift`
+shows `SwiftCoreWebDashboardView(app:)` full-screen once the server is running; there is no web view
+in this showcase, `/` still serves plain HTML to browsers as before.
+
+| Component | Role |
+|---|---|
+| `DashboardRootView.swift` | Switches between the two dashboard styles at runtime; style picker in the safe-area top. |
+| `Views/MissionControl/` | Style A: dense NOC-style grid (tiles, sparklines, status LEDs). |
+| `Views/NativeCards/` | Style B: iOS Health/Settings-style grouped cards, gauge rings. |
+| `Views/Shared/` | `Sparkline`, `GaugeRing`, `QRCodeView`, `RequestLogView`, `HistoryView` — shared by both styles. |
+| `DashboardModel.swift` | `@MainActor ObservableObject`; reads `app.metrics.snapshot()` + the device sampler, drives Start/Stop/Restart. |
+| `DashboardStyle.swift` | Persists the chosen style in `UserDefaults`. |
+
+Both styles read the same data (`DashboardModel`) and the same shared components; only tile layout
+and visual language differ. Full design rationale in
+[DEVICE_DASHBOARD_PLAN.md](Plans/DEVICE_DASHBOARD_PLAN.md). 🟢 (`Sources/SwiftCoreWebDashboard/`,
+`Showcase/HelloWorldApp/Sources/HelloWorldRootView.swift`)
 
 ## Web-Side UI (served content, not native)
 

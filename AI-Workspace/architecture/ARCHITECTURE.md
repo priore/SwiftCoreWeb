@@ -11,8 +11,9 @@ SwiftCoreWeb is an embedded HTTP/HTTPS/WebSocket web framework for iOS 15+, dist
 | `SwiftCoreWeb` | `Sources/SwiftCoreWeb/` | Core library: server engine, routing, middleware, auth, static/SPA hosting, WebSocket/SSE, OpenAPI. |
 | `SwiftCoreWebMacros` | `Sources/SwiftCoreWebMacros/` | Compiler plugin (`SwiftSyntax`) implementing `@Controller`, `@Get`/`@Post`/etc., `@ApiModel`. |
 | `SwiftCoreWebTesting` | `Sources/SwiftCoreWebTesting/` | `TestHost`: runs the full request pipeline in memory, no sockets. |
+| `SwiftCoreWebDashboard` | `Sources/SwiftCoreWebDashboard/` | Optional SwiftUI product: on-device server/device console (see [Dashboard](#on-device-dashboard-swiftcorewebdashboard) below). |
 
-Two products are exposed: `SwiftCoreWeb` and `SwiftCoreWebTesting`. `SwiftCoreWebMacros` is a `.macro` plugin target, not a public product. 🟢 (`Package.swift`)
+Four products are exposed: `SwiftCoreWeb`, `SwiftCoreWebTesting`, and `SwiftCoreWebDashboard`. `SwiftCoreWebMacros` is a `.macro` plugin target, not a public product. 🟢 (`Package.swift`)
 
 ## Dependency Policy
 
@@ -42,6 +43,22 @@ The built router is immutable after `.build()` (a `Sendable` value, lock-free on
 ## Web Hosting (Vue 3)
 
 Vue 3 is the supported frontend, embedded as a package resource (`vue.esm-browser.prod.js`) and served at `/_framework/vue.js` — no build step required for the zero-build path. `.useStaticFiles()` and `.useSpa()` (history-mode SPA fallback) serve compiled Vue apps; a server-side `[[ ]]`-delimited template engine coexists with Vue's `{{ }}` without collision. This is server-side asset hosting, not a native SwiftUI component system. 🟢 (`Sources/SwiftCoreWeb/VueRuntime.swift`, `SpaHosting.swift`, `StaticFiles.swift`, `TemplateEngine.swift`)
+
+## On-device Dashboard (`SwiftCoreWebDashboard`)
+
+Optional SwiftUI product, opt-in, kept out of the core library so `SwiftCoreWeb` stays free of
+UIKit/SwiftUI (see the exception noted in [swift-style.md](../../.claude/swift-style.md)). Replaces
+only the device's own screen (a server console: live metrics, device health, history) — the served
+`/` page is unaffected, still plain HTML for browsers. Two interchangeable SwiftUI styles (Mission
+Control / Native Cards), switchable at runtime, persisted in `UserDefaults`
+(`Sources/SwiftCoreWebDashboard/DashboardStyle.swift`). Server-side metrics live in the core
+(`ServerMetrics`, `WebApplication.metrics`); the dashboard target adds device sampling
+(`DeviceMetrics.swift`, mach/`ProcessInfo`/`NWPathMonitor` APIs, 1 Hz) and history persistence
+(`MetricsHistory.swift`, system `libsqlite3` — no SPM dependency, WAL mode, rollup + pruning to
+24h/7d/30d). Optional HTTP surface: `app.mapMetrics(path:)` exposes the same metrics as JSON + SSE
+for external consumers, disabled unless called explicitly. The showcase app
+(`Showcase/HelloWorldApp/`) uses this dashboard as its default screen instead of a `WKWebView`. 🟢
+(`Sources/SwiftCoreWebDashboard/`, `Package.swift`, [DEVICE_DASHBOARD_PLAN.md](../Plans/DEVICE_DASHBOARD_PLAN.md))
 
 ## Lifecycle & iOS Integration
 

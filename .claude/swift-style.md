@@ -3,6 +3,11 @@
 Read before writing or modifying any `*.swift` code. This is a server-side networking library
 (swift-nio based), not an app: no UIKit/SwiftUI concerns apply here.
 
+**Exception:** `Sources/SwiftCoreWebDashboard/` (the optional on-device dashboard product) is
+SwiftUI throughout — `@MainActor`/`ObservableObject` view models, `View`/`Path`/`Shape` UI code.
+The no-UIKit/SwiftUI rule above applies only to `Sources/SwiftCoreWeb/` (the core networking
+library) and `Sources/SwiftCoreWebMacros/`.
+
 ## General
 - Naming & logic: all identifiers, protocols, and architectural comments in English. Concise
   logical comments, only where intent isn't obvious from the code.
