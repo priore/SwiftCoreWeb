@@ -32,8 +32,9 @@ while IFS= read -r cmd; do
                 echo "==> $cmd"
                 eval "$cmd"
             else
-                echo "==> SKIP (not installed here): $cmd"
-                echo "    using current xcode-select: $(xcode-select -p)"
+                echo "FATAL: CI requires $app, not installed here (only $(ls /Applications | grep -i '^Xcode' | tr '\n' ' '))." >&2
+                echo "A pass with a different Xcode is not a CI pass — install $app (xcodes install, or Apple Developer downloads) before trusting this script." >&2
+                exit 1
             fi
             ;;
         *"platform=iOS Simulator,name="*)
