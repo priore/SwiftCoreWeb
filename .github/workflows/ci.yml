@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.app
+      - name: Install iOS Simulator runtime
+        run: xcodebuild -downloadPlatform iOS
       - name: Build (iOS)
         run: xcodebuild build -scheme SwiftCoreWeb-Package -destination 'generic/platform=iOS Simulator'
       - name: Test (iOS Simulator)
