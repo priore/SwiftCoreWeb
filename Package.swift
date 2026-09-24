@@ -19,7 +19,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.20.0"),
-        .package(url: "https://github.com/apple/swift-syntax.git", from: "509.0.0"),
+        .package(url: "https://github.com/apple/swift-syntax.git", from: "604.0.0"),
         // ponytail: pinned exact — swift-collections 1.7.0 (swift-nio's own
         // transitive dependency) calls `_swift_initBorrow`, a runtime symbol
         // only present in macOS 27+'s libswiftCore.dylib (apple/swift-collections#733).
