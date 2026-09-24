@@ -36,6 +36,13 @@ You are responsible for triaging Pull Requests opened by Dependabot on `priore/S
    ```
    If the failure is a real problem with the bump (e.g. `swift build`/`swift test` broken by the new package), do NOT close it: report it to the user with the actual log, leave the PR open.
 
+   **`cla` check specifically**: it is not reproducible locally (depends on GitHub-side state, third-party action `contributor-assistant/github-action`), so never try to debug it like a code failure. `.github/workflows/cla.yml` already allowlists `priore,dependabot[bot]` — if `cla` fails after `update-branch` even though every commit's author is one of those two (`gh pr view <number> --json commits --jq '.commits[].authors[0].login'`), it's a known transient glitch in the action, not a real CLA problem. Post a single `recheck` comment and re-check once:
+   ```
+   gh pr comment <number> --repo priore/SwiftCoreWeb --body "recheck"
+   gh pr checks <number> --repo priore/SwiftCoreWeb --watch
+   ```
+   One `recheck` only — if it's still red after that, treat it like any other real CI failure (report, leave open, do not loop).
+
 4. Merge patch/minor PRs with green CI:
    ```
    gh pr merge <number> --repo priore/SwiftCoreWeb --squash --delete-branch --admin
