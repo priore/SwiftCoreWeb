@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		738380D9F968414DE0200313 /* HelloWorldApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BDA60158ED02D21601286C9 /* HelloWorldApp.swift */; };
 		7A49C8EA1715876707D13B6B /* HelloWorldServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26EBA225F4EC19981F7C3893 /* HelloWorldServer.swift */; };
+		B6A4BAAF3B710F306CEBD9CB /* SwiftCoreWebDashboard in Frameworks */ = {isa = PBXBuildFile; productRef = 67BF1BD377C0EC253FB16CE5 /* SwiftCoreWebDashboard */; };
 		C9FA5B7BFDCD312EAE5F8907 /* HelloWorldRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF8817E5275920A74C5CB61 /* HelloWorldRootView.swift */; };
 		D979496EDE3931D1DAD2B9C1 /* SwiftCoreWeb in Frameworks */ = {isa = PBXBuildFile; productRef = B5D16D529B7737532A79329C /* SwiftCoreWeb */; };
 		F2BE53891EF1F7FE4A355959 /* www in Resources */ = {isa = PBXBuildFile; fileRef = 60008E75C10468058C6CFB6B /* www */; };
@@ -29,6 +30,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D979496EDE3931D1DAD2B9C1 /* SwiftCoreWeb in Frameworks */,
+				B6A4BAAF3B710F306CEBD9CB /* SwiftCoreWebDashboard in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,6 +91,7 @@
 			name = HelloWorldApp;
 			packageProductDependencies = (
 				B5D16D529B7737532A79329C /* SwiftCoreWeb */,
+				67BF1BD377C0EC253FB16CE5 /* SwiftCoreWebDashboard */,
 			);
 			productName = HelloWorldApp;
 			productReference = 2C3722B1F864A52E959CA8E4 /* HelloWorldApp.app */;
@@ -284,7 +287,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.swiftcoreweb.showcase.helloworld;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -301,7 +304,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.swiftcoreweb.showcase.helloworld;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -336,6 +339,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		67BF1BD377C0EC253FB16CE5 /* SwiftCoreWebDashboard */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SwiftCoreWebDashboard;
+		};
 		B5D16D529B7737532A79329C /* SwiftCoreWeb */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SwiftCoreWeb;
