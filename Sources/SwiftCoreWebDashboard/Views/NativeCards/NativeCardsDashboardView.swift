@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import SwiftCoreWeb
 
 /// Style B — Native Cards: grouped iOS look (Health/Settings-style), gauge
@@ -56,6 +57,13 @@ public struct NativeCardsDashboardView: SwiftUI.View {
                 Text(url.absoluteString)
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = url.absoluteString
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
                 QRCodeView(url: url)
                     .frame(width: 96, height: 96)
             }

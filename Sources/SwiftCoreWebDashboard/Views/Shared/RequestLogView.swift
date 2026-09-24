@@ -18,24 +18,35 @@ public struct RequestLogView: SwiftUI.View {
     }
 
     public var body: some SwiftUI.View {
-        List(requests.reversed(), id: \.timestamp) { request in
-            HStack {
-                Text(request.method)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text(request.path)
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                Spacer()
-                Text("\(request.statusCode)")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(statusColor(request.statusCode))
-                Text(String(format: "%.0f ms", request.durationMilliseconds))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+        // Not `List`: it always paints its own system background (white in
+        // light mode) that `.background()` on a parent can't override on
+        // iOS 15 (`.scrollContentBackground` needs iOS 16) — wrong on
+        // Mission Control's forced-dark theme. A read-only row list doesn't
+        // need List's editing/swipe machinery, so a plain ScrollView stays
+        // fully transparent instead.
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(requests.reversed(), id: \.timestamp) { request in
+                    HStack {
+                        Text(request.method)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Text(request.path)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(request.statusCode)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(statusColor(request.statusCode))
+                        Text(String(format: "%.0f ms", request.durationMilliseconds))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                    Divider()
+                }
             }
         }
-        .listStyle(.plain)
     }
 
     private func statusColor(_ statusCode: Int) -> Color {

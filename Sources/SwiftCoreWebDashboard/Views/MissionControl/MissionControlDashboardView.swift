@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// Style A — Mission Control: dark NOC-style grid, dense monospace tiles
 /// with a value + sparkline + status LED each (see the plan's mockup A).
@@ -38,6 +39,7 @@ public struct MissionControlDashboardView: SwiftUI.View {
             if let server = model.latestServer {
                 RequestLogView(requests: server.recentRequests)
                     .frame(height: 200)
+                    .padding(.horizontal)
                     .padding(.top)
             }
         }
@@ -75,6 +77,13 @@ public struct MissionControlDashboardView: SwiftUI.View {
                     Text(url.absoluteString)
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.secondary)
+                        .contextMenu {
+                            Button {
+                                UIPasteboard.general.string = url.absoluteString
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                        }
                     Spacer()
                 }
             }
