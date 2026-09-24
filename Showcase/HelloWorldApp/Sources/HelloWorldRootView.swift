@@ -25,8 +25,9 @@ struct HelloWorldRootView: SwiftUI.View {
         Group {
             // Server up and running: show the on-device dashboard full-screen.
             if isServerRunning {
+                // No .ignoresSafeArea(): the style picker lives in a top
+                // safeAreaInset, which would draw under the status bar otherwise.
                 SwiftCoreWebDashboardView(app: app)
-                    .ignoresSafeArea()
             } else {
                 // First launch, still waiting for the server to come up.
                 ProgressView("Starting SwiftCoreWeb…")
