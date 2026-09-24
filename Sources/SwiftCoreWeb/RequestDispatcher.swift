@@ -15,11 +15,13 @@ public struct RequestDispatcher: Sendable {
     let router: Router
     let pipeline: MiddlewarePipeline
     let services: ServiceProvider
+    let metrics: ServerMetrics
 
-    init(router: Router, pipeline: MiddlewarePipeline, services: ServiceProvider) {
+    init(router: Router, pipeline: MiddlewarePipeline, services: ServiceProvider, metrics: ServerMetrics) {
         self.router = router
         self.pipeline = pipeline
         self.services = services
+        self.metrics = metrics
     }
 
     /// Dispatches one request end to end: matches the route (applying the
@@ -27,7 +29,26 @@ public struct RequestDispatcher: Sendable {
     /// and returns the resulting `HttpResponse`. `HEAD` responses keep every
     /// header (including `Content-Length`) but the caller must drop the
     /// body bytes, per the HTTP methods/HEAD/OPTIONS routing rules.
+    ///
+    /// Records the completed request in `metrics` regardless of caller
+    /// (`ServerEngine` or `SwiftCoreWebTesting.TestHost`), since both route
+    /// through here — the single point that sees every request either way.
     public func dispatch(_ request: HttpRequest) async -> HttpResponse {
+        let startedAt = DispatchTime.now()
+        let response = await dispatchWithoutMetrics(request)
+        let elapsedMilliseconds = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000
+        metrics.recordRequest(
+            method: request.method.rawValue,
+            path: request.path,
+            statusCode: response.status.rawValue,
+            durationMilliseconds: elapsedMilliseconds,
+            byteCount: response.body.byteCount,
+            clientIP: request.remoteAddress ?? "unknown"
+        )
+        return response
+    }
+
+    private func dispatchWithoutMetrics(_ request: HttpRequest) async -> HttpResponse {
         let ctx = HttpContext(request: request, services: services)
 
         let match = router.match(method: request.method, path: request.path)
@@ -102,6 +123,6 @@ extension WebApplication {
     /// `runAsync()` and again from `TestHost`.
     public func buildDispatcher() -> RequestDispatcher {
         routeRegistry.freeze()
-        return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services)
+        return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics)
     }
 }

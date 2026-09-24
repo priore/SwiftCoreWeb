@@ -244,6 +244,10 @@ public final class WebApplication: @unchecked Sendable {
     /// `stopAsync()`.
     let engineBox = ServerEngineBox()
 
+    /// Live server counters and recent-request ring (the on-device dashboard
+    /// design). Always on — see `ServerMetrics` for why there is no toggle.
+    public let metrics = ServerMetrics()
+
     init(builder: WebApplicationBuilder) {
         self.environment = builder.environment
         self.services = builder.services.buildProvider()

@@ -28,6 +28,18 @@ public enum HttpResponseBody: Sendable {
     /// An application-provided async byte stream, for large or generated
     /// payloads that should not be buffered in full.
     case stream(@Sendable (any AsyncByteSink) async throws -> Void)
+
+    /// Known byte size for the metrics/logging counters (the on-device
+    /// dashboard design). `.file` and `.stream` report 0 — their size isn't
+    /// known without reading/streaming, which this counter isn't worth doing.
+    var byteCount: Int {
+        switch self {
+        case .empty, .file, .stream: return 0
+        case .data(let data): return data.count
+        case .text(let string): return string.utf8.count
+        case .json(let data): return data.count
+        }
+    }
 }
 
 /// A sink handlers write streamed response bytes into.
