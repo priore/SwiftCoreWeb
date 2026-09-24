@@ -8,6 +8,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 First public release.
 
+### Fixed
+- `Package.swift`: declared `.macOS(.v10_15)` alongside `.iOS(.v15)` in `platforms`. The `SwiftCoreWebMacros` target was inheriting the default macOS 10.13 deployment target, too low for `SwiftSyntax`/`SwiftSyntaxBuilder`/`SwiftSyntaxMacros`/`SwiftDiagnostics`/`SwiftCompilerPlugin` (require 10.15+), breaking every build on `master` and every Dependabot PR.
+
 ### Added — core `SwiftCoreWeb`
 - Fluent Minimal-API-style HTTP/HTTPS/WebSocket server for iOS 15+, zero runtime reflection, built on a single `NIOTSListenerBootstrap` (Network.framework via `NIOTransportServices`) bridged to Swift Concurrency with `NIOAsyncChannel`.
 - Routing: Minimal API closures (`mapGet`/`mapPost`/`mapPut`/`mapPatch`/`mapDelete`/`mapHead`/`mapOptions`/`mapMethods`, grouped with `mapGroup(...).requireAuthorization()`) and macro-based controllers (`@Controller`, `@Get`/`@Post`/`@Put`/`@Patch`/`@Delete`/`@Head`/`@Options`/`@Route`, compile-time `registerRoutes(into:)`, no runtime type discovery).

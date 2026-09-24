@@ -1,0 +1,46 @@
+name: Dependabot major review
+
+on:
+  schedule:
+    - cron: "0 6 * * 2"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: github.repository == 'priore/SwiftCoreWeb'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Claude triage major-version Dependabot PRs
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Triage of open Dependabot pull requests on this repository.
+
+            For each open PR from dependabot[bot] with update-type major
+            (semver-major, or otherwise not already auto-merged by the
+            dependabot-auto-merge.yml workflow, which only covers
+            patch/minor):
+
+            1. Read the changelog/breaking changes of the new version.
+            2. Grep the codebase (Sources/, Tests/, Showcase/) to verify
+               whether the project actually uses the APIs touched by the
+               breaking changes.
+            3. If no real usage is impacted: enable auto-merge
+               (`gh pr merge --auto --squash <url>`).
+            4. If real usage is impacted, or you cannot verify it with
+               confidence: leave the PR open and add a comment summarizing
+               the risk, for manual review.
+            5. If you find PRs duplicated/superseded by a merge that already
+               happened in this same run, close them with a comment
+               explaining why.
+
+            Do not modify any other code, do not touch non-Dependabot PRs.
+          claude_args: |
+            --allowedTools "Bash(gh pr:*),Bash(git:*),Bash(grep:*),Bash(rg:*),Read,Grep,Glob"
