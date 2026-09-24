@@ -28,7 +28,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.swiftcoreweb.showcase.helloworld
         SWIFT_VERSION: 6.0
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
     dependencies:
       - package: SwiftCoreWeb
         product: SwiftCoreWeb
+      - package: SwiftCoreWeb
+        product: SwiftCoreWebDashboard
