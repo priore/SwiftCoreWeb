@@ -33,12 +33,25 @@ public final class DashboardModel: ObservableObject {
 
     public let app: WebApplication
     private let sampler = DeviceSampler()
+    private let history: MetricsHistory?
+    private var previousServerSnapshot: ServerMetricsSnapshot?
 
-    public init(app: WebApplication) {
+    /// `history` is `nil` when opening the SQLite database failed (e.g. a
+    /// full disk) — the live dashboard still works, it just has no
+    /// 24h/7d/30d views for this session, rather than crashing on startup.
+    public init(app: WebApplication, history: MetricsHistory?) {
         self.app = app
+        self.history = history
         sampler.onSample = { [weak self] snapshot in
             self?.handleSample(snapshot)
         }
+    }
+
+    /// Convenience initializer that opens the default on-disk history
+    /// itself, for callers who don't need to inject a test double.
+    public static func withDefaultHistory(app: WebApplication, configuration: DashboardConfiguration = .default) async -> DashboardModel {
+        let history = try? await MetricsHistory(configuration: configuration)
+        return DashboardModel(app: app, history: history)
     }
 
     /// Starts device sampling. Call once the dashboard view appears; safe to
@@ -62,6 +75,53 @@ public final class DashboardModel: ObservableObject {
         if liveHistory.count > Self.liveHistoryLimit {
             liveHistory.removeFirst()
         }
+
+        if let history {
+            let row = Self.historyRow(device: device, server: server, previousServer: previousServerSnapshot)
+            Task { try? await history.record(row) }
+        }
+        previousServerSnapshot = server
+    }
+
+    /// `ServerMetricsSnapshot`'s counters are cumulative since server start,
+    /// but a history row is "how much happened in this one-second sample" —
+    /// so requests/bytes/error-class counts are diffed against the previous
+    /// sample (0 on the very first sample, or after a restart resets the
+    /// counters lower than `previousServer`, since `max(0, …)` floors it).
+    private static func historyRow(device: DeviceSnapshot, server: ServerMetricsSnapshot, previousServer: ServerMetricsSnapshot?) -> MetricsHistoryRow {
+        func delta(_ current: Int, _ previous: Int) -> Int { max(0, current - previous) }
+
+        let requestDelta = delta(server.totalRequests, previousServer?.totalRequests ?? server.totalRequests)
+        let clientErrorDelta = delta(server.statusClassCounts[4] ?? 0, previousServer?.statusClassCounts[4] ?? (server.statusClassCounts[4] ?? 0))
+        let serverErrorDelta = delta(server.statusClassCounts[5] ?? 0, previousServer?.statusClassCounts[5] ?? (server.statusClassCounts[5] ?? 0))
+        let bytesInDelta = delta(server.bytesIn, previousServer?.bytesIn ?? server.bytesIn)
+        let bytesOutDelta = delta(server.bytesOut, previousServer?.bytesOut ?? server.bytesOut)
+
+        return MetricsHistoryRow(
+            timestamp: device.timestamp,
+            averageCPUPercent: device.cpuUsagePercent,
+            maxCPUPercent: device.cpuUsagePercent,
+            averageMemoryBytes: device.appMemoryFootprintBytes,
+            maxMemoryBytes: device.appMemoryFootprintBytes,
+            requestCount: requestDelta,
+            clientErrorCount: clientErrorDelta,
+            serverErrorCount: serverErrorDelta,
+            bytesIn: bytesInDelta,
+            bytesOut: bytesOutDelta,
+            averageLatencyMilliseconds: server.averageLatencyMilliseconds,
+            p95LatencyMilliseconds: server.p95LatencyMilliseconds,
+            maxThermalStateRawValue: device.thermalState.rawValue,
+            minBatteryLevel: device.batteryLevel,
+            maxActiveConnections: server.activeConnections
+        )
+    }
+
+    /// A window's aggregated history rows (Live is `liveHistory`, this
+    /// serves the 24h/7d/30d segmented view). Empty when no history store
+    /// was available at init.
+    public func historyRows(for window: MetricsHistory.HistoryWindow) async -> [MetricsHistoryRow] {
+        guard let history else { return [] }
+        return (try? await history.rows(for: window)) ?? []
     }
 
     // MARK: - Server controls
