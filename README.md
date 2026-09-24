@@ -496,19 +496,6 @@ For developers coming from ASP.NET Core Minimal APIs, here is how the familiar s
 
 ---
 
-## Support Development
-
-If this project has been useful to you, consider a small donation. Every contribution helps fund new features and keep the project active.
-
-Scan the code below with your wallet, or copy the address. Alternatively you can donate via [PayPal](https://paypal.me/prioregroup).
-
-|Donate with BTC (Bitcoin)|
-|:------------:|
-|![](https://www.prioregroup.com/images/priore_btc_segwit_binance.jpg)|
-|`BTC Address (SegWit) : bc1q6rjOuuwu9k2fvs5n5elmqy9v4ljazhexejykjm`|
-
----
-
 ## License
 
 SwiftCoreWeb is licensed under the **[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)**.
@@ -520,3 +507,16 @@ SwiftCoreWeb is licensed under the **[PolyForm Noncommercial License 1.0.0](http
 The full license text is in `LICENSE` at the repository root. Third-party components embedded in this package (the Vue 3 runtime, SwiftNIO, swift-nio-transport-services) keep their own upstream licenses and required notices — see `LICENSE-THIRD-PARTY`.
 
 Want to contribute? Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](SECURITY.md), don't open a public issue.
+
+---
+
+## Support Development
+
+If this project has been useful to you, consider a small donation. Every contribution helps fund new features and keep the project active.
+
+Scan the code below with your wallet, or copy the address. Alternatively you can donate via [PayPal](https://paypal.me/prioregroup).
+
+|Donate with BTC (Bitcoin)|
+|:------------:|
+|![](https://www.prioregroup.com/images/priore_btc_segwit_binance.jpg)|
+|`BTC Address (SegWit) : bc1q6rjOuuwu9k2fvs5n5elmqy9v4ljazhexejykjm`|
