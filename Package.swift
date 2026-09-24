@@ -12,7 +12,8 @@ let package = Package(
     ],
     products: [
         .library(name: "SwiftCoreWeb", targets: ["SwiftCoreWeb"]),
-        .library(name: "SwiftCoreWebTesting", targets: ["SwiftCoreWebTesting"])
+        .library(name: "SwiftCoreWebTesting", targets: ["SwiftCoreWebTesting"]),
+        .library(name: "SwiftCoreWebDashboard", targets: ["SwiftCoreWebDashboard"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
@@ -58,6 +59,15 @@ let package = Package(
                 .copy("Resources/vue")
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
+        // MARK: - On-device SwiftUI dashboard (opt-in, depends on UIKit/SwiftUI)
+        .target(
+            name: "SwiftCoreWebDashboard",
+            dependencies: ["SwiftCoreWeb"],
+            path: "Sources/SwiftCoreWebDashboard",
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
 
         // MARK: - In-memory test host
