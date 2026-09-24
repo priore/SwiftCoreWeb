@@ -1,5 +1,17 @@
 # SwiftCoreWeb
 
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
+[![Swift](https://img.shields.io/badge/swift-6-orange?logo=swift)](https://swift.org)
+[![Platform](https://img.shields.io/badge/platform-iOS%2015%2B-lightgrey)](README.md#requirements)
+[![SwiftNIO](https://img.shields.io/badge/SwiftNIO-2.65-blue)](https://github.com/apple/swift-nio)
+[![Vue](https://img.shields.io/badge/Vue-3-brightgreen?logo=vuedotjs)](https://vuejs.org)
+[![SQLite](https://img.shields.io/badge/SQLite-3-lightblue?logo=sqlite)](https://sqlite.org)
+[![Security Policy](https://img.shields.io/badge/security-policy-orange)](SECURITY.md)
+[![Contributing](https://img.shields.io/badge/contributing-guide-informational)](CONTRIBUTING.md)
+[![Donate with PayPal](https://img.shields.io/badge/PayPal-donate-blue?logo=paypal)](https://paypal.me/prioregroup)
+[![Donate with BITCOIN](https://img.shields.io/badge/BITCOIN-donate-green?logo=bitcoin)](https://github.com/priore/SwiftCoreWeb#support-development)
+[![Star History](https://img.shields.io/badge/⭐-Star%20History-blue)](https://star-history.com/#priore/SwiftCoreWeb&Date)
+
 Your iPhone can run a real web server. SwiftCoreWeb turns any iOS 15+ app into a full HTTP/HTTPS/WebSocket backend, no separate server needed. Same fluent, Minimal-API feel .NET developers already love, done in idiomatic Swift, with **zero runtime reflection**.
 
 ---
@@ -475,6 +487,19 @@ For developers coming from ASP.NET Core Minimal APIs, here is how the familiar s
 | A DTO's OpenAPI schema (reflection-based) | `@ApiModel` (compile-time, no reflection) |
 | Razor Pages / views | `View("page.html", model:)`<br>+ the `[[ ]]`-delimited template engine |
 | `TestServer` / `WebApplicationFactory` | `SwiftCoreWebTesting.TestHost` |
+
+---
+
+## Support Development
+
+If this project has been useful to you, consider a small donation. Every contribution helps fund new features and keep the project active.
+
+Scan the code below with your wallet, or copy the address. Alternatively you can donate via [PayPal](https://paypal.me/prioregroup).
+
+|Donate with BTC (Bitcoin)|
+|:------------:|
+|![](https://www.prioregroup.com/images/priore_btc_segwit_binance.jpg)|
+|`BTC Address (SegWit) : bc1q6rjOuuwu9k2fvs5n5elmqy9v4ljazhexejykjm`|
 
 ---
 
