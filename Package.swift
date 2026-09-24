@@ -8,7 +8,8 @@ import CompilerPluginSupport
 let package = Package(
     name: "SwiftCoreWeb",
     platforms: [
-        .iOS(.v15)
+        .iOS(.v15),
+        .macOS(.v10_15)
     ],
     products: [
         .library(name: "SwiftCoreWeb", targets: ["SwiftCoreWeb"]),
