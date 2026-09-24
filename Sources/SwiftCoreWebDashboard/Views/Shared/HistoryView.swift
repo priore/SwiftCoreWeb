@@ -12,6 +12,10 @@ import SwiftUI
 /// fetched from `MetricsHistory` on selection. Gaps in the stored windows
 /// (app suspended) are periods with no row — `Sparkline` simply doesn't
 /// plot indices it wasn't given, so callers must not synthesize zeros.
+///
+/// Plots HTTP server load (requests/sec live, request count per bucket in
+/// the stored windows) — this is the dashboard's one "how busy is the
+/// server" chart, so it tracks server traffic, not device CPU.
 public struct HistoryView: SwiftUI.View {
     fileprivate enum Segment: String, CaseIterable, Identifiable {
         case live = "Live", last24Hours = "24h", last7Days = "7d", last30Days = "30d"
@@ -36,16 +40,16 @@ public struct HistoryView: SwiftUI.View {
             .pickerStyle(.segmented)
             .onChange(of: selection) { _ in Task { await reload() } }
 
-            Sparkline(values: cpuValues)
+            Sparkline(values: requestValues)
                 .frame(height: 80)
         }
         .task { await reload() }
     }
 
-    private var cpuValues: [Double] {
+    private var requestValues: [Double] {
         switch selection {
-        case .live: model.liveHistory.map(\.device.cpuUsagePercent)
-        case .last24Hours, .last7Days, .last30Days: storedRows.map(\.averageCPUPercent)
+        case .live: model.liveHistory.map(\.server.requestsPerSecond)
+        case .last24Hours, .last7Days, .last30Days: storedRows.map { Double($0.requestCount) }
         }
     }
 
