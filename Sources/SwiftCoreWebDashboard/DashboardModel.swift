@@ -28,6 +28,9 @@ public final class DashboardModel: ObservableObject {
     @Published public private(set) var liveHistory: [LiveSample] = []
     @Published public private(set) var isServerRunning = false
     @Published public private(set) var lastActionError: String?
+    @Published public var dashboardStyle: DashboardStyle = DashboardStyle.stored {
+        didSet { DashboardStyle.stored = dashboardStyle }
+    }
 
     private static let liveHistoryLimit = 300 // 5 minutes at 1 Hz
 

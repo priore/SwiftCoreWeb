@@ -4,7 +4,7 @@ Note: cross-project generalizable memories live in `~/.claude/memory/` (separate
 - [Use AskUserQuestion for confirmations](feedback_askuserquestion_for_confirm.md) — yes/no confirmations must use AskUserQuestion tool, not free-text questions
 
 ## Project
-- (none yet — add reusable gotchas/decisions here as they come up, not step status)
+- [SwiftCoreWebDashboard build/test command](dashboard-target-test-command.md) — needs xcodebuild + iOS Simulator destination, plain `swift test` can't compile it (UIKit)
 
 ## Reference
 - (none yet)
