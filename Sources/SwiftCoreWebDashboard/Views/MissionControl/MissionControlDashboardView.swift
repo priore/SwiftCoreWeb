@@ -29,13 +29,17 @@ public struct MissionControlDashboardView: SwiftUI.View {
             }
             .padding()
 
+            // History right after the tiles — was pushed below the fixed-height
+            // request log, landing so far down the "Live" segmented control
+            // read as cut off at the screen edge.
+            HistoryView(model: model)
+                .padding(.horizontal)
+
             if let server = model.latestServer {
                 RequestLogView(requests: server.recentRequests)
                     .frame(height: 200)
+                    .padding(.top)
             }
-
-            HistoryView(model: model)
-                .padding(.horizontal)
         }
         .background(Color.black)
         .foregroundStyle(.white)
