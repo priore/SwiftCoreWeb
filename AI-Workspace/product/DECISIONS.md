@@ -12,7 +12,10 @@ This replaces a previous draft of generic, unverifiable decisions ("Modular Arch
 
 **Decision:** Use SwiftNIO (`NIOCore`, `NIOHTTP1`, `NIOWebSocket`) on `NIOTransportServices` for HTTP, HTTPS and WebSocket in one bootstrap, bridged to `async`/`await` via `NIOAsyncChannel`. No FlyingFox, no GRDB, no second transport for TLS.
 
-**Consequences:** No SQLite/GRDB persistence layer exists in this framework at all — any storage is the embedding app's responsibility. TLS reuses the same listener instead of a separate stack. 🟢 (See [decisions historical note](#historical-note-discarded-flyingfoxgrdb-design) below and [ARCHITECTURE.md](../architecture/ARCHITECTURE.md).)
+**Consequences:** No SQLite/GRDB persistence layer exists in the core `SwiftCoreWeb` library — any
+storage is the embedding app's responsibility. TLS reuses the same listener instead of a separate
+stack. (The optional `SwiftCoreWebDashboard` product later adds its own system-`libsqlite3` usage,
+not GRDB, scoped to that product only — see D006 below.) 🟢 (See [decisions historical note](#historical-note-discarded-flyingfoxgrdb-design) below and [ARCHITECTURE.md](../architecture/ARCHITECTURE.md).)
 
 ### D002: Zero-reflection macros for routing, not runtime discovery
 
@@ -45,6 +48,19 @@ This replaces a previous draft of generic, unverifiable decisions ("Modular Arch
 **Decision:** Use `DispatchTime` instead.
 
 **Consequences:** Rate limiter works down to the stated iOS 15 minimum deployment target. 🟢
+
+### D006: On-device dashboard uses `ProcessInfo.thermalState` only, no private IOKit temperature APIs
+
+**Context:** The on-device dashboard (`SwiftCoreWebDashboard`) wants to show device thermal health.
+iOS has no public API for CPU/battery temperature in °C.
+
+**Decision:** Surface only `ProcessInfo.thermalState` (nominal/fair/serious/critical) plus its change
+timeline; never call private IOKit thermal sensors, never simulate a °C figure. The UI marks
+CPU/battery °C, fan speed, GPU %, and Wi-Fi SSID explicitly as "not available" rather than
+approximating them.
+
+**Consequences:** Thermal display is coarse (4 states) but uses only public, App-Store-safe APIs.
+🟢 (`Sources/SwiftCoreWebDashboard/DeviceMetrics.swift`, [DEVICE_DASHBOARD_PLAN.md](../Plans/DEVICE_DASHBOARD_PLAN.md))
 
 ## Historical note: discarded FlyingFox/GRDB design
 
