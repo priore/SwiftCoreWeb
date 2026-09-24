@@ -10,7 +10,7 @@ First public release.
 
 ### Fixed
 - `Package.swift`: declared `.macOS(.v11)` alongside `.iOS(.v15)` in `platforms`. Without an explicit macOS platform, the `SwiftCoreWebMacros` target inherited the default macOS 10.13 deployment target — too low for `SwiftSyntax`/`SwiftSyntaxBuilder`/`SwiftSyntaxMacros`/`SwiftDiagnostics`/`SwiftCompilerPlugin` (require 10.15+) — and the main `SwiftCoreWeb` target uses `os.Logger`/`OSLogMessage` (require macOS 11+). Both broke every build on `master` and every Dependabot PR.
-- `ServerEngine.swift`: replaced `pipeline.addHandler`/`pipeline.context(name:)`/`pipeline.removeHandler(context:)` (Swift 6 strict concurrency rejects these — `HTTPResponseEncoder`, `ByteToMessageHandler`, `WebSocketFrameEncoder` and `ChannelHandlerContext` have `@available(*, unavailable) extension _: Sendable` in swift-nio) with `pipeline.syncOperations.addHandler` run via `eventLoop.submit`/`.execute`, and `pipeline.removeHandler(name:)` for teardown.
+- `ServerEngine.swift` and `SwiftCoreWebTesting/TestHost.swift`: replaced `pipeline.addHandler`/`pipeline.context(name:)`/`pipeline.removeHandler(context:)` (Swift 6 strict concurrency rejects these — `HTTPResponseEncoder`, `ByteToMessageHandler`, `WebSocketFrameEncoder` and `ChannelHandlerContext` have `@available(*, unavailable) extension _: Sendable` in swift-nio) with `pipeline.syncOperations.addHandler` run via `eventLoop.submit`/`.execute`, and `pipeline.removeHandler(name:)` for teardown.
 
 ### Added — core `SwiftCoreWeb`
 - Fluent Minimal-API-style HTTP/HTTPS/WebSocket server for iOS 15+, zero runtime reflection, built on a single `NIOTSListenerBootstrap` (Network.framework via `NIOTransportServices`) bridged to Swift Concurrency with `NIOAsyncChannel`.
