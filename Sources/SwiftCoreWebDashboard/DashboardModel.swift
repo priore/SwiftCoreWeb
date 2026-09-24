@@ -156,7 +156,16 @@ public final class DashboardModel: ObservableObject {
     /// The URL to reach this server from another device on the LAN, for the
     /// QR code and the header. `app.urls` is populated by `runAsync()` once
     /// the listener is bound, so this is `nil` until the server is running.
+    /// `listenOnAllInterfaces()` binds `0.0.0.0`, which is correct to listen
+    /// on but useless in a URL read by another device — swapped for the
+    /// actual LAN IP when the host is a bind-all address.
     public var serverURL: URL? {
-        app.urls.first.flatMap(URL.init(string:))
+        guard let rawURL = app.urls.first, var components = URLComponents(string: rawURL) else {
+            return nil
+        }
+        if components.host == "0.0.0.0" || components.host == "::", let lanIP = localIPAddress() {
+            components.host = lanIP
+        }
+        return components.url
     }
 }
