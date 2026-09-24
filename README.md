@@ -251,7 +251,13 @@ That's it. This one line: opens (or creates) the on-disk metrics history, sample
 
 ### 3. Picking a look: Mission Control vs Native Cards
 
-Both styles ship built-in; a segmented control in the dashboard itself lets the person using the device switch between them at runtime, no relaunch. You don't choose one in code — but you can read or force the stored choice, e.g. to default kiosk hardware to the dense NOC-style view:
+Both styles ship built-in; a segmented control in the dashboard itself lets the person using the device switch between them at runtime, no relaunch.
+
+| Mission Control | Native Cards |
+|:---:|:---:|
+| ![Mission Control style](docs/screenshots/dashboard-mission-control.png) | ![Native Cards style](docs/screenshots/dashboard-native-cards.png) |
+
+You don't choose one in code — but you can read or force the stored choice, e.g. to default kiosk hardware to the dense NOC-style view:
 
 ```swift
 import SwiftCoreWebDashboard
