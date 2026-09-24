@@ -66,8 +66,10 @@ public final class TestHost: @unchecked Sendable {
     public init(_ app: WebApplication) async throws {
         self.dispatcher = app.buildDispatcher()
         let channel = NIOAsyncTestingChannel()
-        try await channel.pipeline.addHandler(ByteToMessageHandler(HTTPRequestDecoder())).get()
-        try await channel.pipeline.addHandler(HTTPResponseEncoder()).get()
+        try await channel.eventLoop.submit {
+            try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(HTTPRequestDecoder()))
+            try channel.pipeline.syncOperations.addHandler(HTTPResponseEncoder())
+        }.get()
         try await channel.connect(to: .init(unixDomainSocketPath: "/test")).get()
         self.channel = channel
     }
