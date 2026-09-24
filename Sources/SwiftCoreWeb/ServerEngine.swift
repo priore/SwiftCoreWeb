@@ -172,8 +172,12 @@ final class ServerEngine: @unchecked Sendable {
     /// these names) and starts serving the connection. Runs on the channel's
     /// own event loop, after `ConnectionGate` has reserved a slot.
     private func setUpHTTPPipeline(_ channel: Channel, remoteIP: String) -> EventLoopFuture<Void> {
-        channel.pipeline.addHandler(HTTPResponseEncoder(), name: Self.httpEncoderName).flatMap {
-            channel.pipeline.addHandler(ByteToMessageHandler(HTTPRequestDecoder()), name: Self.httpDecoderName)
+        channel.eventLoop.submit {
+            try channel.pipeline.syncOperations.addHandler(HTTPResponseEncoder(), name: Self.httpEncoderName)
+            try channel.pipeline.syncOperations.addHandler(
+                ByteToMessageHandler(HTTPRequestDecoder()),
+                name: Self.httpDecoderName
+            )
         }.flatMapThrowing { [weak self] in
             guard let self else { throw ServerEngineError.stopped }
             let asyncChannel = try NIOAsyncChannel<HTTPServerRequestPart, HTTPServerResponsePart>(
@@ -419,8 +423,10 @@ final class ServerEngine: @unchecked Sendable {
         try await writeUpgradeResponse(upgradeResponse, on: rawChannel)
         try await removeHTTPHandlers(from: rawChannel)
 
-        try await rawChannel.pipeline.addHandler(WebSocketFrameEncoder()).get()
-        try await rawChannel.pipeline.addHandler(ByteToMessageHandler(WebSocketFrameDecoder())).get()
+        try await rawChannel.eventLoop.submit {
+            try rawChannel.pipeline.syncOperations.addHandler(WebSocketFrameEncoder())
+            try rawChannel.pipeline.syncOperations.addHandler(ByteToMessageHandler(WebSocketFrameDecoder()))
+        }.get()
 
         let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(wrappingChannelSynchronously: rawChannel)
         let socket = WebSocket(channel: asyncChannel)
@@ -443,9 +449,7 @@ final class ServerEngine: @unchecked Sendable {
 
     private func removeHTTPHandlers(from channel: Channel) async throws {
         for name in [Self.httpEncoderName, Self.httpDecoderName] {
-            if let context = try? await channel.pipeline.context(name: name).get() {
-                try? await channel.pipeline.removeHandler(context: context).get()
-            }
+            try? await channel.pipeline.removeHandler(name: name).get()
         }
     }
 
