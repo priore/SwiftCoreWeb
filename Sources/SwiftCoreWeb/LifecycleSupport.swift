@@ -112,15 +112,13 @@ extension WebApplication {
     /// - Returns: `true` if the request succeeded.
     @MainActor
     @discardableResult
-    public func requestSingleAppMode() -> Bool {
+    public func requestSingleAppMode() async -> Bool {
         #if canImport(UIKit)
-        var succeeded = false
-        let semaphore = DispatchSemaphore(value: 0)
-        UIAccessibility.requestGuidedAccessSession(enabled: true) { didSucceed in
-            succeeded = didSucceed
-            semaphore.signal()
+        let succeeded = await withCheckedContinuation { continuation in
+            UIAccessibility.requestGuidedAccessSession(enabled: true) { didSucceed in
+                continuation.resume(returning: didSucceed)
+            }
         }
-        _ = semaphore.wait(timeout: .now() + 5)
         if succeeded {
             lifecycleLogger.info("Autonomous Single App Mode session requested successfully")
         } else {
