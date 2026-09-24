@@ -88,6 +88,7 @@ final class ServerEngine: @unchecked Sendable {
         }
 
         app.urls = reachableURLs()
+        app.metrics.markStarted()
         let listeningURLs = app.urls.joined(separator: ", ")
         serverLogger.info("SwiftCoreWeb listening on \(listeningURLs, privacy: .public)")
 
@@ -154,9 +155,11 @@ final class ServerEngine: @unchecked Sendable {
             guard let self else { promise.fail(ServerEngineError.stopped); return }
             guard await self.connectionGate.tryAcquire() else {
                 channel.close(promise: nil)
+                self.app.metrics.recordRejected(.atCapacity)
                 promise.fail(ServerEngineError.atCapacity)
                 return
             }
+            self.app.metrics.connectionOpened()
             channel.eventLoop.execute {
                 self.setUpHTTPPipeline(channel, remoteIP: remoteIP).cascade(to: promise)
             }
@@ -177,7 +180,10 @@ final class ServerEngine: @unchecked Sendable {
                 wrappingChannelSynchronously: channel
             )
             Task {
-                defer { Task { await self.connectionGate.release() } }
+                defer {
+                    self.app.metrics.connectionClosed()
+                    Task { await self.connectionGate.release() }
+                }
                 await self.serve(asyncChannel, remoteIP: remoteIP, rawChannel: channel)
             }
         }
@@ -191,6 +197,7 @@ final class ServerEngine: @unchecked Sendable {
         rawChannel: Channel
     ) async {
         if let rateLimiter, await !rateLimiter.allow(clientIP: remoteIP) {
+            app.metrics.recordRejected(.rateLimited)
             let headers = HTTPHeaders([("Retry-After", "1"), ("Content-Length", "0")])
             try? await channel.outbound.write(.head(HTTPResponseHead(version: .http1_1, status: .tooManyRequests, headers: headers)))
             try? await channel.outbound.write(.end(nil))
@@ -417,6 +424,8 @@ final class ServerEngine: @unchecked Sendable {
 
         let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(wrappingChannelSynchronously: rawChannel)
         let socket = WebSocket(channel: asyncChannel)
+        app.metrics.webSocketOpened()
+        defer { app.metrics.webSocketClosed() }
         try? await route.handler(socket)
     }
 
@@ -470,6 +479,7 @@ final class ServerEngine: @unchecked Sendable {
     // MARK: - Network watchdog rebind
 
     private func rebindOnNetworkChange() async {
+        app.metrics.recordRebind()
         serverLogger.info("Rebinding listeners after network change")
         for channel in listenerChannelsSnapshot() {
             try? await channel.close()
@@ -526,6 +536,7 @@ final class ServerEngine: @unchecked Sendable {
 
         try? await group.shutdownGracefully()
         app.urls = []
+        app.metrics.markStopped()
         serverLogger.info("SwiftCoreWeb stopped")
     }
 }
