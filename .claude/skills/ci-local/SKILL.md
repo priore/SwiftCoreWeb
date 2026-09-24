@@ -21,6 +21,10 @@ Exits non-zero on the first failing step, same as CI would.
 
 The script re-parses `ci.yml` on every run — no manual sync needed when steps are added/edited there. If a step needs different handling locally (e.g. another `-downloadPlatform` or Xcode-select step), edit `scripts/ci-local.sh`'s step handling, not this doc.
 
+## Requires the exact Xcode version CI uses
+
+The script fails hard (does not skip) if `ci.yml`'s `xcode-select` target Xcode isn't installed at that exact path. A pass on a different Xcode is not a CI pass — Swift's strict-concurrency diagnostics and SDKs differ between Xcode versions, so a green run on e.g. Xcode 27 does not prove Xcode 16.4 (what `macos-15` runners actually use) is green. Install the matching version (`xcodes install 16.4`, or Apple Developer downloads) before trusting this script's output.
+
 ## Workflow
 
 1. Make the fix.
