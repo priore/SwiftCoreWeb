@@ -98,6 +98,12 @@ let package = Package(
             dependencies: ["SwiftCoreWeb", "SwiftCoreWebTesting"],
             path: "Tests/SwiftCoreWebTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "SwiftCoreWebDashboardTests",
+            dependencies: ["SwiftCoreWebDashboard"],
+            path: "Tests/SwiftCoreWebDashboardTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
 )
