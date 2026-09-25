@@ -3,7 +3,7 @@
 [← docs index](README.md)
 
 You are here if: you're wiring up JWT authentication or HTTPS and need to know where the actual
-key/certificate material comes from and how to generate it. Used by both the Web and API tracks —
+key/certificate material comes from and how to generate it. Used both for Web and API —
 see [Web: auth and security](web/AUTH_AND_SECURITY.md) and
 [API: auth and security](api/AUTH_AND_SECURITY.md) for how these plug into routes.
 
