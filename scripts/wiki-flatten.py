@@ -8,6 +8,12 @@ docs/README.md becomes wiki/Home.md. Without rewriting, a link like
 [Basic examples](web/EXAMPLES_BASIC.md) resolves on the wiki as "create a
 new page in a subfolder", not the actual flattened page.
 
+The wiki's own page router also wants links to *page names*, not
+filenames: [text](web-EXAMPLES_BASIC) works, [text](web-EXAMPLES_BASIC.md)
+does not (GitHub serves that as a request for the raw file under the
+current page instead of routing to the page) — so the rewritten link
+target drops the .md extension entirely.
+
 Usage: wiki-flatten.py <docs-dir> <wiki-dir>
 """
 import os
@@ -18,6 +24,13 @@ import sys
 def flatten(rel_path: str) -> str:
     """docs/-relative path -> wiki filename (docs/README.md -> Home.md)."""
     return "Home.md" if rel_path == "README.md" else rel_path.replace("/", "-")
+
+
+def flatten_page_name(rel_path: str) -> str:
+    """docs/-relative path -> wiki page name for use inside a link (no .md:
+    the wiki's router wants page names, not filenames — see module docstring)."""
+    flat = flatten(rel_path)
+    return flat[:-3] if flat.endswith(".md") else flat
 
 
 def rewrite_links(text: str, src_dir: str) -> str:
@@ -36,7 +49,7 @@ def rewrite_links(text: str, src_dir: str) -> str:
             # Escapes docs/ entirely (../README.md, ../.claude/...) — left as-is,
             # the caller is responsible for those being absolute URLs already.
             return m.group(0)
-        new_target = flatten(resolved) + (("#" + anchor) if anchor else "")
+        new_target = flatten_page_name(resolved) + (("#" + anchor) if anchor else "")
         return f"[{label}]({new_target})"
 
     return re.sub(r"\[([^\]]*)\]\(([^)]+\.md[^)]*)\)", rewrite, text)
