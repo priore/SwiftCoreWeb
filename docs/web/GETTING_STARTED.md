@@ -3,8 +3,8 @@
 [← docs index](../README.md)
 
 You are here if: you're serving pages/HTML/a frontend to a browser or WebView, not (only) JSON.
-Read [`../GETTING_STARTED.md`](../GETTING_STARTED.md) and
-[`../ROUTING_AND_MIDDLEWARE.md`](../ROUTING_AND_MIDDLEWARE.md) first if you haven't yet.
+Read [Getting started](../GETTING_STARTED.md) and
+[Routing and middleware](../ROUTING_AND_MIDDLEWARE.md) first if you haven't yet.
 
 ## Four ways to serve a page, simplest to most involved
 
@@ -62,6 +62,6 @@ Any of the four can run at the same time on the same `WebApplication` — pick p
 
 ## Next
 
-- [`EXAMPLES_BASIC.md`](EXAMPLES_BASIC.md) — small, complete single-concept examples.
-- [`EXAMPLES_ADVANCED.md`](EXAMPLES_ADVANCED.md) — multi-page sites, Vue, WebSocket/SSE.
-- [`AUTH_AND_SECURITY.md`](AUTH_AND_SECURITY.md) — protecting pages, sessions, CORS.
+- [Basic examples](EXAMPLES_BASIC.md) — small, complete single-concept examples.
+- [Advanced examples](EXAMPLES_ADVANCED.md) — multi-page sites, Vue, WebSocket/SSE.
+- [Auth and security](AUTH_AND_SECURITY.md) — protecting pages, sessions, CORS.

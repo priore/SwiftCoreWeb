@@ -4,8 +4,8 @@
 
 You are here if: you're wiring up JWT authentication or HTTPS and need to know where the actual
 key/certificate material comes from and how to generate it. Used by both the Web and API tracks —
-see [web/AUTH_AND_SECURITY.md](web/AUTH_AND_SECURITY.md) and
-[api/AUTH_AND_SECURITY.md](api/AUTH_AND_SECURITY.md) for how these plug into routes.
+see [Web track: auth and security](web/AUTH_AND_SECURITY.md) and
+[API track: auth and security](api/AUTH_AND_SECURITY.md) for how these plug into routes.
 
 ## The rule: secrets never go in a tracked file
 
@@ -121,5 +121,5 @@ ship it as a bundle resource only for development/internal builds, or generate/d
 first run into `Documents` for a production flow where each device gets a distinct certificate.
 Either way, add any local `.p12`/`.pem`/`.key`/`.csr` file you generate while developing to
 `.gitignore` immediately — see
-[`.claude/rules/sensitive-data.md`](../.claude/rules/sensitive-data.md) for the full checklist and
+the [sensitive-data checklist](https://github.com/priore/SwiftCoreWeb/blob/master/.claude/rules/sensitive-data.md) for
 the `git ls-files` verification command to run before every push.

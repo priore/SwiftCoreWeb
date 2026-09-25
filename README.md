@@ -1,6 +1,5 @@
 # SwiftCoreWeb
 
-[![CI](https://github.com/priore/SwiftCoreWeb/actions/workflows/ci.yml/badge.svg)](https://github.com/priore/SwiftCoreWeb/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![Swift](https://img.shields.io/badge/swift-6-orange?logo=swift)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-iOS%2015%2B-lightgrey)](README.md#requirements)
@@ -46,7 +45,11 @@ security headers, logging), zero-build Vue or a full Vite workflow for the front
 `TestHost` that runs the real production pipeline in-memory. Every one of these has its own short
 guide with runnable examples — the full index is [`docs/README.md`](docs/README.md):
 
-- [Getting started](docs/GETTING_STARTED.md) · [Routing & middleware](docs/ROUTING_AND_MIDDLEWARE.md) · [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md) · [Testing](docs/TESTING_GUIDE.md) · [FAQ](docs/FAQ_AND_TROUBLESHOOTING.md)
+- [Getting started](docs/GETTING_STARTED.md)
+- [Routing & middleware](docs/ROUTING_AND_MIDDLEWARE.md)
+- [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md)
+- [Testing](docs/TESTING_GUIDE.md)
+- [FAQ](docs/FAQ_AND_TROUBLESHOOTING.md)
 - **Building a web app?** → [docs/web/](docs/web/GETTING_STARTED.md) — pages, Vue, sessions, the on-device dashboard
 - **Building an API?** → [docs/api/](docs/api/GETTING_STARTED.md) — JSON routes, auth, OpenAPI, CRUD
 

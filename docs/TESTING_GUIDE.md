@@ -45,7 +45,7 @@ let unauthorized = try await host.get("/api/admin")
 ```
 
 Generate `testToken` with the same HMAC secret your test build's `JwtOptions` uses — see
-[`SECRETS_AND_CERTIFICATES.md`](SECRETS_AND_CERTIFICATES.md) for how signing secrets are meant to
+[Secrets and certificates](SECRETS_AND_CERTIFICATES.md) for how signing secrets are meant to
 be generated and stored; tests can use a throwaway fixed secret since nothing here talks to a real
 network.
 

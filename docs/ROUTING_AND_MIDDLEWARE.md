@@ -89,7 +89,7 @@ Built-ins:
 | `.useExceptionHandler()` | Always first; turns any thrown error into an RFC 9457 `ProblemDetails` response |
 | `.useCors(_:)` | Cross-origin resource sharing |
 | `.useSecurityHeaders()` | Standard security response headers, including a `Content-Security-Policy` |
-| `.useAuthentication(_:)` | Pluggable auth schemes — see [`SECRETS_AND_CERTIFICATES.md`](SECRETS_AND_CERTIFICATES.md) for setting up JWT signing keys |
+| `.useAuthentication(_:)` | Pluggable auth schemes — see [Secrets and certificates](SECRETS_AND_CERTIFICATES.md) for setting up JWT signing keys |
 | `.useAuthorization(policies:)` | Role/policy checks after authentication |
 | `.useStaticFiles(root:)` | Serves files as-is (Web track) |
 | `.useRequestLogging()` | Structured request logs via `os.Logger` |
