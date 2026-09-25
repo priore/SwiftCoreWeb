@@ -20,11 +20,22 @@ as that page's own header/tab title (separate from — and in addition to
 human-readable "Word-Word-Word" name, not a mechanical path-to-dashes
 conversion, for every file this wiki ships.
 
-Usage: wiki-flatten.py <docs-dir> <wiki-dir>
+A link that escapes docs/ entirely (../README.md, ../.claude/...) can't be
+flattened — there's nothing in this repo's docs/ tree to point at. The wiki
+is also a separate git repo with no ".." above it worth anything, so a
+relative link there 404s (verified against the live wiki: `../README.md`
+resolved to github.com/<repo>/README.md, not .../blob/master/README.md).
+Those links are rewritten to an absolute GitHub blob URL instead, only in
+the wiki copy — the docs/ source keeps its normal relative link, which
+works fine for local viewing and for GitHub's own file browser.
+
+Usage: wiki-flatten.py <docs-dir> <wiki-dir> [--github-repo-url URL]
 """
 import os
 import re
 import sys
+
+DEFAULT_GITHUB_REPO_URL = "https://github.com/priore/SwiftCoreWeb"
 
 # docs/-relative path -> wiki page name (no .md, no directories — this is
 # the flat name GitHub Wiki shows as both filename and page header/title).
@@ -65,7 +76,7 @@ def flatten_page_name(rel_path: str) -> str:
     return PAGE_NAMES.get(rel_path, flatten(rel_path)[:-3])
 
 
-def rewrite_links(text: str, src_dir: str) -> str:
+def rewrite_links(text: str, src_dir: str, github_repo_url: str) -> str:
     """Rewrites every [text](relative/path.md#anchor) link in `text`, where
     `src_dir` is the source file's own directory relative to docs/."""
 
@@ -78,9 +89,14 @@ def rewrite_links(text: str, src_dir: str) -> str:
             return m.group(0)
         resolved = os.path.normpath(os.path.join(src_dir, path))
         if resolved.startswith(".."):
-            # Escapes docs/ entirely (../README.md, ../.claude/...) — left as-is,
-            # the caller is responsible for those being absolute URLs already.
-            return m.group(0)
+            # Escapes docs/ entirely (../README.md, ../.claude/...) — rewrite to an
+            # absolute GitHub blob URL, since the wiki is a separate repo where a
+            # relative ".." link 404s (see module docstring).
+            repo_relative = os.path.normpath(os.path.join("docs", src_dir, path))
+            absolute = f"{github_repo_url}/blob/master/{repo_relative}"
+            if anchor:
+                absolute += f"#{anchor}"
+            return f"[{label}]({absolute})"
         new_target = flatten_page_name(resolved) + (("#" + anchor) if anchor else "")
         return f"[{label}]({new_target})"
 
@@ -89,6 +105,10 @@ def rewrite_links(text: str, src_dir: str) -> str:
 
 def main() -> None:
     docs_dir, wiki_dir = sys.argv[1], sys.argv[2]
+    github_repo_url = DEFAULT_GITHUB_REPO_URL
+    if len(sys.argv) > 3 and sys.argv[3] == "--github-repo-url":
+        github_repo_url = sys.argv[4]
+
     for root, _, files in os.walk(docs_dir):
         for name in files:
             if not name.endswith(".md"):
@@ -98,7 +118,7 @@ def main() -> None:
             src_dir = os.path.dirname(rel)
             with open(full, encoding="utf-8") as f:
                 text = f.read()
-            text = rewrite_links(text, src_dir)
+            text = rewrite_links(text, src_dir, github_repo_url)
             out_path = os.path.join(wiki_dir, flatten(rel))
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(text)
