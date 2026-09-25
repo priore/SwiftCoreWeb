@@ -14,3 +14,23 @@ jobs:
         run: xcodebuild build -scheme SwiftCoreWeb-Package -destination 'generic/platform=iOS Simulator'
       - name: Test (iOS Simulator)
         run: xcodebuild test -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17'
+
+  docs-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check relative markdown links resolve (README.md + docs/**)
+        run: |
+          broken=0
+          for f in README.md $(find docs -name "*.md"); do
+            dir=$(dirname "$f")
+            for link in $(grep -oE '\]\((\.\./)*[a-zA-Z0-9_/.-]+\.md[^)]*\)' "$f" | sed -E 's/^\]\(//; s/\)$//; s/#.*//'); do
+              [ -z "$link" ] && continue
+              target=$(python3 -c "import os,sys; print(os.path.normpath(sys.argv[1]))" "$dir/$link")
+              if [ ! -f "$target" ]; then
+                echo "BROKEN in $f: $link -> $target"
+                broken=1
+              fi
+            done
+          done
+          exit $broken
