@@ -1,4 +1,4 @@
-# Web track: auth and security
+# Web: auth and security
 
 [← docs index](../README.md)
 
@@ -23,7 +23,7 @@ app.mapGet("/admin", auth: .authenticated) { _ in
 registered scheme), `.roles([...])`, `.policy(name)`, `.scheme(name)` (require one specific scheme).
 Set up the schemes themselves with `.useAuthentication(...)` — see
 [Secrets and certificates](../SECRETS_AND_CERTIFICATES.md) for generating the JWT signing
-secret, and [API track: auth and security](../api/AUTH_AND_SECURITY.md) for the full scheme setup
+secret, and [API: auth and security](../api/AUTH_AND_SECURITY.md) for the full scheme setup
 (applies identically to web routes and API routes — it's the same middleware).
 
 Group several protected pages instead of repeating `auth:` on each:

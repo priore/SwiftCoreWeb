@@ -4,8 +4,8 @@
 
 You are here if: you're wiring up JWT authentication or HTTPS and need to know where the actual
 key/certificate material comes from and how to generate it. Used by both the Web and API tracks —
-see [Web track: auth and security](web/AUTH_AND_SECURITY.md) and
-[API track: auth and security](api/AUTH_AND_SECURITY.md) for how these plug into routes.
+see [Web: auth and security](web/AUTH_AND_SECURITY.md) and
+[API: auth and security](api/AUTH_AND_SECURITY.md) for how these plug into routes.
 
 ## The rule: secrets never go in a tracked file
 

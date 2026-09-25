@@ -1,4 +1,4 @@
-# Web track: basic examples
+# Web: basic examples
 
 [← docs index](../README.md)
 

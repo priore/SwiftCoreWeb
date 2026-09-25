@@ -1,4 +1,4 @@
-# Web track: on-device dashboard (`SwiftCoreWebDashboard`)
+# Web: on-device dashboard (`SwiftCoreWebDashboard`)
 
 [← docs index](../README.md)
 

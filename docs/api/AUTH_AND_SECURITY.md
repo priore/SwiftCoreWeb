@@ -1,9 +1,9 @@
-# API track: auth and security
+# API: auth and security
 
 [← docs index](../README.md)
 
-You are here if: your API needs authentication and/or authorization. Same middleware as the Web
-track — [Web track: auth and security](../web/AUTH_AND_SECURITY.md) covers page-specific details
+You are here if: your API needs authentication and/or authorization. Same middleware as
+[Web: auth and security](../web/AUTH_AND_SECURITY.md), which covers page-specific details
 (cookies, LAN exposure prompts); this doc focuses on the JSON/token-based patterns typical of APIs.
 
 ## JWT bearer auth

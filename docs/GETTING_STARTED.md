@@ -35,8 +35,8 @@ in with `builder.listenOnAllInterfaces()`. Run this on the Simulator or a device
 
 Pick a track based on what you're building:
 
-- **Serving pages/UI to a browser or WebView** → [Web track: getting started](web/GETTING_STARTED.md)
-- **Serving JSON/REST to another app or service** → [API track: getting started](api/GETTING_STARTED.md)
+- **Serving pages/UI to a browser or WebView** → [Web: getting started](web/GETTING_STARTED.md)
+- **Serving JSON/REST to another app or service** → [API: getting started](api/GETTING_STARTED.md)
 
 Both share the same routing and middleware system — read
 [Routing and middleware](ROUTING_AND_MIDDLEWARE.md) once, it applies to both tracks.

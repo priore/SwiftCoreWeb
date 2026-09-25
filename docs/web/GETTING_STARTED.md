@@ -1,4 +1,4 @@
-# Web track: getting started
+# Web: getting started
 
 [← docs index](../README.md)
 

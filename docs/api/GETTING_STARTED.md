@@ -1,4 +1,4 @@
-# API track: getting started
+# API: getting started
 
 [← docs index](../README.md)
 
