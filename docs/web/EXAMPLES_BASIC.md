@@ -41,7 +41,7 @@ app.mapPost("/contact") { (form: ContactForm) in
 ```
 
 A non-primitive `Decodable` parameter on `POST` binds from the JSON body automatically — see
-[`../ROUTING_AND_MIDDLEWARE.md`](../ROUTING_AND_MIDDLEWARE.md) for the full binding order. For a
+[Routing and middleware](../ROUTING_AND_MIDDLEWARE.md) for the full binding order. For a
 plain HTML `<form>` (URL-encoded, not JSON), use the `Form` parameter-binding wrapper instead.
 
 ## A server-rendered page with a model
@@ -69,5 +69,5 @@ system, no view inheritance, just one model in, one page out.
 
 ## Next
 
-[`EXAMPLES_ADVANCED.md`](EXAMPLES_ADVANCED.md) builds on these with multi-page navigation, Vue, and
+[Advanced examples](EXAMPLES_ADVANCED.md) builds on these with multi-page navigation, Vue, and
 realtime routes.

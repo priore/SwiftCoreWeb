@@ -11,8 +11,8 @@ want to read a whole guide to find the answer.
 
 Secure by default. Nothing leaves the device, so there's no permission prompt and no Info.plist key
 needed. Call `builder.listenOnAllInterfaces()` explicitly to expose the server to the local network
-— see [web/AUTH_AND_SECURITY.md](web/AUTH_AND_SECURITY.md) / [api/AUTH_AND_SECURITY.md](api/AUTH_AND_SECURITY.md)
-for what to protect once you do.
+— see [Web track: auth and security](web/AUTH_AND_SECURITY.md) and
+[API track: auth and security](api/AUTH_AND_SECURITY.md) for what to protect once you do.
 
 #### Why does `OPTIONS` answer itself without a handler?
 
@@ -29,8 +29,8 @@ You never write these by hand.
 Only if you call `listenOnAllInterfaces()` or `advertise(name:)` — those put the app on the Wi-Fi
 network, which needs `NSLocalNetworkUsageDescription` and `NSBonjourServices` keys so iOS can show
 its "Allow this app to find devices on your local network?" prompt. The default loopback-only
-binding needs nothing extra. See [`GETTING_STARTED.md`](GETTING_STARTED.md) and
-[web/AUTH_AND_SECURITY.md](web/AUTH_AND_SECURITY.md) for the exact keys.
+binding needs nothing extra. See [Getting started](GETTING_STARTED.md) and
+[Web track: auth and security](web/AUTH_AND_SECURITY.md) for the exact keys.
 
 #### Will running a server get my app rejected by App Review?
 
@@ -61,23 +61,23 @@ doesn't exist:
 
 - **Mixing routing styles on one server** — Minimal API closures and `@Controller` macro routes
   coexist fine; the Showcase app does exactly this. See
-  [`ROUTING_AND_MIDDLEWARE.md`](ROUTING_AND_MIDDLEWARE.md).
+  [Routing and middleware](ROUTING_AND_MIDDLEWARE.md).
 - **Two authentication schemes at once** — e.g. JWT for browser/app clients and a custom API-key
   header for machine-to-machine calls, both registered in one `.useAuthentication(...)` call. See
-  [api/AUTH_AND_SECURITY.md](api/AUTH_AND_SECURITY.md).
+  [API track: auth and security](api/AUTH_AND_SECURITY.md).
 - **Serving a browser-facing site and a native on-device dashboard from the same `WebApplication`**
   — the dashboard only replaces what's on the device's own screen; every HTTP route still serves
-  real responses to network clients. See [web/DASHBOARD_GUIDE.md](web/DASHBOARD_GUIDE.md).
+  real responses to network clients. See [On-device dashboard guide](web/DASHBOARD_GUIDE.md).
 - **Testing the exact production pipeline without a real socket** — `TestHost` runs the same
-  `RequestDispatcher`, not a mock. See [`TESTING_GUIDE.md`](TESTING_GUIDE.md).
+  `RequestDispatcher`, not a mock. See [Testing guide](TESTING_GUIDE.md).
 
 ## Common gotchas
 
-- Secrets in `appsettings.json`: don't. See [`SECRETS_AND_CERTIFICATES.md`](SECRETS_AND_CERTIFICATES.md) — the Keychain via `SecretStore` is the only supported source.
+- Secrets in `appsettings.json`: don't. See [Secrets and certificates](SECRETS_AND_CERTIFICATES.md) — the Keychain via `SecretStore` is the only supported source.
 - Forgetting `.useExceptionHandler()` first in the middleware chain means unhandled errors won't
   come back as clean `ProblemDetails` — it must be registered before anything that can throw.
 - Linking `SwiftCoreWebTesting` into your app target instead of just the test target pulls in test
   infrastructure you don't want shipped.
 
-Didn't find your question here? Check [`docs/README.md`](README.md) for the full index, or open an
+Didn't find your question here? Check the [docs index](README.md) for the full list, or open an
 issue.

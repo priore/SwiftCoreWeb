@@ -22,8 +22,8 @@ app.mapGet("/admin", auth: .authenticated) { _ in
 `AuthRequirement` options: `.none` (default, public), `.authenticated` (any valid identity from any
 registered scheme), `.roles([...])`, `.policy(name)`, `.scheme(name)` (require one specific scheme).
 Set up the schemes themselves with `.useAuthentication(...)` — see
-[`../SECRETS_AND_CERTIFICATES.md`](../SECRETS_AND_CERTIFICATES.md) for generating the JWT signing
-secret, and [`../api/AUTH_AND_SECURITY.md`](../api/AUTH_AND_SECURITY.md) for the full scheme setup
+[Secrets and certificates](../SECRETS_AND_CERTIFICATES.md) for generating the JWT signing
+secret, and [API track: auth and security](../api/AUTH_AND_SECURITY.md) for the full scheme setup
 (applies identically to web routes and API routes — it's the same middleware).
 
 Group several protected pages instead of repeating `auth:` on each:
@@ -79,7 +79,7 @@ text above is a generic starting point, not a value to copy verbatim into a ship
 silently instead of showing the prompt.
 
 Anything personal a LAN-exposed page serves should require `auth:` unless the network is fully
-trusted — see [`../FAQ_AND_TROUBLESHOOTING.md`](../FAQ_AND_TROUBLESHOOTING.md) for the full App
+trusted — see [FAQ and troubleshooting](../FAQ_AND_TROUBLESHOOTING.md) for the full App
 Store review guidance, including the "Notes" field wording reviewers expect.
 
 ## HTTPS
@@ -88,5 +88,5 @@ Store review guidance, including the "Notes" field wording reviewers expect.
 builder.useHttps(p12: .bundle("server.p12"), passwordKeychainKey: "tlsP12Password")
 ```
 
-See [`../SECRETS_AND_CERTIFICATES.md`](../SECRETS_AND_CERTIFICATES.md) for generating the `.p12`
+See [Secrets and certificates](../SECRETS_AND_CERTIFICATES.md) for generating the `.p12`
 itself (self-signed or CA-issued) and storing its password.

@@ -3,8 +3,8 @@
 [← docs index](../README.md)
 
 You are here if: you're serving JSON/REST to another app, service, or SPA frontend, not (only)
-HTML pages. Read [`../GETTING_STARTED.md`](../GETTING_STARTED.md) and
-[`../ROUTING_AND_MIDDLEWARE.md`](../ROUTING_AND_MIDDLEWARE.md) first if you haven't yet.
+HTML pages. Read [Getting started](../GETTING_STARTED.md) and
+[Routing and middleware](../ROUTING_AND_MIDDLEWARE.md) first if you haven't yet.
 
 ## Your first JSON route
 
@@ -60,6 +60,6 @@ A binding failure (wrong type in a route/query parameter, malformed JSON body) a
 
 ## Next
 
-- [`EXAMPLES_BASIC.md`](EXAMPLES_BASIC.md) — parameter binding from query/route/body.
-- [`EXAMPLES_ADVANCED.md`](EXAMPLES_ADVANCED.md) — a full CRUD API, `@ApiModel`, OpenAPI, DI, rate limiting.
-- [`AUTH_AND_SECURITY.md`](AUTH_AND_SECURITY.md) — JWT, API keys, authorization policies.
+- [Basic examples](EXAMPLES_BASIC.md) — parameter binding from query/route/body.
+- [Advanced examples](EXAMPLES_ADVANCED.md) — a full CRUD API, `@ApiModel`, OpenAPI, DI, rate limiting.
+- [Auth and security](AUTH_AND_SECURITY.md) — JWT, API keys, authorization policies.

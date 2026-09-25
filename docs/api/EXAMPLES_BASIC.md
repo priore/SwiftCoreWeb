@@ -76,5 +76,5 @@ a Minimal API closure instead.
 
 ## Next
 
-[`EXAMPLES_ADVANCED.md`](EXAMPLES_ADVANCED.md) builds a full CRUD API with `@ApiModel`, DI, rate
+[Advanced examples](EXAMPLES_ADVANCED.md) builds a full CRUD API with `@ApiModel`, DI, rate
 limiting, and OpenAPI docs.

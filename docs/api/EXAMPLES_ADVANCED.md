@@ -2,7 +2,7 @@
 
 [← docs index](../README.md)
 
-You are here if: [`EXAMPLES_BASIC.md`](EXAMPLES_BASIC.md) felt too small — this is a complete CRUD
+You are here if: [Basic examples](EXAMPLES_BASIC.md) felt too small — this is a complete CRUD
 API, end to end, the way you'd actually structure one.
 
 This example is drawn directly from `Showcase/ShowcaseApp/` (a real, compilable app in this repo —
@@ -120,10 +120,10 @@ let list = try await host.get("/api/todos")
 let todos = try list.decode([Todo].self)
 ```
 
-See [`../TESTING_GUIDE.md`](../TESTING_GUIDE.md) for the full `TestHost` walkthrough, including how
+See [Testing guide](../TESTING_GUIDE.md) for the full `TestHost` walkthrough, including how
 to generate `testToken`.
 
 ## Next
 
-[`AUTH_AND_SECURITY.md`](AUTH_AND_SECURITY.md) covers the two-scheme (JWT + API key) setup this
+[Auth and security](AUTH_AND_SECURITY.md) covers the two-scheme (JWT + API key) setup this
 example assumes, plus authorization policies.

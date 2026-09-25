@@ -3,7 +3,7 @@
 [← docs index](../README.md)
 
 You are here if: your API needs authentication and/or authorization. Same middleware as the Web
-track — [`../web/AUTH_AND_SECURITY.md`](../web/AUTH_AND_SECURITY.md) covers page-specific details
+track — [Web track: auth and security](../web/AUTH_AND_SECURITY.md) covers page-specific details
 (cookies, LAN exposure prompts); this doc focuses on the JSON/token-based patterns typical of APIs.
 
 ## JWT bearer auth
@@ -20,7 +20,7 @@ app.mapGet("/api/profile", auth: .authenticated) { ctx in
 ```
 
 Generating and storing the signing secret: see
-[`../SECRETS_AND_CERTIFICATES.md`](../SECRETS_AND_CERTIFICATES.md). If you're validating tokens
+[Secrets and certificates](../SECRETS_AND_CERTIFICATES.md). If you're validating tokens
 issued elsewhere (ES256/RS256), use `JwtOptions(publicKeyPEM:)` instead of `hmacSecret`.
 
 ## A custom scheme — API key header
@@ -43,7 +43,7 @@ app.useAuthentication(
 Both schemes are registered in one `.useAuthentication(...)` call — either one satisfies
 `auth: .authenticated`. Use `auth: .scheme("apiKey")` on a route to require that scheme specifically
 (e.g. an internal endpoint no human token should ever reach). Store `expectedKey` the same way as
-any other secret — see [`../SECRETS_AND_CERTIFICATES.md`](../SECRETS_AND_CERTIFICATES.md).
+any other secret — see [Secrets and certificates](../SECRETS_AND_CERTIFICATES.md).
 
 ## Roles and policies
 
@@ -72,7 +72,7 @@ app.useAuthentication(
 builder.useHttps(p12: .bundle("server.p12"), passwordKeychainKey: "tlsP12Password")
 ```
 
-See [`../SECRETS_AND_CERTIFICATES.md`](../SECRETS_AND_CERTIFICATES.md) for generating the
+See [Secrets and certificates](../SECRETS_AND_CERTIFICATES.md) for generating the
 certificate (self-signed for development/trusted-LAN, CA-issued for a public domain).
 
 ## Rate limiting

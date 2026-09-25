@@ -174,7 +174,7 @@ persisted (see the privacy note below).
 
 The dashboard only replaces what's on the *device's own screen*. `/` and every other route you map
 still serve real pages to whoever hits the server from a browser — the dashboard doesn't own
-routing. See [`EXAMPLES_BASIC.md`](EXAMPLES_BASIC.md) and [`EXAMPLES_ADVANCED.md`](EXAMPLES_ADVANCED.md)
+routing. See [Basic examples](EXAMPLES_BASIC.md) and [Advanced examples](EXAMPLES_ADVANCED.md)
 for the four ways to serve a page (static files, SPA, zero-build Vue, server-rendered templates) —
 any of them can run at the same time as the dashboard, since the device screen and the HTTP server
 are two independent outputs of the same `WebApplication`.
