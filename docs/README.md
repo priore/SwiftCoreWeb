@@ -8,9 +8,9 @@ whole library reference first. If you just want the fastest possible taste of th
 something real.
 
 This index mirrors the folder structure: **Foundation** (shared by every app), then two parallel
-tracks — **Web** (serving pages/UI) and **API** (serving JSON/REST) — then **Reference**. Both
-tracks follow the same shape (Getting Started → Basic Examples → Advanced Examples → Auth &
-Security), so once you know one track you already know how to navigate the other.
+sections — **Web** (serving pages/UI) and **API** (serving JSON/REST) — then **Reference**. Both
+sections follow the same shape (Getting Started → Basic Examples → Advanced Examples → Auth &
+Security), so once you know one you already know how to navigate the other.
 
 ## Foundation
 
@@ -22,7 +22,7 @@ Read these first, regardless of whether you're building a web app, an API, or bo
 - [Testing guide](TESTING_GUIDE.md) — testing routes, auth, and middleware with `TestHost`.
 - [FAQ and troubleshooting](FAQ_AND_TROUBLESHOOTING.md) — the obvious questions, the "is X even possible on iOS" questions, and common gotchas.
 
-## Web track — serving pages and UI
+## Web — serving pages and UI
 
 - [Getting started](web/GETTING_STARTED.md) — your first served page: static files, SPA hosting, server-rendered templates.
 - [Basic examples](web/EXAMPLES_BASIC.md) — a static page, a form post, a server-rendered page with a model.
@@ -32,7 +32,7 @@ Read these first, regardless of whether you're building a web app, an API, or bo
 
 *(Coming later, once the feature ships: a Live Pages guide covering Vue components wired to Swift event handlers.)*
 
-## API track — serving JSON and REST
+## API — serving JSON and REST
 
 - [Getting started](api/GETTING_STARTED.md) — your first JSON route, `Results`, `ProblemDetails`.
 - [Basic examples](api/EXAMPLES_BASIC.md) — a single GET/POST route, parameter binding from query/route/body.

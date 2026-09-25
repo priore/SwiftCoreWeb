@@ -3,7 +3,7 @@
 [← docs index](README.md)
 
 You are here if: you know Hello World already and want to understand how requests actually flow
-through the framework — this underlies both the Web and API tracks.
+through the framework — this underlies both Web and API guides.
 
 ## Two routing styles, pick per route
 
@@ -91,7 +91,7 @@ Built-ins:
 | `.useSecurityHeaders()` | Standard security response headers, including a `Content-Security-Policy` |
 | `.useAuthentication(_:)` | Pluggable auth schemes — see [Secrets and certificates](SECRETS_AND_CERTIFICATES.md) for setting up JWT signing keys |
 | `.useAuthorization(policies:)` | Role/policy checks after authentication |
-| `.useStaticFiles(root:)` | Serves files as-is (Web track) |
+| `.useStaticFiles(root:)` | Serves files as-is (Web) |
 | `.useRequestLogging()` | Structured request logs via `os.Logger` |
 
 ## Server engine, in one sentence
