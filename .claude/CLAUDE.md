@@ -23,6 +23,12 @@ Before writing or modifying any `*.swift` file, read [.claude/swift-style.md](./
 
 This repository is public on GitHub. Before adding any new file, folder, or persistence mechanism, read [.claude/rules/sensitive-data.md](./rules/sensitive-data.md) — mandatory check for credentials/secrets never ending up in a commit.
 
+## Docs (`docs/`) maintenance
+
+`docs/` is the human-facing wiki (also synced to GitHub Wiki, see `.github/workflows/wiki-sync.yml`),
+distinct from `AI-Workspace/` (AI-facing knowledge base — never cross-link the two as if interchangeable).
+Before adding or extending a feature with Web or API surface, read [.claude/rules/docs-maintenance.md](./rules/docs-maintenance.md) — keeps the two-branch (`docs/web/`, `docs/api/`) structure stable and homogeneous.
+
 ## Dependabot triage
 
 Use the `dependabot-triage` agent ([.claude/agents/dependabot-triage.md](./agents/dependabot-triage.md)) when asked to check/manage the repo's Dependabot PRs.
