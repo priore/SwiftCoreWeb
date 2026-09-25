@@ -11,8 +11,8 @@ want to read a whole guide to find the answer.
 
 Secure by default. Nothing leaves the device, so there's no permission prompt and no Info.plist key
 needed. Call `builder.listenOnAllInterfaces()` explicitly to expose the server to the local network
-— see [Web track: auth and security](web/AUTH_AND_SECURITY.md) and
-[API track: auth and security](api/AUTH_AND_SECURITY.md) for what to protect once you do.
+— see [Web: auth and security](web/AUTH_AND_SECURITY.md) and
+[API: auth and security](api/AUTH_AND_SECURITY.md) for what to protect once you do.
 
 #### Why does `OPTIONS` answer itself without a handler?
 
@@ -30,7 +30,7 @@ Only if you call `listenOnAllInterfaces()` or `advertise(name:)` — those put t
 network, which needs `NSLocalNetworkUsageDescription` and `NSBonjourServices` keys so iOS can show
 its "Allow this app to find devices on your local network?" prompt. The default loopback-only
 binding needs nothing extra. See [Getting started](GETTING_STARTED.md) and
-[Web track: auth and security](web/AUTH_AND_SECURITY.md) for the exact keys.
+[Web: auth and security](web/AUTH_AND_SECURITY.md) for the exact keys.
 
 #### Will running a server get my app rejected by App Review?
 
@@ -64,7 +64,7 @@ doesn't exist:
   [Routing and middleware](ROUTING_AND_MIDDLEWARE.md).
 - **Two authentication schemes at once** — e.g. JWT for browser/app clients and a custom API-key
   header for machine-to-machine calls, both registered in one `.useAuthentication(...)` call. See
-  [API track: auth and security](api/AUTH_AND_SECURITY.md).
+  [API: auth and security](api/AUTH_AND_SECURITY.md).
 - **Serving a browser-facing site and a native on-device dashboard from the same `WebApplication`**
   — the dashboard only replaces what's on the device's own screen; every HTTP route still serves
   real responses to network clients. See [On-device dashboard guide](web/DASHBOARD_GUIDE.md).

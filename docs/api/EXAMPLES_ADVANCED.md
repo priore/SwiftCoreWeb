@@ -1,4 +1,4 @@
-# API track: advanced examples
+# API: advanced examples
 
 [← docs index](../README.md)
 

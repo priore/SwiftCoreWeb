@@ -1,4 +1,4 @@
-# API track: basic examples
+# API: basic examples
 
 [← docs index](../README.md)
 
