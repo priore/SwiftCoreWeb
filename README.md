@@ -519,4 +519,4 @@ Scan the code below with your wallet, or copy the address. Alternatively you can
 |Donate with BTC (Bitcoin)|
 |:------------:|
 |![](https://www.prioregroup.com/images/priore_btc_segwit_binance.jpg)|
-|`BTC Address (SegWit) : bc1q6rjOuuwu9k2fvs5n5elmqy9v4ljazhexejykjm`|
+|`BTC Address (SegWit) : bc1q6rj0uuwu9k2fvs5n5elmqy9v4ljazhexejykjm`|
