@@ -19,7 +19,7 @@ Key terms and concepts used throughout the project and this Knowledge Base.
 | **`RateLimiter`** | Actor implementing a token bucket per client IP; runs before the middleware pipeline (early-gate protection). |
 | **Showcase app** | The example iOS app under `Showcase/ShowcaseApp/` demonstrating the framework; not an SPM library target. |
 | **PolyForm Noncommercial 1.0.0** | The project's license: source-available, free for noncommercial use, not OSI-approved open-source — never call this project "open-source". |
-| **🟢 / 🟡 / 🔴** | Confidence markers used throughout this Knowledge Base: confirmed by code / inferred / hypothesis (see [BOOTSTRAP.md](BOOTSTRAP.md)). |
+| **🟢 / 🟡 / 🔴** | Confidence markers used throughout this Knowledge Base: confirmed by code / inferred / hypothesis. |
 
 ## Review Checklist
 

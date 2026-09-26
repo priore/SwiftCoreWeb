@@ -1,6 +1,6 @@
 # HelloWorldApp
 
-Free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/); commercial use requires a separate license from the author. Source-available, not open-source. See `LICENSE` at the repository root.
+Free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0); commercial use requires a separate commercialization agreement with the author. Source-available, not open-source. See `LICENSE` at the repository root.
 
 Minimal, runnable SwiftCoreWeb sample — unlike `Showcase/ShowcaseApp` (source files only, no `.xcodeproj`), this one is a real Xcode project you can open and press Run.
 
