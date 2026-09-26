@@ -1,12 +1,12 @@
 # AI Workspace
 
-Evolving Knowledge Base for this project, meant to accompany it through its entire lifecycle. See [BOOTSTRAP.md](BOOTSTRAP.md) for the operating rules and [WORKSPACE_MANIFEST.md](WORKSPACE_MANIFEST.md) for the full document catalog, dependencies, and generation order.
+Evolving Knowledge Base for this project, meant to accompany it through its entire lifecycle. See [WORKSPACE_MANIFEST.md](WORKSPACE_MANIFEST.md) for the full document catalog, dependencies, and generation order.
 
 ## Review Checklist
 
 - Completeness
-  - [ ] Purpose stated
-  - [ ] Pointers to BOOTSTRAP.md and WORKSPACE_MANIFEST.md present
+  - [x] Purpose stated
+  - [x] Pointer to WORKSPACE_MANIFEST.md present (BOOTSTRAP.md was referenced but never existed in this repo — link removed)
 - Accuracy
   - [ ] Content matches current workspace structure
 - Consistency

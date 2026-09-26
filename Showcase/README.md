@@ -1,6 +1,6 @@
 # SwiftCoreWeb Showcase
 
-Free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/); commercial use requires a separate license from the author. Source-available, not open-source. See `LICENSE` at the repository root.
+Free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0); commercial use requires a separate commercialization agreement with the author. Source-available, not open-source. See `LICENSE` at the repository root.
 
 This directory is a real, compilable set of Swift source files demonstrating every piece of SwiftCoreWeb end to end: a macro-based controller and closure Minimal API routes on one server, two authentication schemes, a `WKWebView`-hosted Vue frontend, SwiftUI lifecycle binding, and keep-awake. **It is not an Xcode project** — there is no `.xcodeproj` here — because the framework itself only ships as an SPM package; wiring these files into an app target is a five-minute manual step, below.
 
