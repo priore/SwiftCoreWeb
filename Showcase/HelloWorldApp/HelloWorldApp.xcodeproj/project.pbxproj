@@ -10,6 +10,7 @@
 		738380D9F968414DE0200313 /* HelloWorldApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BDA60158ED02D21601286C9 /* HelloWorldApp.swift */; };
 		7A49C8EA1715876707D13B6B /* HelloWorldServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26EBA225F4EC19981F7C3893 /* HelloWorldServer.swift */; };
 		B6A4BAAF3B710F306CEBD9CB /* SwiftCoreWebDashboard in Frameworks */ = {isa = PBXBuildFile; productRef = 67BF1BD377C0EC253FB16CE5 /* SwiftCoreWebDashboard */; };
+		C47363C730B9EBEF8871A86D /* Views in Resources */ = {isa = PBXBuildFile; fileRef = F9F685577E5734231BCAC1F7 /* Views */; };
 		C9FA5B7BFDCD312EAE5F8907 /* HelloWorldRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF8817E5275920A74C5CB61 /* HelloWorldRootView.swift */; };
 		D979496EDE3931D1DAD2B9C1 /* SwiftCoreWeb in Frameworks */ = {isa = PBXBuildFile; productRef = B5D16D529B7737532A79329C /* SwiftCoreWeb */; };
 		F2BE53891EF1F7FE4A355959 /* www in Resources */ = {isa = PBXBuildFile; fileRef = 60008E75C10468058C6CFB6B /* www */; };
@@ -22,6 +23,7 @@
 		3AF8817E5275920A74C5CB61 /* HelloWorldRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelloWorldRootView.swift; sourceTree = "<group>"; };
 		60008E75C10468058C6CFB6B /* www */ = {isa = PBXFileReference; lastKnownFileType = folder; path = www; sourceTree = SOURCE_ROOT; };
 		956416AE7E3A25D3212570F2 /* SwiftCoreWeb */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SwiftCoreWeb; path = ../..; sourceTree = SOURCE_ROOT; };
+		F9F685577E5734231BCAC1F7 /* Views */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Views; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +50,7 @@
 		4903DFE82568EBAAE0085088 = {
 			isa = PBXGroup;
 			children = (
+				F9F685577E5734231BCAC1F7 /* Views */,
 				60008E75C10468058C6CFB6B /* www */,
 				FC05337FB123A09EE7617B17 /* Packages */,
 				8AAD4BE10B84A73F9CA229E5 /* Sources */,
@@ -135,6 +138,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C47363C730B9EBEF8871A86D /* Views in Resources */,
 				F2BE53891EF1F7FE4A355959 /* www in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
