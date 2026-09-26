@@ -145,8 +145,7 @@ app.mapPage("/orders/new", OrderPage.self)
 ## Out of scope
 
 File upload, shared layouts, nested components (one page = one component), server push (possible
-later via the existing `mapSse`), a `@Page` macro. See
-`AI-Workspace/Plans/LIVE_PAGES_PLAN.md` for the full design log.
+later via the existing `mapSse`), a `@Page` macro.
 
 ## Next
 

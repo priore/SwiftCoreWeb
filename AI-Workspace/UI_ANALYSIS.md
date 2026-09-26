@@ -46,8 +46,7 @@ in this showcase, `/` still serves plain HTML to browsers as before.
 | `DashboardStyle.swift` | Persists the chosen style in `UserDefaults`. |
 
 Both styles read the same data (`DashboardModel`) and the same shared components; only tile layout
-and visual language differ. Full design rationale in
-[DEVICE_DASHBOARD_PLAN.md](Plans/DEVICE_DASHBOARD_PLAN.md). 🟢 (`Sources/SwiftCoreWebDashboard/`,
+and visual language differ. 🟢 (`Sources/SwiftCoreWebDashboard/`,
 `Showcase/HelloWorldApp/Sources/HelloWorldRootView.swift`)
 
 ## Web-Side UI (served content, not native)

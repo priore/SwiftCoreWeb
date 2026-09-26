@@ -58,7 +58,7 @@ Control / Native Cards), switchable at runtime, persisted in `UserDefaults`
 24h/7d/30d). Optional HTTP surface: `app.mapMetrics(path:)` exposes the same metrics as JSON + SSE
 for external consumers, disabled unless called explicitly. The showcase app
 (`Showcase/HelloWorldApp/`) uses this dashboard as its default screen instead of a `WKWebView`. 🟢
-(`Sources/SwiftCoreWebDashboard/`, `Package.swift`, [DEVICE_DASHBOARD_PLAN.md](../Plans/DEVICE_DASHBOARD_PLAN.md))
+(`Sources/SwiftCoreWebDashboard/`, `Package.swift`)
 
 ## Live Pages (server-rendered Vue, Livewire-style)
 
@@ -69,7 +69,7 @@ state, no client-side JS written by the developer. Templates are precompiled **o
 `VueCompilerDOM.compile(template, { hoistStatic: true })`, cached per template name and
 mtime-invalidated only in `.development`. This avoids the browser ever running `Function("Vue",
 code)`, which a strict `default-src 'self'` CSP (`useSecurityHeaders()`) blocks — confirmed against
-real WebKit/Safari, see `AI-Workspace/Plans/LIVE_PAGES_PLAN.md` step 1. The compiled render function
+real WebKit/Safari. The compiled render function
 is served as a classic script at `GET /_live/<page>.js`, registered once per page/`WebApplication`.
 
 Each event round-trip: the client (`/_framework/live.js`, served by `useVue()`) posts
@@ -81,7 +81,7 @@ constant-time, per-process `SymmetricKey`), decodes the previous state from `sna
 `af` on every `POST`. `PagesRootBox`/`LiveScriptRegistry`/`PagesCompilerBox` are keyed per
 `ObjectIdentifier(WebApplication)` (multiple `WebApplication`s share a process in `TestHost`); the
 HMAC signing key stays process-wide. 🟢 (`Sources/SwiftCoreWeb/Pages.swift`,
-`VueTemplateCompiler.swift`, `VueRuntime.swift`, `AI-Workspace/Plans/LIVE_PAGES_PLAN.md`)
+`VueTemplateCompiler.swift`, `VueRuntime.swift`)
 
 ## Lifecycle & iOS Integration
 
