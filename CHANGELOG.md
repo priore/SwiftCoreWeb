@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-09-26
+
+### Added — Live Pages
+- `Page` protocol and `app.mapPage(...)`: a server-rendered page model where a `$swift('name')` call
+  in the Vue template runs an `onEvent("name")` handler in Swift and re-renders — no client-side JS
+  or DOM code to write.
+- `form` (typed, `Codable`) for user-edited fields bound with `v-model="form.x"`; everything else on
+  the page struct is server state, visible to the browser for rendering but not client-modifiable —
+  the rendered snapshot is signed.
+- `VueTemplateCompiler`: compiles `.html` Vue templates, with dev-mode recompilation on file mtime
+  change and production caching.
+- `/_framework/live.js` client script served automatically for pages using `mapPage`.
+- Session-scoped cookie helpers and `ContentRoot.path` for locating page templates.
+- `HelloWorldApp` showcase counter demo built on Live Pages.
+- Docs: `docs/web/LIVE_PAGES_GUIDE.md`.
+
 ## [1.0.0] - 2026-09-24
 
 First public release.
