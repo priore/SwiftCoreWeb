@@ -30,6 +30,20 @@ This replaces a previous draft of generic, unverifiable issues ("macro system li
 
 **Status:** By design; the framework's architecture is stated to not block adding it later. 🟢
 
+### I004: Live Pages state is visible to the client, requires JavaScript, and has no file upload
+
+**Description:** A `Page`'s entire encoded state ships to the browser in the signed snapshot (needed
+so Vue can render it) — it is tamper-proof, not secret. The signing key is per-process
+(`// ponytail:` comment, `Pages.swift`), so pages reload after a server restart. Sessions
+(`useSession()`) are in-memory, single-process. There is no file upload support. The page is inert
+without JavaScript (no server-rendered fallback markup for `Page` templates).
+
+**Impact:** Don't put secrets in page state; don't rely on Live Pages surviving a restart or working
+without JS; use a plain route for file uploads.
+
+**Status:** By design, documented in `AI-Workspace/Plans/LIVE_PAGES_PLAN.md` ("Fuori scope") and in
+`docs/web/LIVE_PAGES_GUIDE.md`. 🟢 (`Sources/SwiftCoreWeb/Pages.swift`, `Session.swift`)
+
 ## Resolved Issues (fixed during the delivery log, kept for history)
 
 ### R001: `Encodable` DTO routes silently returned empty `204` instead of `200` JSON

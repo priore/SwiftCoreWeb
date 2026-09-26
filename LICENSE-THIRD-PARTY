@@ -7,7 +7,9 @@ components, distributed under their own licenses, reproduced below
 verbatim as required by those licenses.
 
 --------------------------------------------------------------------------------
-1. Vue 3 (embedded runtime, `Resources/vue/vue.esm-browser.prod.js`)
+1. Vue 3 (embedded runtime, `Resources/vue/vue.esm-browser.prod.js`; server-side
+   template compiler, `Resources/vue/compiler-dom.global.prod.js`, same pinned
+   version, used by `VueTemplateCompiler` and never served to the browser)
    Homepage: https://github.com/vuejs/core
    License:  MIT
 --------------------------------------------------------------------------------

@@ -17,6 +17,18 @@ Notable fixes folded into this baseline before it was committed (root-caused, no
 - Pre-GA `NIOAsyncChannel` member names and an `NSLock` used from async context.
 - `swift-collections` pinned to `exact: "1.6.0"` to work around a missing runtime symbol on older host OSes.
 
+## Since the baseline
+
+### Live Pages (`Page`, `mapPage`, `usePages`, `/_framework/live.js`)
+
+Server-rendered Vue pages driven by Swift state, Livewire/Blazor-Server-style: a template compiled
+on the server (JavaScriptCore + vendored `@vue/compiler-dom`, no `unsafe-eval` needed under
+`useSecurityHeaders()`), state round-tripped in an HMAC-signed snapshot, form binding with
+field-level errors, antiforgery cookie, and a small client (`/_framework/live.js`) handling the
+event queue/debounce/redirect. See [ARCHITECTURE.md](../architecture/ARCHITECTURE.md#live-pages-server-rendered-vue-livewire-style),
+[DECISIONS.md#d007](DECISIONS.md#d007-live-pages-templates-precompiled-server-side-via-javascriptcore-snapshot-signed-with-a-per-process-hmac-key),
+and `docs/web/LIVE_PAGES_GUIDE.md`. 🟢
+
 ## Versioning Strategy
 
 None adopted yet — there is no version number in `Package.swift` and no git tags exist (`git log` shows a single commit). This section will be filled in if/when the project adopts semantic versioning. 🟢

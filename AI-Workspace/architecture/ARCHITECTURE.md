@@ -60,6 +60,29 @@ for external consumers, disabled unless called explicitly. The showcase app
 (`Showcase/HelloWorldApp/`) uses this dashboard as its default screen instead of a `WKWebView`. 🟢
 (`Sources/SwiftCoreWebDashboard/`, `Package.swift`, [DEVICE_DASHBOARD_PLAN.md](../Plans/DEVICE_DASHBOARD_PLAN.md))
 
+## Live Pages (server-rendered Vue, Livewire-style)
+
+`Page`/`mapPage` (`Sources/SwiftCoreWeb/Pages.swift`) let a Vue template be driven entirely by Swift
+state, no client-side JS written by the developer. Templates are precompiled **on the server** via
+`VueTemplateCompiler` (`Sources/SwiftCoreWeb/VueTemplateCompiler.swift`): a lazy `JSContext`
+(JavaScriptCore) evaluates the vendored `@vue/compiler-dom` browser build and calls
+`VueCompilerDOM.compile(template, { hoistStatic: true })`, cached per template name and
+mtime-invalidated only in `.development`. This avoids the browser ever running `Function("Vue",
+code)`, which a strict `default-src 'self'` CSP (`useSecurityHeaders()`) blocks — confirmed against
+real WebKit/Safari, see `AI-Workspace/Plans/LIVE_PAGES_PLAN.md` step 1. The compiled render function
+is served as a classic script at `GET /_live/<page>.js`, registered once per page/`WebApplication`.
+
+Each event round-trip: the client (`/_framework/live.js`, served by `useVue()`) posts
+`{ snapshot, checksum, form, event, args }`; the server verifies `checksum` (HMAC-SHA256,
+constant-time, per-process `SymmetricKey`), decodes the previous state from `snapshot`, overlays
+`form` field-by-field (a field that fails to decode keeps its old value and lands in
+`PageContext.errors`, never a 400), runs `onEvent`, and replies with a new signed snapshot (or a
+`redirect`). Antiforgery: an `__scw_af` cookie minted on first `GET`, checked against the snapshot's
+`af` on every `POST`. `PagesRootBox`/`LiveScriptRegistry`/`PagesCompilerBox` are keyed per
+`ObjectIdentifier(WebApplication)` (multiple `WebApplication`s share a process in `TestHost`); the
+HMAC signing key stays process-wide. 🟢 (`Sources/SwiftCoreWeb/Pages.swift`,
+`VueTemplateCompiler.swift`, `VueRuntime.swift`, `AI-Workspace/Plans/LIVE_PAGES_PLAN.md`)
+
 ## Lifecycle & iOS Integration
 
 `NetworkWatchdog` (`NWPathMonitor`) rebinds listeners on interface/IP change. `LifecycleSupport` provides `bindToLifecycle()` plus keep-awake (`isIdleTimerDisabled`) and optional screen-dimming helpers; the showcase app additionally wires SwiftUI's `ScenePhase` directly (see [Showcase/ShowcaseApp/Sources/ShowcaseRootView.swift](../../Showcase/ShowcaseApp/Sources/ShowcaseRootView.swift)) to start/stop the server as the app foregrounds/backgrounds. `stopAsync(timeout:)` drains in-flight requests before closing sockets. 🟢

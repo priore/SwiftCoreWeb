@@ -29,8 +29,7 @@ Read these first, regardless of whether you're building a web app, an API, or bo
 - [Advanced examples](web/EXAMPLES_ADVANCED.md) — a linked multi-page site, zero-build Vue, the full Vite workflow, WebSocket and SSE pages.
 - [Auth and security](web/AUTH_AND_SECURITY.md) — protecting pages, cookies/sessions, CORS, security headers.
 - [On-device dashboard guide](web/DASHBOARD_GUIDE.md) — the on-device dashboard course (`SwiftCoreWebDashboard`): a live console on the device's own screen for the server running on it.
-
-*(Coming later, once the feature ships: a Live Pages guide covering Vue components wired to Swift event handlers.)*
+- [Live Pages guide](web/LIVE_PAGES_GUIDE.md) — Vue components wired to Swift event handlers, Livewire-style: click in the browser, run Swift on the server, page updates.
 
 ## API — serving JSON and REST
 
