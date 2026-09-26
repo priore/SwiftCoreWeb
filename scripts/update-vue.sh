@@ -13,12 +13,16 @@ VERSION="${1:?Usage: update-vue.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST_DIR="$ROOT/Sources/SwiftCoreWeb/Resources/vue"
 DEST_FILE="$DEST_DIR/vue.esm-browser.prod.js"
+COMPILER_FILE="$DEST_DIR/compiler-dom.global.prod.js"
 RUNTIME_SWIFT="$ROOT/Sources/SwiftCoreWeb/VueRuntime.swift"
 
 mkdir -p "$DEST_DIR"
 
 echo "Downloading vue@$VERSION..."
 curl -fsSL "https://cdn.jsdelivr.net/npm/vue@$VERSION/dist/vue.esm-browser.prod.js" -o "$DEST_FILE"
+
+echo "Downloading @vue/compiler-dom@$VERSION (must stay in lockstep with vue)..."
+curl -fsSL "https://cdn.jsdelivr.net/npm/@vue/compiler-dom@$VERSION/dist/compiler-dom.global.prod.js" -o "$COMPILER_FILE"
 
 echo "Updating VueRuntime.version..."
 sed -i.bak "s/public static let version = \".*\"/public static let version = \"$VERSION\"/" "$RUNTIME_SWIFT"
