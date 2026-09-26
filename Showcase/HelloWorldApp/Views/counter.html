@@ -1,0 +1,5 @@
+<p>Hello, {{ name || 'world' }}!</p>
+<input v-model="name" @change="$swift('name')">
+
+<p>Count: {{ count }}</p>
+<button @click="$swift('increment')" :disabled="$live.busy">+1</button>

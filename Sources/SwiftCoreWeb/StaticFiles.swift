@@ -16,6 +16,8 @@ func resolveContentRoot(_ root: ContentRoot) -> String? {
     case .documents(let name):
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(name).path
+    case .path(let absolute):
+        return absolute
     }
 }
 
