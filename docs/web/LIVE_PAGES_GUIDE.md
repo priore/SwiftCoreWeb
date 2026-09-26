@@ -22,9 +22,15 @@ struct OrderPage: Page {
     static let title = "New order"
 
     struct Form: Codable, Sendable {
-        var name = ""; var qty: Int? = 1; var country = ""; var city = ""
-        var express = false; var payment = "card"; var extras: [String] = []
-        var notes = ""; var search = ""
+        var name = ""
+        var qty: Int? = 1
+        var country = ""
+        var city = ""
+        var express = false
+        var payment = "card"
+        var extras: [String] = []
+        var notes = ""
+        var search = ""
     }
     var form = Form()
     var countries: [Choice] = [Choice("IT", "Italy"), Choice("FR", "France")]
