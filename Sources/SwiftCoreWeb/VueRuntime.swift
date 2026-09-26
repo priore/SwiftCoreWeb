@@ -48,12 +48,96 @@ export const api = {
 };
 """
 
+/// The Live Pages client (the Vue Live Pages design, step 5): mounts the
+/// page's precompiled render function against a reactive snapshot, and
+/// round-trips every `$swift(event)` call to the same URL as a POST. Reuses
+/// `request` from `api.js` (JSON in, ProblemDetails-aware errors out) rather
+/// than hand-rolling `fetch` again.
+///
+/// Queues one request at a time (further events during a request queue up
+/// and send with the latest `form` once it completes); `debounce` delays
+/// sending an event by that many ms, restarting on repeated calls. On
+/// response, every non-`form` field is applied; `form` fields are applied
+/// only where the user hasn't retyped that key since the request was sent
+/// (no clobbering an in-flight edit).
+private let liveHelperScript = """
+import * as Vue from '/_framework/vue.js';
+import { request } from '/_framework/api.js';
+
+function mountLivePage() {
+  const dataEl = document.getElementById('__live');
+  const payload = JSON.parse(dataEl.textContent);
+  let snapshot = payload.snapshot;
+  let checksum = payload.checksum;
+  const state = Vue.reactive(JSON.parse(snapshot).page);
+
+  const live = Vue.reactive({ busy: false });
+  let queued = null;
+  let sentFormKeys = null;
+
+  function applyResponse(json) {
+    if (json.redirect) { location.assign(json.redirect); return; }
+    snapshot = json.snapshot;
+    checksum = json.checksum;
+    const nextPage = JSON.parse(snapshot).page;
+    for (const key of Object.keys(nextPage)) {
+      if (key === 'form') continue;
+      state[key] = nextPage[key];
+    }
+    const nextForm = nextPage.form || {};
+    const currentForm = state.form || {};
+    for (const key of Object.keys(nextForm)) {
+      if (sentFormKeys && !sentFormKeys.has(key)) continue; // user edited it meanwhile, keep their value
+      currentForm[key] = nextForm[key];
+    }
+  }
+
+  async function send(event, args) {
+    if (live.busy) { queued = { event, args }; return; }
+    live.busy = true;
+    sentFormKeys = new Set(Object.keys(state.form || {}));
+    try {
+      const json = await request('POST', location.pathname, { snapshot, checksum, form: state.form, event, args });
+      applyResponse(json);
+    } catch (error) {
+      if (error.status === 400) { location.reload(); return; }
+      console.error(error);
+      document.dispatchEvent(new CustomEvent('live:error', { detail: error }));
+    } finally {
+      live.busy = false;
+      sentFormKeys = null;
+      if (queued) { const next = queued; queued = null; send(next.event, next.args); }
+    }
+  }
+
+  const timers = {};
+  function swift(event, options) {
+    const args = (options && options.args) || [];
+    const debounce = options && options.debounce;
+    if (debounce) {
+      clearTimeout(timers[event]);
+      timers[event] = setTimeout(() => send(event, args), debounce);
+      return;
+    }
+    send(event, args);
+  }
+
+  const render = window.__scwLive[Object.keys(window.__scwLive)[0]](Vue);
+  const app = Vue.createApp({ render, setup: () => state });
+  app.config.globalProperties.$swift = swift;
+  app.config.globalProperties.$live = live;
+  app.mount('#app');
+}
+
+mountLivePage();
+"""
+
 extension WebApplication {
     /// Serves the built-in Vue 3 runtime at `/_framework/vue.js` with
     /// immutable caching, plus the optional `/_framework/api.js` `fetch`
-    /// helper (the built-in Vue runtime design). Precompressed `.gz`/`.br` sidecars are served
-    /// automatically when present alongside the bundled resource and the
-    /// client's `Accept-Encoding` allows it.
+    /// helper and `/_framework/live.js` Live Pages client (the built-in Vue runtime design).
+    /// Precompressed `.gz`/`.br` sidecars are served automatically when present
+    /// alongside the bundled resource and the client's `Accept-Encoding` allows it.
     @discardableResult
     public func useVue() -> Self {
         routeRegistry.register(method: .get, path: "/_framework/vue.js", auth: .none, summary: nil) { ctx in
@@ -68,6 +152,13 @@ extension WebApplication {
             headers["Content-Type"] = "text/javascript; charset=utf-8"
             headers["Cache-Control"] = "public, max-age=31536000, immutable"
             return HttpResult(HttpResponse(status: .ok, headers: headers, body: .text(apiHelperScript)))
+        }
+
+        routeRegistry.register(method: .get, path: "/_framework/live.js", auth: .none, summary: nil) { _ in
+            var headers = HttpHeaders()
+            headers["Content-Type"] = "text/javascript; charset=utf-8"
+            headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return HttpResult(HttpResponse(status: .ok, headers: headers, body: .text(liveHelperScript)))
         }
 
         return self
