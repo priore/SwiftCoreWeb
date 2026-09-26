@@ -75,7 +75,35 @@ enum HelloWorldServer {
         // working on a hard refresh too.
         app.useSpa(root: .bundle("www"))
 
+        // Vue Live Pages demo (see `AI-Workspace/Plans/LIVE_PAGES_PLAN.md`):
+        // one text component + one button, proving the round trip —
+        // click/type in the browser, Swift on the server updates state, the
+        // page re-renders. `useSecurityHeaders()` shows the CSP is
+        // compatible (template precompiled server-side, no `unsafe-eval`).
+        app.useSecurityHeaders()
+        app.usePages(root: .bundle("Views"))
+        app.mapPage("/counter", CounterPage.self)
+
         return app
+    }
+}
+
+/// Minimal Live Pages demo: a name field and an increment button, nothing
+/// else — the full component catalog (select, checkbox, radio, textarea,
+/// debounce, session, redirect) lives in `docs/LIVE_PAGES_GUIDE.md`, not here.
+struct CounterPage: Page {
+    static let template = "counter.html"
+    static let title = "Counter"
+
+    struct Form: Codable, Sendable {
+        var name = ""
+    }
+    var form = Form()
+    var count = 0
+
+    mutating func onEvent(_ event: String, _ ctx: PageContext) async throws -> PageAction {
+        if event == "increment" { count += 1 }
+        return .render
     }
 }
 

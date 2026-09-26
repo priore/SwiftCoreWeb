@@ -17,6 +17,9 @@ targets:
       - path: www
         type: folder
         buildPhase: resources
+      - path: Views
+        type: folder
+        buildPhase: resources
     info:
       path: Info.plist
       properties:
