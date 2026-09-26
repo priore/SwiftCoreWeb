@@ -29,6 +29,10 @@ Those links are rewritten to an absolute GitHub blob URL instead, only in
 the wiki copy — the docs/ source keeps its normal relative link, which
 works fine for local viewing and for GitHub's own file browser.
 
+Images (![alt](../screenshots/x.png)) are never copied into the wiki repo
+either, so any relative image path — inside docs/ or escaping it — is
+rewritten to an absolute raw.githubusercontent.com URL the same way.
+
 Usage: wiki-flatten.py <docs-dir> <wiki-dir> [--github-repo-url URL]
 """
 import os
@@ -77,30 +81,38 @@ def flatten_page_name(rel_path: str) -> str:
 
 
 def rewrite_links(text: str, src_dir: str, github_repo_url: str) -> str:
-    """Rewrites every [text](relative/path.md#anchor) link in `text`, where
-    `src_dir` is the source file's own directory relative to docs/."""
+    """Rewrites every [text](relative/path#anchor) link and ![alt](relative/path)
+    image in `text`, where `src_dir` is the source file's own directory
+    relative to docs/."""
 
     def rewrite(m: re.Match) -> str:
-        label, target = m.group(1), m.group(2)
+        bang, label, target = m.group(1), m.group(2), m.group(3)
         if re.match(r"^[a-z]+://", target) or target.startswith("/"):
             return m.group(0)
         path, _, anchor = target.partition("#")
-        if not path.endswith(".md"):
+        if not path:
+            # Same-page anchor (#section) — nothing to flatten or rewrite.
             return m.group(0)
         resolved = os.path.normpath(os.path.join(src_dir, path))
-        if resolved.startswith(".."):
-            # Escapes docs/ entirely (../README.md, ../.claude/...) — rewrite to an
-            # absolute GitHub blob URL, since the wiki is a separate repo where a
-            # relative ".." link 404s (see module docstring).
-            repo_relative = os.path.normpath(os.path.join("docs", src_dir, path))
-            absolute = f"{github_repo_url}/blob/master/{repo_relative}"
-            if anchor:
-                absolute += f"#{anchor}"
-            return f"[{label}]({absolute})"
-        new_target = flatten_page_name(resolved) + (("#" + anchor) if anchor else "")
-        return f"[{label}]({new_target})"
+        is_page_link = path.endswith(".md") and not bang
+        if is_page_link and not resolved.startswith(".."):
+            new_target = flatten_page_name(resolved) + (("#" + anchor) if anchor else "")
+            return f"[{label}]({new_target})"
+        # A non-.md asset (image) or a link that escapes docs/ entirely
+        # (../README.md, ../.claude/...) can't be flattened — there's nothing
+        # in this repo's docs/ tree to point at, and images aren't copied into
+        # the wiki repo at all. Rewrite to an absolute GitHub raw/blob URL,
+        # since the wiki is a separate git repo where a relative ".." link
+        # 404s (verified against the live wiki: `../README.md` resolved to
+        # github.com/<repo>/README.md, not .../blob/master/README.md).
+        repo_relative = os.path.normpath(os.path.join("docs", src_dir, path))
+        kind = "raw" if bang else "blob"
+        absolute = f"{github_repo_url}/{kind}/master/{repo_relative}"
+        if anchor:
+            absolute += f"#{anchor}"
+        return f"{bang}[{label}]({absolute})"
 
-    return re.sub(r"\[([^\]]*)\]\(([^)]+\.md[^)]*)\)", rewrite, text)
+    return re.sub(r"(!?)\[([^\]]*)\]\(([^)]+)\)", rewrite, text)
 
 
 def main() -> None:
