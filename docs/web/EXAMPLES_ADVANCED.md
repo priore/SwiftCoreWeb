@@ -145,8 +145,6 @@ app.mapWebSocket("/ws") { socket in
 
 - [Auth and security](AUTH_AND_SECURITY.md) — protecting the pages built above.
 - [On-device dashboard guide](DASHBOARD_GUIDE.md) — a native on-device screen alongside these web routes.
-
-Once Live Pages ships, a Live Pages guide (in this same folder) will cover full Swift-driven
-event round-trips for every Vue component (`v-model`, `@click`, validation, session state) — the
-model where a click in the browser runs Swift on the server and updates the page, with no
-client-side JS to write.
+- [Live Pages guide](LIVE_PAGES_GUIDE.md) — full Swift-driven event round-trips for every Vue
+  component (`v-model`, `@click`, validation, session state): a click in the browser runs Swift on
+  the server and updates the page, with no client-side JS to write.

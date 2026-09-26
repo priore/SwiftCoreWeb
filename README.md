@@ -35,6 +35,36 @@ try await app.runAsync()
 
 Binds to `127.0.0.1:8080` by default — secure by default, no LAN exposure until you explicitly opt in with `builder.listenOnAllInterfaces()`.
 
+## Your first interactive page
+
+A click in the browser runs Swift on the server, and the page updates — no client-side JS to write.
+
+```swift
+struct CounterPage: Page {
+    static let template = "counter.html"
+    var count = 0
+
+    mutating func onEvent(_ event: String, _ ctx: PageContext) async throws -> PageAction {
+        if event == "increment" { count += 1 }
+        return .render
+    }
+}
+
+app.useVue()
+app.usePages(root: .bundle("Views"))
+app.mapPage("/counter", CounterPage.self)
+```
+
+`Views/counter.html` — a Vue template, nothing else:
+
+```html
+<button @click="$swift('increment')">Count: {{ count }}</button>
+```
+
+Three rules: `form` fields (none here) are what the user edits; every other property is server
+state the browser can see but not change; `$swift('name')` calls `onEvent("name")` in Swift. See
+[docs/web/LIVE_PAGES_GUIDE.md](docs/web/LIVE_PAGES_GUIDE.md) for every input type, validation, and session state.
+
 ---
 
 ## Core concepts
@@ -50,7 +80,7 @@ guide with runnable examples — the full index is [`docs/README.md`](docs/READM
 - [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md)
 - [Testing](docs/TESTING_GUIDE.md)
 - [FAQ](docs/FAQ_AND_TROUBLESHOOTING.md)
-- **Building a web app?** → [docs/web/](docs/web/GETTING_STARTED.md) — pages, Vue, sessions, the on-device dashboard
+- **Building a web app?** → [docs/web/](docs/web/GETTING_STARTED.md) — pages, Vue, Live Pages, sessions, the on-device dashboard
 - **Building an API?** → [docs/api/](docs/api/GETTING_STARTED.md) — JSON routes, auth, OpenAPI, CRUD
 
 ---

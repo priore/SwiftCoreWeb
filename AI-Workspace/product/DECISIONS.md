@@ -62,6 +62,27 @@ approximating them.
 **Consequences:** Thermal display is coarse (4 states) but uses only public, App-Store-safe APIs.
 🟢 (`Sources/SwiftCoreWebDashboard/DeviceMetrics.swift`, [DEVICE_DASHBOARD_PLAN.md](../Plans/DEVICE_DASHBOARD_PLAN.md))
 
+### D007: Live Pages templates precompiled server-side via JavaScriptCore, snapshot signed with a per-process HMAC key
+
+**Context:** Live Pages (`Page`/`mapPage`) needed a Vue template to render server-driven state
+without the developer writing client JS, while `useSecurityHeaders()` sets `default-src 'self'`
+(no `unsafe-eval`) — Vue's runtime template compiler uses `Function("Vue", code)`, which that CSP
+blocks. A gate spike (`AI-Workspace/Plans/LIVE_PAGES_PLAN.md` step 1) needed to confirm a
+CSP-compatible alternative existed before the rest of the feature was built.
+
+**Decision:** Compile templates on the server with the vendored `@vue/compiler-dom` browser build
+evaluated in a `JSContext` (JavaScriptCore, iOS 7+, no new platform requirement), serving the output
+as an external classic script (`GET /_live/<page>.js`) — allowed by the CSP since it's same-origin
+and never `eval`-based. Server state round-trips as a JSON snapshot the client treats as opaque,
+signed with HMAC-SHA256 (`CryptoKit`) under a `SymmetricKey` generated once per process (no key on
+disk), verified with `HMAC<SHA256>.isValidAuthenticationCode` (constant-time).
+
+**Consequences:** Gate confirmed on both JavaScriptCore (macOS) and real WebKit/Safari with the CSP
+active before the rest of Live Pages was implemented — no `unsafe-eval` fallback needed. Pages reload
+after a server restart (the signing key isn't persisted) — `// ponytail:` comment in `Pages.swift`
+marks the upgrade path (Keychain) if that's ever needed. 🟢 (`Sources/SwiftCoreWeb/Pages.swift`,
+`VueTemplateCompiler.swift`, `AI-Workspace/Plans/LIVE_PAGES_PLAN.md`)
+
 ## Historical note: discarded FlyingFox/GRDB design
 
 An earlier prompt (`app_http_server_prompt.md`) specified an entirely different architecture (FlyingFox HTTP server, GRDB/SQLite in WAL mode, a `DDoSCoordinator` actor, Google OAuth admin dashboard, Discord/Telegram alerting, social-API helper SDK). **None of this was implemented** — it never appeared anywhere in `Sources/`. It predated and was superseded by `framework_http_server_prompt.md`, and has since been removed from `Prompts/`. Earlier drafts of several AI-Workspace documents appear to have drawn on this discarded prompt or on generic templates instead of the actual code; those documents have since been corrected. 🟢
