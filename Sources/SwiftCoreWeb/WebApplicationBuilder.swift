@@ -18,6 +18,9 @@ public enum P12Source: Sendable {
 public enum ContentRoot: Sendable {
     case bundle(String)
     case documents(String)
+    /// An absolute filesystem path, given as-is. Mainly for tests, which
+    /// point templates/static roots at a `temporaryDirectory`.
+    case path(String)
 }
 
 /// TLS configuration for a listener, built by `.useHttps(...)`.
