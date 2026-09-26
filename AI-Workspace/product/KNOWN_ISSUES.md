@@ -41,8 +41,8 @@ without JavaScript (no server-rendered fallback markup for `Page` templates).
 **Impact:** Don't put secrets in page state; don't rely on Live Pages surviving a restart or working
 without JS; use a plain route for file uploads.
 
-**Status:** By design, documented in `AI-Workspace/Plans/LIVE_PAGES_PLAN.md` ("Fuori scope") and in
-`docs/web/LIVE_PAGES_GUIDE.md`. 🟢 (`Sources/SwiftCoreWeb/Pages.swift`, `Session.swift`)
+**Status:** By design, documented in `docs/web/LIVE_PAGES_GUIDE.md` ("Out of scope"). 🟢
+(`Sources/SwiftCoreWeb/Pages.swift`, `Session.swift`)
 
 ## Resolved Issues (fixed during the delivery log, kept for history)
 
