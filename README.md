@@ -85,10 +85,10 @@ Two more things worth knowing exist, kept out of this file to keep it short:
 
 ## License
 
-SwiftCoreWeb is licensed under the **[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)**.
+SwiftCoreWeb is licensed under the **[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)**.
 
 - **Free for noncommercial use.** Personal projects, education, research, and evaluation are all fine at no cost.
-- **Commercial use requires a separate license from the author.** If your use case makes or supports revenue, get in touch before shipping it.
+- **Commercial use requires a separate commercialization agreement with the author.** If your use case makes or supports revenue, get in touch before shipping it.
 - The source is publicly readable on GitHub, but this is **not** an OSI-approved open-source license. SwiftCoreWeb is **source-available**, not open-source — please don't call it open-source in code, docs, or conversation.
 
 The full license text is in `LICENSE` at the repository root. Third-party components embedded in this package (the Vue 3 runtime, SwiftNIO, swift-nio-transport-services) keep their own upstream licenses and required notices — see `LICENSE-THIRD-PARTY`.
