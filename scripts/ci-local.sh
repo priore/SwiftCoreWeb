@@ -6,9 +6,10 @@
 # whatever's on the GitHub runner image) is replaced with whatever OS this
 # machine actually has installed for that device name.
 #
-# ponytail: no YAML lib, `run:` lines in this workflow are always single
-# plain scalars on one line — grep+sed is enough. Add a real parser if a
-# step ever needs a multi-line `run: |` block.
+# ponytail: no YAML lib, `run:` lines in the build-and-test job are always
+# single plain scalars on one line — grep+sed is enough. Add a real parser
+# if that job ever needs a multi-line `run: |` block. Other jobs (e.g.
+# docs-links, ubuntu-only) are out of scope for this local runner.
 
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,11 +18,14 @@ cd "$ROOT"
 WORKFLOW=".github/workflows/ci.yml"
 [ -f "$WORKFLOW" ] || { echo "missing $WORKFLOW" >&2; exit 1; }
 
-echo "==> Steps from $WORKFLOW:"
-grep -E '^[[:space:]]*run:' "$WORKFLOW" | sed -E 's/^[[:space:]]*run:[[:space:]]*//'
+# Extract only the build-and-test job's block (stops at the next top-level-2-space job key).
+JOB_BLOCK="$(awk '/^  build-and-test:/{f=1} f && /^  [a-zA-Z_-]+:/ && !/^  build-and-test:/{exit} f' "$WORKFLOW")"
+
+echo "==> Steps from $WORKFLOW (build-and-test):"
+echo "$JOB_BLOCK" | grep -E '^[[:space:]]*run:' | sed -E 's/^[[:space:]]*run:[[:space:]]*//'
 echo
 
-grep -E '^[[:space:]]*run:' "$WORKFLOW" | sed -E 's/^[[:space:]]*run:[[:space:]]*//' > /tmp/ci-local-steps.$$
+echo "$JOB_BLOCK" | grep -E '^[[:space:]]*run:' | sed -E 's/^[[:space:]]*run:[[:space:]]*//' > /tmp/ci-local-steps.$$
 trap 'rm -f /tmp/ci-local-steps.$$' EXIT
 
 while IFS= read -r cmd; do
