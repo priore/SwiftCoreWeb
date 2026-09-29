@@ -38,3 +38,5 @@ CI also runs this automatically: `.github/workflows/dependabot-auto-merge.yml` m
 ## Concreteness
 
 Never formulate hypotheses, only concrete ones, mandatory! Verify against the actual source (grep/read) before asserting behavior — this is a library other people build servers on, wrong claims about its API are costly.
+
+**Token-saving rules:** see [.claude/token-savings/rules.md](.claude/token-savings/rules.md)
