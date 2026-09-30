@@ -17,15 +17,26 @@
       }
     }
   },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash(git status|git log|git diff|git add|git commit|git push|git branch)",
+      "Bash(swift build|swift test|xcodebuild)"
+    ]
+  },
   "hooks": {
-    "PreToolUse": [
+    "PostToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Edit",
+        "filter": { "filePath": ".*\\.swift$" },
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"{}\"",
-            "timeout": 5
+            "command": "cd /Users/danilo/Documents/Prioregroup/SwiftCoreWeb && swift build --warnings-as-errors 2>&1 | head -20",
+            "timeout": 30,
+            "failureMode": "warn"
           }
         ]
       }
