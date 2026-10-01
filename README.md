@@ -7,6 +7,7 @@
 [![Vue](https://img.shields.io/badge/Vue-3-brightgreen?logo=vuedotjs)](https://vuejs.org)
 [![SQLite](https://img.shields.io/badge/SQLite-3-lightblue?logo=sqlite)](https://sqlite.org)
 [![Docs](https://img.shields.io/badge/docs-wiki-blue)](docs/README.md)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/15128/baseline)](https://www.bestpractices.dev/projects/15128)
 [![Security Policy](https://img.shields.io/badge/security-policy-orange)](SECURITY.md)
 [![Contributing](https://img.shields.io/badge/contributing-guide-informational)](CONTRIBUTING.md)
 [![Donate with PayPal](https://img.shields.io/badge/PayPal-donate-blue?logo=paypal)](https://paypal.me/prioregroup)
