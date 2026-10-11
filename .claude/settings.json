@@ -17,6 +17,13 @@
       }
     }
   },
+  "model": "sonnet",
+  "advisorModel": "opus",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+  },
+  "effortLevel": "medium",
+  "promptCacheTtl": "1h",
   "subagentPromptCacheTtl": "1h",
   "permissions": {
     "allow": [
