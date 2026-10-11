@@ -17,6 +17,7 @@
       }
     }
   },
+  "subagentPromptCacheTtl": "1h",
   "permissions": {
     "allow": [
       "Read",
