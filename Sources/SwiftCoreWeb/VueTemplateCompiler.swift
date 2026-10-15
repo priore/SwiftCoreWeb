@@ -12,7 +12,7 @@ import NIOConcurrencyHelpers
 /// Precompiles a Vue template into a `render` function on the server (the Live Pages design), so the
 /// browser never runs `Function("Vue", code)` — required under a strict
 /// `default-src 'self'` CSP with no `unsafe-eval` (confirmed against real
-/// WebKit/Safari, see `AI-Workspace/Plans/LIVE_PAGES_PLAN.md` step 1).
+/// WebKit/Safari).
 ///
 /// Uses the vendored `@vue/compiler-dom` browser IIFE build (same pinned
 /// version as `VueRuntime.version`, kept in lockstep by `scripts/update-vue.sh`)

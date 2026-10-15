@@ -4,7 +4,7 @@ Thanks for your interest in contributing. This document applies to any form of c
 
 ## Contribution license
 
-By contributing, you accept the terms of the [CLA](CLA.md): your contribution is released under the project's license ([PolyForm Noncommercial 1.0.0](LICENSE)) and you grant the author (priore) a license to use/relicense it, including for any future commercial agreements.
+By contributing, you accept the terms of the [CLA](CLA.md): your contribution is released under the project's license ([PolyForm Noncommercial 1.0.0](LICENSE)) and you grant the author ([priore](https://github.com/priore)) a license to use/relicense it, including for any future commercial agreements.
 
 For Pull Requests, CLA signing is handled automatically by **CLA Assistant**: on your first contribution, the bot asks for a signature in a PR comment. Once signed, it doesn't need to be signed again for later PRs. Merging stays blocked until the CLA is signed.
 
@@ -16,6 +16,10 @@ For Pull Requests, CLA signing is handled automatically by **CLA Assistant**: on
 4. Sign the CLA when the bot asks.
 5. Make sure `swift build` and `swift test` pass locally before opening the PR.
 6. Wait for the author's review (required, see `CODEOWNERS`).
+
+## Optional: personal-data check
+
+To avoid committing local paths, private IPs or personal email addresses by mistake, you can opt in to the local git hooks: `scripts/git-hooks/install.sh`. A CI job (`hooks-check`) runs the same generic check on pull requests.
 
 ## Style conventions
 

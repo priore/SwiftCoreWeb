@@ -30,4 +30,4 @@ The script fails hard (does not skip) if `ci.yml`'s `xcode-select` target Xcode 
 1. Make the fix.
 2. Run `scripts/ci-local.sh`.
 3. Red → fix → re-run. Repeat until green.
-4. Only then commit, merge to master, and publish (`scripts/publish-github.sh`).
+4. Only then commit and merge to master.

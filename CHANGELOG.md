@@ -69,4 +69,4 @@ First public release.
 - `mapMetrics` documented as requiring `auth:` on untrusted LANs.
 - Legal/security scaffolding: `LICENSE` (PolyForm Noncommercial 1.0.0), `LICENSE-THIRD-PARTY`, `CLA.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`.
 - CI: build/test workflow, Dependabot (Swift + GitHub Actions ecosystems), gitleaks secret scanning on every push/PR, OpenSSF Scorecard, CLA Assistant bot.
-- Internal-only git-publishing toolchain (`scripts/publish-github.sh`, `.githooks/pre-push`) keeps local planning docs and the toolchain itself out of the public GitHub history.
+- Publishing pipeline keeps internal-only material out of the public history.

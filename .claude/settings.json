@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd . && swift build --warnings-as-errors 2>&1 | head -20",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && swift build --warnings-as-errors 2>&1 | head -20",
             "timeout": 30,
             "failureMode": "warn"
           }

@@ -75,7 +75,7 @@ enum HelloWorldServer {
         // working on a hard refresh too.
         app.useSpa(root: .bundle("www"))
 
-        // Vue Live Pages demo (see `AI-Workspace/Plans/LIVE_PAGES_PLAN.md`):
+        // Vue Live Pages demo:
         // one text component + one button, proving the round trip —
         // click/type in the browser, Swift on the server updates state, the
         // page re-renders. `useSecurityHeaders()` shows the CSP is
