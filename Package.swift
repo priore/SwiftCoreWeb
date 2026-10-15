@@ -26,7 +26,7 @@ let package = Package(
         // On an older host OS the built test binary fails to `dlopen` with
         // "Symbol not found: _swift_initBorrow". Remove this pin once the
         // development machine's OS is upgraded past that runtime gap.
-        .package(url: "https://github.com/apple/swift-collections.git", exact: "1.6.0")
+        .package(url: "https://github.com/apple/swift-collections.git", exact: "1.7.2")
     ],
     targets: [
         // MARK: - Compiler plugin (macros)
