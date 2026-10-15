@@ -1,0 +1,39 @@
+#!/bin/sh
+# SwiftCoreWeb — optional contributor hook: block pushes to github.com that carry
+# personal data or identities that are not allowed. Gated on the push URL, so a
+# push to any other remote (e.g. a private mirror) is never touched.
+set -eu
+. "$(dirname "$0")/lib.sh"
+
+case "${2:-}" in
+    *github.com*) ;;
+    *) [ "${SWIFTCOREWEB_HOOKS_MODE:-}" = force ] || exit 0 ;;
+esac
+[ "${SWIFTCOREWEB_HOOKS_MODE:-}" = off ] && exit 0
+
+ZERO="0000000000000000000000000000000000000000"
+FAIL=0
+while read -r _ LOCAL_SHA _ REMOTE_SHA; do
+    [ "$LOCAL_SHA" = "$ZERO" ] && continue
+    if [ "$REMOTE_SHA" = "$ZERO" ]; then
+        RANGE="$LOCAL_SHA --not --remotes"   # new branch: commits no remote has yet
+    else
+        RANGE="$REMOTE_SHA..$LOCAL_SHA"
+    fi
+    # Per-commit diff so data removed by a later commit in the range is still flagged.
+    # shellcheck disable=SC2086
+    for c in $(git rev-list $RANGE); do
+        p="$(git rev-parse -q --verify "$c^" || git hash-object -t tree /dev/null)"
+        hooks_scan_diff "$p" "$c" || FAIL=1
+    done
+    # shellcheck disable=SC2086
+    BAD="$(hooks_bad_identities $RANGE)"
+    if [ -n "$BAD" ]; then
+        echo "pre-push: $(printf '%s\n' "$BAD" | wc -l | tr -d ' ') commit identity value(s) not allowed (values not printed)." >&2
+        FAIL=1
+    fi
+done
+if [ "$FAIL" -ne 0 ]; then
+    echo "pre-push: refused. Publish through the project's publish pipeline instead of pushing directly." >&2
+    exit 1
+fi
