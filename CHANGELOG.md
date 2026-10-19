@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- Route precedence no longer depends on registration order: literal > constrained parameter >
+  parameter > optional parameter > catch-all, compared segment by segment.
+- `@Controller` routes keep their constraints at registration, so they take part in matching like
+  closure routes: a non-matching `{id:int}` is now `404` (or falls through to another route)
+  instead of `400`.
+- Starting a server with two routes of the same method and shape (`/users/{id}` and
+  `/users/{name}`) now fails with a message naming both; the second was already unreachable.
+
+### Fixed
+- `@Controller` with an unconstrained placeholder bound to a non-`String` parameter (`{id}` with
+  `id: Int`) now compiles; route values convert to the parameter's declared type.
+- The `@Controller` duplicate-route check no longer flags `{id:int}` vs `{id:uuid}` and now catches
+  `{id}` vs `{name}`.
+
+### Added
+- Route constraints `long`, `bool`, `double`, `alpha`, `min`, `max`, `range`, `length`,
+  `minlength`, `maxlength`, and chaining (`{id:int:min(1)}`), in closures and controllers.
+- Compile-time error when a controller constraint cannot bind to the parameter's type.
+
 ## [1.1.0] - 2026-09-26
 
 ### Added — Live Pages
