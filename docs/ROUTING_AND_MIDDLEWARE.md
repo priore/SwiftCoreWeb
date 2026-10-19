@@ -44,12 +44,57 @@ does) is normal, not a compromise.
 
 ## Route templates
 
-- Typed constraints: `{id:int}`, `{id:uuid}`
+- Constraints: `{id:int}`, `{id:uuid}`, chained as `{id:int:min(1)}` (all must match)
 - Optional segments: `{page?}`
 - Catch-alls: `{*path}`
 - `HEAD` is served automatically for every `GET` route
 - `OPTIONS` is answered automatically with an `Allow` header
 - A path match with no method match returns `405`
+
+### Constraints
+
+| Constraint | Matches | Typical Swift type |
+|---|---|---|
+| `int` | `Int(value) != nil` | `Int` |
+| `long` | `Int64(value) != nil` | `Int64` |
+| `uuid` | a valid UUID string | `UUID` |
+| `bool` | exactly `true` or `false` (lowercase; stricter than ASP.NET) | `Bool` |
+| `double` | `Double(value) != nil` | `Double` |
+| `alpha` | one or more ASCII letters | `String` |
+| `min(n)`, `max(n)`, `range(a,b)` | an integer within the bounds | `Int` / `Int64` |
+| `length(n)`, `length(a,b)`, `minlength(n)`, `maxlength(n)` | character count within the bounds | `String` |
+
+A constraint only decides whether the route matches; the handler parameter's declared type does the
+conversion. In a controller, a constraint that cannot bind to the parameter's type
+(`{id:int}` with `id: UUID`) is a compile-time error. Unknown or malformed constraints are rejected
+at registration. `regex(...)` is intentionally not supported (ReDoS risk, per-request cost), and
+`datetime`, `decimal`, `float` depend on locale: take a `String` and convert in the handler.
+
+Constraints behave the same for closure and controller routes: `/users/abc` against `{id:int}` is
+a `404` (or falls through to another route), not a `400`.
+
+### Route precedence
+
+When several routes match a request path for the same method, the most specific wins, **whatever
+the registration order**. Segments are compared left to right with this ranking:
+
+literal > constrained parameter > parameter > optional parameter > catch-all
+
+| Request | Routes | Winner |
+|---|---|---|
+| `/users/me` | `/users/{id}`, `/users/me` | `/users/me` |
+| `/users/42` | `/users/{name}`, `/users/{id:int}` | `/users/{id:int}` |
+| `/a/x` | `/a/{rest?}`, `/a/{*rest}` | `/a/{rest?}` |
+| `/a` | `/a/{page?}`, `/a` | `/a` |
+
+### Ambiguous routes fail at startup
+
+Two routes for the same method whose templates differ only in placeholder names
+(`/users/{id}` and `/users/{name}`) can never be told apart: the second would be unreachable. The
+server refuses to start and names both routes. Different constraints are different shapes
+(`{id:int}` and `{id:uuid}` are fine). Constraints that overlap without being identical
+(`{id:int}` and `{id:min(1)}`) are not reported; precedence rules above decide, and ties go to the
+route registered first.
 
 ## Handler parameters bind automatically, in this order
 
