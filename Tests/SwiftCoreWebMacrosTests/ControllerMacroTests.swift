@@ -42,7 +42,7 @@ final class ControllerMacroTests: XCTestCase {
                 }
 
                 static func registerRoutes(into router: RouteRegistry) {
-                    router.register(method: .get, path: "/api/users/{id}", auth: AuthRequirement.none, summary: nil) { ctx in
+                    router.register(method: .get, path: "/api/users/{id:int}", auth: AuthRequirement.none, summary: nil) { ctx in
                         let arg_id = try SwiftCoreWeb.bindRouteValue(ctx.request.routeValues["id"], as: Int.self, parameterName: "id")
                         return try await Self.init().getUser(id: arg_id).toHttpResult()
                     }
@@ -312,6 +312,139 @@ final class ControllerMacroTests: XCTestCase {
                 DiagnosticSpec(message: "Route marker macros can only be attached to a method.", line: 3, column: 5)
             ],
             macros: ["Get": RouteMethodMacro.self]
+        )
+    }
+
+    func testUnconstrainedPlaceholderConvertsToDeclaredType() {
+        assertMacroExpansion(
+            """
+            @Controller("/api/users")
+            final class UserController {
+                @Get("/{id}")
+                func getUser(id: Int) async throws -> User {
+                    User(id: id)
+                }
+            }
+            """,
+            expandedSource: """
+            final class UserController {
+                func getUser(id: Int) async throws -> User {
+                    User(id: id)
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .get, path: "/api/users/{id}", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_id = try SwiftCoreWeb.bindRouteValue(ctx.request.routeValues["id"], as: Int.self, parameterName: "id")
+                        return try await Self.init().getUser(id: arg_id).toHttpResult()
+                    }
+                }
+            }
+
+            extension UserController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testConstraintTypeMismatchDiagnoses() {
+        assertMacroExpansion(
+            """
+            final class UserController {
+                @Get("/{id:int}")
+                func getUser(id: UUID) async throws -> User {
+                    fatalError()
+                }
+            }
+            """,
+            expandedSource: """
+            final class UserController {
+                func getUser(id: UUID) async throws -> User {
+                    fatalError()
+                }
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "Route constraint does not match the type of the parameter that binds the placeholder. Constraint ':int' on '{id}' requires Int, but the parameter is 'UUID'.", line: 3, column: 22)
+            ],
+            macros: ["Get": RouteMethodMacro.self]
+        )
+    }
+
+    func testEquivalentPlaceholdersAreDuplicates() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class UserController {
+                @Get("/users/{id}")
+                func byId(id: String) async throws -> String { id }
+
+                @Get("/users/{name}")
+                func byName(name: String) async throws -> String { name }
+            }
+            """,
+            expandedSource: """
+            final class UserController {
+                @Get("/users/{id}")
+                func byId(id: String) async throws -> String { id }
+
+                @Get("/users/{name}")
+                func byName(name: String) async throws -> String { name }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .get, path: "/api/users/{id}", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_id = try SwiftCoreWeb.bindRouteValue(ctx.request.routeValues["id"], as: String.self, parameterName: "id")
+                        return try await Self.init().byId(id: arg_id).toHttpResult()
+                    }
+                }
+            }
+
+            extension UserController: RouteProvider {
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "Duplicate route: this method and HTTP method combination is already registered on this controller. 'GET /api/users/{name}'.", line: 6, column: 5)
+            ],
+            macros: ["Controller": ControllerMacro.self]
+        )
+    }
+
+    func testDisjointConstraintsAreNotDuplicates() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class UserController {
+                @Get("/users/{id:int}")
+                func byInt(id: Int) async throws -> String { "\\(id)" }
+
+                @Get("/users/{id:uuid}")
+                func byUuid(id: UUID) async throws -> String { "\\(id)" }
+            }
+            """,
+            expandedSource: """
+            final class UserController {
+                @Get("/users/{id:int}")
+                func byInt(id: Int) async throws -> String { "\\(id)" }
+
+                @Get("/users/{id:uuid}")
+                func byUuid(id: UUID) async throws -> String { "\\(id)" }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .get, path: "/api/users/{id:int}", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_id = try SwiftCoreWeb.bindRouteValue(ctx.request.routeValues["id"], as: Int.self, parameterName: "id")
+                        return try await Self.init().byInt(id: arg_id).toHttpResult()
+                    }
+                    router.register(method: .get, path: "/api/users/{id:uuid}", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_id = try SwiftCoreWeb.bindRouteValue(ctx.request.routeValues["id"], as: UUID.self, parameterName: "id")
+                        return try await Self.init().byUuid(id: arg_id).toHttpResult()
+                    }
+                }
+            }
+
+            extension UserController: RouteProvider {
+            }
+            """,
+            macros: ["Controller": ControllerMacro.self]
         )
     }
 

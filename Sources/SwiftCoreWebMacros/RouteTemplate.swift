@@ -80,33 +80,25 @@ enum RouteTemplateParser {
         return parameters
     }
 
-    /// Strips typed constraints (`{id:int}` → `{id}`) and the optional/
-    /// catch-all markers are left as-is otherwise — the registered route
-    /// path carries only placeholder names; the constraint only guides
-    /// parameter binding, already captured in `RouteTemplateParameter`.
-    static func normalizedPath(_ template: String, parameters: [RouteTemplateParameter]) -> String {
-        guard !parameters.contains(where: { $0.constraint != nil }) else {
-            var result = ""
-            var index = template.startIndex
-            while index < template.endIndex {
-                if template[index] == "{", let close = template[index...].firstIndex(of: "}") {
-                    var body = String(template[template.index(after: index)..<close])
-                    if let colon = body.firstIndex(of: ":") {
-                        body.removeSubrange(colon..<body.endIndex)
-                    }
-                    result += "{\(body)}"
-                    index = template.index(after: close)
-                } else {
-                    result.append(template[index])
-                    index = template.index(after: index)
-                }
-            }
-            return result
-        }
-        return template
+    /// Placeholder-name-independent shape of a route path, mirroring the
+    /// runtime router's `shapeKey` so both targets agree on what is a duplicate.
+    static func shapeKey(_ path: String) -> String {
+        path.split(separator: "/", omittingEmptySubsequences: true).map { segment -> String in
+            guard segment.hasPrefix("{"), segment.hasSuffix("}") else { return "lit:\(segment)" }
+            var body = String(segment.dropFirst().dropLast())
+            if body.hasPrefix("*") { return "all" }
+            let isOptional = body.hasSuffix("?")
+            if isOptional { body.removeLast() }
+            let constraint = body.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
+            return "\(isOptional ? "opt" : "param"):\(constraint)"
+        }.joined(separator: "/")
     }
 
     private static let supportedConstraints: Set<String> = ["int", "uuid"]
+
+    /// Swift parameter types each constraint can bind to; a constraint is
+    /// only for matching, the handler's declared type does the conversion.
+    static let constraintTypes: [String: Set<String>] = ["int": ["Int"], "uuid": ["UUID"]]
 
     private static func isValidIdentifierName(_ name: String) -> Bool {
         guard let first = name.first, first.isLetter || first == "_" else { return false }

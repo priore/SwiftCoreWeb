@@ -17,6 +17,7 @@ enum RouteDiagnostic: String, DiagnosticMessage {
     case unsupportedParameterType
     case unsupportedReturnType
     case duplicateRoute
+    case constraintTypeMismatch
     case nonSendableController
     case invalidRouteTemplate
     case markerOnNonFunction
@@ -33,6 +34,8 @@ enum RouteDiagnostic: String, DiagnosticMessage {
             "Return type must be Void, String, an Encodable type, a View, or an HttpResult."
         case .duplicateRoute:
             "Duplicate route: this method and HTTP method combination is already registered on this controller."
+        case .constraintTypeMismatch:
+            "Route constraint does not match the type of the parameter that binds the placeholder."
         case .nonSendableController:
             "A @Controller type must be a final class, struct, or actor so its generated RouteProvider conformance is Sendable-safe."
         case .invalidRouteTemplate:

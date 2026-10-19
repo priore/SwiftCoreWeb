@@ -96,6 +96,15 @@ func resolveParameterBindings(
                 ))
                 return nil
             }
+            if let constraint = routeParam.constraint,
+               let allowed = RouteTemplateParser.constraintTypes[constraint],
+               !allowed.contains(parameter.baseTypeDescription) {
+                context.diagnose(RouteDiagnostic.constraintTypeMismatch.at(
+                    parameter.typeSyntax,
+                    detail: "Constraint ':\(constraint)' on '{\(routeParam.name)}' requires \(allowed.sorted().joined(separator: " or ")), but the parameter is '\(parameter.baseTypeDescription)'."
+                ))
+                return nil
+            }
             bindings.append(.routeValue(constraint: routeParam.constraint, isOptional: routeParam.isOptional, isCatchAll: routeParam.isCatchAll))
             continue
         }
@@ -143,11 +152,11 @@ func bindingExpression(for binding: ParameterBindingKind, parameterName: String,
     switch binding {
     case .httpContext:
         return "ctx"
-    case .routeValue(let constraint, let isOptional, let isCatchAll):
+    case .routeValue(_, let isOptional, let isCatchAll):
         if isCatchAll {
             return "ctx.request.routeValues[\"\(parameterName)\"] ?? \"\""
         }
-        let converterType = constraint == "uuid" ? "UUID" : (constraint == "int" ? "Int" : "String")
+        let converterType = bodyTypeName
         if isOptional {
             return "try SwiftCoreWeb.bindOptionalRouteValue(ctx.request.routeValues[\"\(parameterName)\"], as: \(converterType).self, parameterName: \"\(parameterName)\")"
         }
