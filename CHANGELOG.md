@@ -28,9 +28,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `@Controller` with an unconstrained placeholder bound to a non-`String` parameter (`{id}` with `id: Int`) now compiles; before, the generated code passed a `String` to the `Int` parameter.
 - The `@Controller` duplicate-route check compared raw path strings: it wrongly flagged `{id:int}` against `{id:uuid}` and missed `{id}` against `{name}`. It now compares the template shape.
 
-### Not supported
-- `regex(...)` (ReDoS risk and per-request cost), `datetime`, `decimal`, `float` (locale-dependent parsing), `required`, `file`, `nonfile`. Take a `String` and convert in the handler instead.
-
 ## [1.1.0] - 2026-09-26
 
 ### Added — Live Pages
