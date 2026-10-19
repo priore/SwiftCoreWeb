@@ -90,11 +90,24 @@ literal > constrained parameter > parameter > optional parameter > catch-all
 ### Ambiguous routes fail at startup
 
 Two routes for the same method whose templates differ only in placeholder names
-(`/users/{id}` and `/users/{name}`) can never be told apart: the second would be unreachable. The
-`runAsync()` (and `TestHost`) throws `AmbiguousRoutesError`, which lists every offending group, one route per line. Different constraints are different shapes
-(`{id:int}` and `{id:uuid}` are fine). Constraints that overlap without being identical
-(`{id:int}` and `{id:min(1)}`) are not reported; precedence rules above decide, and ties go to the
-route registered first.
+(`/users/{id}` and `/users/{name}`) can never be told apart: the second would be unreachable.
+`runAsync()` and `TestHost` throw `AmbiguousRoutesError` instead of starting, listing every
+offending group, one route per line:
+
+```
+SwiftCoreWeb: ambiguous routes. These routes share the same method and shape, so only the first of each group is reachable:
+  GET /users/{id}
+  GET /users/{name}
+Fix: rename or remove one of each group, or give the placeholders different constraints (e.g. {id:int} and {id:uuid}).
+```
+
+The error is catchable (`catch let error as AmbiguousRoutesError`; `error.groups` holds the routes).
+The older non-throwing `buildDispatcher()` is deprecated in favour of the throwing
+`makeDispatcher()`; it still stops the process with the same list.
+
+Different constraints are different shapes (`{id:int}` and `{id:uuid}` are fine). Constraints that
+overlap without being identical (`{id:int}` and `{id:min(1)}`) are not reported; the precedence
+rules above decide, and ties go to the route registered first.
 
 ## Handler parameters bind automatically, in this order
 
