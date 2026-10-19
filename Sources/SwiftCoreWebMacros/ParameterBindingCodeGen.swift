@@ -14,7 +14,7 @@ import SwiftSyntaxMacros
 /// no runtime type inspection.
 enum ParameterBindingKind {
     case httpContext
-    case routeValue(constraint: String?, isOptional: Bool, isCatchAll: Bool)
+    case routeValue(isOptional: Bool, isCatchAll: Bool)
     case decodableBody
     case queryPrimitive(isOptional: Bool)
     case header(name: String, innerType: String)
@@ -40,7 +40,7 @@ struct BindableParameter {
 /// string via `LosslessStringConvertible`, per the parameter-binding rules.2/the parameter-binding rules.4. Kept as a
 /// fixed list (rather than a protocol conformance check, unavailable at
 /// macro-expansion time) so the diagnostic for an unsupported type is exact.
-let primitiveTypeNames: Set<String> = ["Int", "String", "Bool", "Double", "UUID", "Float"]
+let primitiveTypeNames: Set<String> = ["Int", "Int64", "String", "Bool", "Double", "UUID", "Float"]
 
 /// Decides the binding for each parameter of a route handler method against
 /// its route template placeholders, per the rule order in the parameter-binding rules, emitting a
@@ -96,16 +96,15 @@ func resolveParameterBindings(
                 ))
                 return nil
             }
-            if let constraint = routeParam.constraint,
-               let allowed = RouteTemplateParser.constraintTypes[constraint],
-               !allowed.contains(parameter.baseTypeDescription) {
+            for token in routeParam.constraints {
+                guard let spec = RouteConstraintSpec(token: token), !spec.types.contains(parameter.baseTypeDescription) else { continue }
                 context.diagnose(RouteDiagnostic.constraintTypeMismatch.at(
                     parameter.typeSyntax,
-                    detail: "Constraint ':\(constraint)' on '{\(routeParam.name)}' requires \(allowed.sorted().joined(separator: " or ")), but the parameter is '\(parameter.baseTypeDescription)'."
+                    detail: "Constraint ':\(token)' on '{\(routeParam.name)}' requires \(spec.types.sorted().joined(separator: " or ")), but the parameter is '\(parameter.baseTypeDescription)'."
                 ))
                 return nil
             }
-            bindings.append(.routeValue(constraint: routeParam.constraint, isOptional: routeParam.isOptional, isCatchAll: routeParam.isCatchAll))
+            bindings.append(.routeValue(isOptional: routeParam.isOptional, isCatchAll: routeParam.isCatchAll))
             continue
         }
 
@@ -152,7 +151,7 @@ func bindingExpression(for binding: ParameterBindingKind, parameterName: String,
     switch binding {
     case .httpContext:
         return "ctx"
-    case .routeValue(_, let isOptional, let isCatchAll):
+    case .routeValue(let isOptional, let isCatchAll):
         if isCatchAll {
             return "ctx.request.routeValues[\"\(parameterName)\"] ?? \"\""
         }

@@ -448,6 +448,75 @@ final class ControllerMacroTests: XCTestCase {
         )
     }
 
+    func testChainedConstraintsKeepPathAndBindDeclaredType() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class ItemController {
+                @Get("/items/{id:long:min(1)}")
+                func item(id: Int64) async throws -> String { "\\(id)" }
+            }
+            """,
+            expandedSource: """
+            final class ItemController {
+                @Get("/items/{id:long:min(1)}")
+                func item(id: Int64) async throws -> String { "\\(id)" }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .get, path: "/api/items/{id:long:min(1)}", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_id = try SwiftCoreWeb.bindRouteValue(ctx.request.routeValues["id"], as: Int64.self, parameterName: "id")
+                        return try await Self.init().item(id: arg_id).toHttpResult()
+                    }
+                }
+            }
+
+            extension ItemController: RouteProvider {
+            }
+            """,
+            macros: ["Controller": ControllerMacro.self]
+        )
+    }
+
+    func testMalformedConstraintDiagnoses() {
+        assertMacroExpansion(
+            """
+            final class ItemController {
+                @Get("/{id:range(5,1)}")
+                func item(id: Int) async throws -> String { "" }
+            }
+            """,
+            expandedSource: """
+            final class ItemController {
+                func item(id: Int) async throws -> String { "" }
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "Invalid route template syntax. Unsupported or malformed constraint ':range(5,1)' on placeholder '{id}' (supported: alpha, bool, double, int, length, long, max, maxlength, min, minlength, range, uuid)", line: 2, column: 10)
+            ],
+            macros: ["Get": RouteMethodMacro.self]
+        )
+    }
+
+    func testStringConstraintOnIntParameterDiagnoses() {
+        assertMacroExpansion(
+            """
+            final class ItemController {
+                @Get("/{code:length(3)}")
+                func item(code: Int) async throws -> String { "" }
+            }
+            """,
+            expandedSource: """
+            final class ItemController {
+                func item(code: Int) async throws -> String { "" }
+            }
+            """,
+            diagnostics: [
+                DiagnosticSpec(message: "Route constraint does not match the type of the parameter that binds the placeholder. Constraint ':length(3)' on '{code}' requires String, but the parameter is 'Int'.", line: 3, column: 21)
+            ],
+            macros: ["Get": RouteMethodMacro.self]
+        )
+    }
+
     func testApiModelGeneratesSchema() {
         assertMacroExpansion(
             """
