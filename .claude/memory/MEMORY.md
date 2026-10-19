@@ -6,3 +6,4 @@
 
 ## Reference
 - (none yet)
+- [Macros tests run on the host](macros-tests-run-on-host.md) — sim run executes a stale bundle; build-for-testing then `xcrun xctest` the macOS bundle
