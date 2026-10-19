@@ -91,7 +91,7 @@ literal > constrained parameter > parameter > optional parameter > catch-all
 
 Two routes for the same method whose templates differ only in placeholder names
 (`/users/{id}` and `/users/{name}`) can never be told apart: the second would be unreachable. The
-server refuses to start and names both routes. Different constraints are different shapes
+`runAsync()` (and `TestHost`) throws `AmbiguousRoutesError`, which lists every offending group, one route per line. Different constraints are different shapes
 (`{id:int}` and `{id:uuid}` are fine). Constraints that overlap without being identical
 (`{id:int}` and `{id:min(1)}`) are not reported; precedence rules above decide, and ties go to the
 route registered first.

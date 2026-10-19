@@ -64,7 +64,7 @@ public final class TestHost: @unchecked Sendable {
     /// in-memory channel. Freezes `app`'s router and middleware pipeline,
     /// exactly as `runAsync()` would.
     public init(_ app: WebApplication) async throws {
-        self.dispatcher = app.buildDispatcher()
+        self.dispatcher = try app.buildDispatcher()
         let channel = NIOAsyncTestingChannel()
         try await channel.eventLoop.submit {
             try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(HTTPRequestDecoder()))

@@ -28,6 +28,22 @@ enum RouteMatch: Sendable {
     case notFound
 }
 
+/// Thrown at startup (`runAsync()`, `TestHost`) when routes share method and
+/// template shape, so only the first of each group could ever be reached.
+public struct AmbiguousRoutesError: Error, CustomStringConvertible {
+    /// Each group lists its routes as `"GET /users/{id}"`.
+    public let groups: [[String]]
+
+    public var description: String {
+        let list = groups.map { $0.map { "  \($0)" }.joined(separator: "\n") }.joined(separator: "\n  --\n")
+        return """
+        SwiftCoreWeb: ambiguous routes. These routes share the same method and shape, so only the first of each group is reachable:
+        \(list)
+        Fix: rename or remove one of each group, or give the placeholders different constraints (e.g. {id:int} and {id:uuid}).
+        """
+    }
+}
+
 /// The immutable, `Sendable` router built from all `map*`/`mapControllers`
 /// registrations at `WebApplication.build()`/first `runAsync()` time.
 ///
@@ -60,23 +76,13 @@ final class Router: RouteRegistry, @unchecked Sendable {
 
     /// Freezes the router, taking a stable snapshot for lock-free matching.
     /// Called once by the server engine before accepting connections.
-    func freeze() {
+    func freeze() throws {
         lock.lock()
         defer { lock.unlock() }
         guard !isFrozen else { return }
         let ambiguous = Self.ambiguousRouteGroups(pendingRoutes)
         if !ambiguous.isEmpty {
-            // Printed before the trap so the full list shows in the Xcode console, one route per line.
-            let report = ambiguous.map { group in
-                group.map { "  \($0.method.rawValue) \($0.template.raw)" }.joined(separator: "\n")
-            }.joined(separator: "\n  --\n")
-            fputs("""
-            SwiftCoreWeb: ambiguous routes. These routes share the same method and shape, so only the first of each group is reachable:
-            \(report)
-            Fix: rename or remove one of each group, or give the placeholders different constraints (e.g. {id:int} and {id:uuid}).
-
-            """, stderr)
-            preconditionFailure("SwiftCoreWeb: \(ambiguous.count) group(s) of ambiguous routes, see the list printed above")
+            throw AmbiguousRoutesError(groups: ambiguous.map { $0.map { "\($0.method.rawValue) \($0.template.raw)" } })
         }
         isFrozen = true
         frozenRoutes = pendingRoutes

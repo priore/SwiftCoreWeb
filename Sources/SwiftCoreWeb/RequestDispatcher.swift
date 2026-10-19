@@ -120,9 +120,10 @@ extension WebApplication {
     /// Freezes the router and middleware pipeline and builds the
     /// `RequestDispatcher` the server engine (Part 4) and `TestHost` (the testing support design)
     /// drive requests through. Idempotent: safe to call once from
-    /// `runAsync()` and again from `TestHost`.
-    public func buildDispatcher() -> RequestDispatcher {
-        routeRegistry.freeze()
+    /// `runAsync()` and again from `TestHost`. Throws `AmbiguousRoutesError`
+    /// if two routes for the same method are indistinguishable.
+    public func buildDispatcher() throws -> RequestDispatcher {
+        try routeRegistry.freeze()
         return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics)
     }
 }

@@ -14,7 +14,7 @@ final class RouterTests: XCTestCase {
         for template in templates {
             router.register(method: method, path: template, auth: .none, summary: nil) { _ in voidHttpResult() }
         }
-        router.freeze()
+        try! router.freeze()
         return router
     }
 
@@ -63,7 +63,7 @@ final class RouterTests: XCTestCase {
         let router = Router()
         router.register(method: .get, path: "/u/{id}", auth: .none, summary: nil) { _ in voidHttpResult() }
         router.register(method: .post, path: "/u/me", auth: .none, summary: nil) { _ in voidHttpResult() }
-        router.freeze()
+        try! router.freeze()
         XCTAssertEqual(winner(router, "/u/me", method: .get), "/u/{id}")
         XCTAssertEqual(winner(router, "/u/me", method: .post), "/u/me")
     }
@@ -100,5 +100,15 @@ final class RouterTests: XCTestCase {
         XCTAssertTrue(try ambiguous([(.get, "/users/{id}"), (.get, "/users/me"), (.get, "/users/{id:int}")]).isEmpty)
         XCTAssertTrue(try ambiguous([(.get, "/a/{x?}"), (.get, "/a/{*x}"), (.get, "/a")]).isEmpty)
         XCTAssertTrue(try ambiguous([(.get, "/Users"), (.get, "/users")]).isEmpty) // literals are case-sensitive
+    }
+
+    func testFreezeThrowsOnAmbiguousRoutes() {
+        let router = Router()
+        for path in ["/users/{id}", "/users/{name}"] {
+            router.register(method: .get, path: path, auth: .none, summary: nil) { _ in voidHttpResult() }
+        }
+        XCTAssertThrowsError(try router.freeze()) { error in
+            XCTAssertEqual((error as? AmbiguousRoutesError)?.groups, [["GET /users/{id}", "GET /users/{name}"]])
+        }
     }
 }
