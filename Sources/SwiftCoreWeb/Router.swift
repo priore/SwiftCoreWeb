@@ -86,17 +86,14 @@ final class Router: RouteRegistry, @unchecked Sendable {
     func match(method: HttpMethod, path: String) -> RouteMatch {
         let components = splitPathComponents(path)
         var candidatesByMethod: [HttpMethod: (Route, [String: String])] = [:]
-        var bestSpecificity = -1
 
         for route in allRoutes {
             guard let values = route.template.match(pathComponents: components) else { continue }
-            // A more specific (more required literal/param segments) route
-            // for a given method wins over a less specific earlier one.
-            if let existing = candidatesByMethod[route.method] {
-                if route.template.requiredSegmentCount <= existing.0.template.requiredSegmentCount { continue }
-            }
+            // For a given method the strictly more specific route wins,
+            // whatever the registration order (see `precedence`).
+            if let existing = candidatesByMethod[route.method],
+               !route.template.precedence.lexicographicallyPrecedes(existing.0.template.precedence) { continue }
             candidatesByMethod[route.method] = (route, values)
-            bestSpecificity = max(bestSpecificity, route.template.requiredSegmentCount)
         }
 
         if let exact = candidatesByMethod[method] {

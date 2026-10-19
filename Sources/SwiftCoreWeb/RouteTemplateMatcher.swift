@@ -100,18 +100,21 @@ struct CompiledRouteTemplate: Sendable {
     let raw: String
     let segments: [RouteSegment]
 
-    /// Segment count ignoring a trailing optional or catch-all, used to
-    /// route registration-order tie-breaking (more literal segments wins).
-    let requiredSegmentCount: Int
+    /// Per-segment specificity rank, lower is more specific: literal 0,
+    /// constrained parameter 1, parameter 2, optional parameter 3, catch-all 4.
+    /// Two templates that match the same path are aligned by position, so
+    /// comparing ranks lexicographically picks the more specific one
+    /// regardless of registration order (same order as ASP.NET Core).
+    let precedence: [Int]
 
     init(_ template: String) throws {
         self.raw = template
         self.segments = try Self.parse(template)
-        self.requiredSegmentCount = segments.reduce(into: 0) { count, segment in
+        self.precedence = segments.map { segment in
             switch segment {
-            case .literal: count += 1
-            case .parameter(_, _, let isOptional): count += isOptional ? 0 : 1
-            case .catchAll: break
+            case .literal: 0
+            case .parameter(_, let constraints, let isOptional): isOptional ? 3 : (constraints.isEmpty ? 2 : 1)
+            case .catchAll: 4
             }
         }
     }
