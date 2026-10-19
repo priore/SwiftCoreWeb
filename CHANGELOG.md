@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-19
+
 ### Changed
 - Route precedence no longer depends on registration order. When several routes of the same method match a path, segments are compared left to right with the ranking literal > constrained parameter > unconstrained parameter > optional parameter > catch-all, and the strictly more specific route wins. A shorter route beats the same route with an optional tail (`/a` over `/a/{page?}`); on an exact tie the first registered route still wins.
 - `@Controller` routes now register their path with constraints intact (`/api/users/{id:int}` instead of `/api/users/{id}`), so constraints take part in matching exactly as they do for closure `map*` routes. A value that fails a constraint is now a `404` (or falls through to another matching route) instead of a `400` from parameter binding.
