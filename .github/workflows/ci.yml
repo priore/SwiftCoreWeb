@@ -16,7 +16,13 @@ jobs:
       - name: Build (iOS)
         run: xcodebuild build -scheme SwiftCoreWeb-Package -destination 'generic/platform=iOS Simulator'
       - name: Test (iOS Simulator)
-        run: xcodebuild test -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17'
+        run: xcodebuild test -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -skip-testing:SwiftCoreWebMacrosTests
+      # The macro tests are only ever built for the host (macOS), never for the simulator, so the
+      # simulator run above cannot execute them; run the host bundle directly.
+      - name: Build macro tests (host)
+        run: xcodebuild build-for-testing -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftCoreWebMacrosTests
+      - name: Test macros (host)
+        run: xcrun xctest "$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug/SwiftCoreWebMacrosTests.xctest' -not -path '*/SourcePackages/*' -maxdepth 6 | head -1)"
 
   docs-links:
     runs-on: ubuntu-latest
