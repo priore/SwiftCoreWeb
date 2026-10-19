@@ -17,5 +17,6 @@ Reliable way to run them:
 
 Also: `swift` on PATH may be a swiftly 5.0.x toolchain that cannot read the Swift 6 manifest, and
 `swift test` builds every target (Dashboard needs UIKit), so use xcodebuild as above.
-Remote CI was already red before the route-precedence work; `scripts/ci-local.sh` reports the same
-missing-bundle failure on a clean DerivedData.
+Remote CI was red for exactly this reason (xctest "Failed to create a bundle instance" for the
+simulator macros bundle); `.github/workflows/ci.yml` now skips them in the simulator run and executes
+the host bundle in a separate step.
