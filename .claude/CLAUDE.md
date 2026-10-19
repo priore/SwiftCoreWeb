@@ -7,10 +7,7 @@
 
 ## Memory
 
-- Before replying, running a tool, or running a terminal command, check **both** memory indexes:
-  - Global (cross-project): `~/.claude/memory/MEMORY.md` — user preferences and generalizable lessons, valid across other projects too.
-  - Local (this project): `.claude/memory/MEMORY.md` — facts/decisions/feedback specific to SwiftCoreWeb.
-- When saving a new memory: if it's generalizable to any project (e.g. user style preferences, debugging methodology), it goes in the global memory; if it depends on files/architecture/decisions of this project, it goes in the local one.
+- Before replying, running a tool, or running a terminal command, check the project memory index `.claude/memory/MEMORY.md` — facts/decisions/feedback specific to SwiftCoreWeb.
 - Verify that the retrieved information is still valid (referenced files/symbols still exist) before using it as the basis for a recommendation or an action.
 - Before writing or updating a file in memory, read [.claude/memory-rules.md](./memory-rules.md) — rule on what must NEVER be saved there (step status/history, which lives only in a plan/tracking doc if one exists).
 - Local memory is versioned in the repo at `.claude/memory/` — plain files, no symlink needed for a single-machine checkout; if cloned elsewhere, memory travels with the repo automatically.
@@ -38,3 +35,5 @@ CI also runs this automatically: `.github/workflows/dependabot-auto-merge.yml` m
 ## Concreteness
 
 Never formulate hypotheses, only concrete ones, mandatory! Verify against the actual source (grep/read) before asserting behavior — this is a library other people build servers on, wrong claims about its API are costly.
+
+**Token-saving rules:** see [.claude/token-savings/rules.md](.claude/token-savings/rules.md)

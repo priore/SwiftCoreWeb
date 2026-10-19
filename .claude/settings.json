@@ -1,0 +1,53 @@
+{
+  "enabledPlugins": {
+    "ponytail@ponytail": true,
+    "caveman@caveman": true
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    },
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    }
+  },
+  "model": "sonnet",
+  "advisorModel": "opus",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku"
+  },
+  "effortLevel": "medium",
+  "promptCacheTtl": "1h",
+  "subagentPromptCacheTtl": "1h",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash(git status|git log|git diff|git add|git commit|git push|git branch)",
+      "Bash(swift build|swift test|xcodebuild)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "filter": { "filePath": ".*\\.swift$" },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && swift build --warnings-as-errors 2>&1 | head -20",
+            "timeout": 30,
+            "failureMode": "warn"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+#!/bin/sh
+# SwiftCoreWeb — optional contributor hook: warn when the commit identity is not allowed.
+# Warn only (a post-commit hook cannot block). No-op unless active (see lib.sh).
+set -eu
+. "$(dirname "$0")/lib.sh"
+hooks_active || exit 0
+if [ -n "$(hooks_bad_identities HEAD^!)" ]; then
+    echo "post-commit: author/committer identity is not in the allowed list." >&2
+    echo "  fix: git commit --amend --reset-author  (after git config user.name/user.email)" >&2
+fi

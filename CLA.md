@@ -4,7 +4,7 @@ By contributing to this project (a Pull Request from a fork, a patch sent outsid
 
 ## 1. License grant
 
-You represent that you have the right to submit the contribution, and you grant the repository author (priore) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, sublicense, distribute, and relicense your contribution, including under any future commercial agreements related to the project.
+You represent that you have the right to submit the contribution, and you grant the repository author ([priore](https://github.com/priore)) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, sublicense, distribute, and relicense your contribution, including under any future commercial agreements related to the project.
 
 ## 2. Project license
 

@@ -9,8 +9,7 @@ import Foundation
 import UIKit
 
 /// One 1 Hz sample of device health, built entirely from public iOS APIs
-/// (see `AI-Workspace/Plans/DEVICE_DASHBOARD_PLAN.md`'s metrics catalog for
-/// what iOS deliberately does *not* expose — never simulated here).
+/// (metrics iOS deliberately does *not* expose are never simulated here).
 public struct DeviceSnapshot: Sendable {
     public let timestamp: Date
     public let modelIdentifier: String

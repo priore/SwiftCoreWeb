@@ -28,8 +28,3 @@ installed on this dev machine — so no separate Xcode install is needed to
 get a trustworthy local pass. If the local Xcode version ever changes,
 `ci.yml`'s `runs-on` needs to be re-matched too, or `ci-local.sh` will
 correctly refuse to give a green.
-
-Publish flow to GitHub (mirror, not the real remote — Gitea's `origin` is):
-`scripts/publish-github.sh <github-url>` (force-pushes a filtered history,
-strips internal-only paths). See [[publish-github-vs-local-gitea.md]] if
-that memory exists, or `scripts/GITHUB-PUBLISHING.md`.

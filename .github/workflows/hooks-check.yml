@@ -1,0 +1,23 @@
+name: hooks-check
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  personal-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      # Generic patterns only (no private pattern file exists in CI): /Users/<u>/ paths,
+      # private IPs, consumer-mail addresses, private keys. Added lines of the PR only.
+      - name: Scan added lines
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          . scripts/git-hooks/lib.sh
+          HOOKS_PRIVATE=/dev/null
+          hooks_scan_diff "origin/$BASE..HEAD"

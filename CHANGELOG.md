@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+## [1.2.0] - 2026-10-19
+
+### Changed
+- Route precedence no longer depends on registration order. When several routes of the same method match a path, segments are compared left to right with the ranking literal > constrained parameter > unconstrained parameter > optional parameter > catch-all, and the strictly more specific route wins. A shorter route beats the same route with an optional tail (`/a` over `/a/{page?}`); on an exact tie the first registered route still wins.
+- `@Controller` routes now register their path with constraints intact (`/api/users/{id:int}` instead of `/api/users/{id}`), so constraints take part in matching exactly as they do for closure `map*` routes. A value that fails a constraint is now a `404` (or falls through to another matching route) instead of a `400` from parameter binding.
+- `@Controller` route values are now converted to the handler parameter's declared type instead of a type derived from the constraint.
+- Starting a server with two routes of the same method and template shape (placeholder names are ignored: `/users/{id}` and `/users/{name}`, `/f/{*a}` and `/f/{*b}`, `/a/{x?}` and `/a/{y?}`) now fails instead of silently leaving the later route unreachable. `runAsync()` and `TestHost` throw `AmbiguousRoutesError`. Constraints are part of the shape, so `{id:int}` and `{id:uuid}` remain allowed; overlapping but different constraints are not reported and are resolved by precedence.
+- Swift `Int64` is now a primitive bindable type for route placeholders and query values (needed by the `long` constraint).
+
+### Added
+- Route constraints `long` (`Int64`), `bool` (exactly `true`/`false`), `double`, `alpha` (one or more ASCII letters), `min(n)`, `max(n)`, `range(a,b)`, `length(n)`, `length(a,b)`, `minlength(n)` and `maxlength(n)`, accepted with the same syntax by the runtime router and by the `@Controller`/`@Get`/… macros.
+- Constraint chaining: `{id:int:min(1)}` matches only when every constraint matches; whitespace around tokens and arguments is ignored. Chains are supported on optional placeholders (`{page:int:min(1)?}`).
+- Registration-time validation of constraints: unknown names, missing or extra arguments, non-integer arguments, empty ranges (`range(5,1)`), negative or inverted length bounds and parenthesised parameterless constraints (`int(3)`) are rejected, at registration for closure routes and by an invalid-route-template compile error in controllers.
+- Compile-time diagnostic when a controller constraint cannot bind to the handler parameter's type (`{id:int}` with `id: UUID`, `{code:length(3)}` with `code: Int`); each constraint lists the Swift types it accepts.
+- `AmbiguousRoutesError` (public, `CustomStringConvertible`): `groups` holds the offending routes as `"GET /users/{id}"`, and the description lists every group, one route per line, with a hint on how to fix it.
+- `WebApplication.makeDispatcher() throws`, the throwing replacement for `buildDispatcher()`.
+
+### Deprecated
+- `WebApplication.buildDispatcher()`: use `makeDispatcher()`. The deprecated form keeps its signature, prints the route list to stderr and stops the process if routes are ambiguous.
+
+### Fixed
+- `@Controller` with an unconstrained placeholder bound to a non-`String` parameter (`{id}` with `id: Int`) now compiles; before, the generated code passed a `String` to the `Int` parameter.
+- The `@Controller` duplicate-route check compared raw path strings: it wrongly flagged `{id:int}` against `{id:uuid}` and missed `{id}` against `{name}`. It now compares the template shape.
+
 ## [1.1.0] - 2026-09-26
 
 ### Added — Live Pages
@@ -69,4 +95,4 @@ First public release.
 - `mapMetrics` documented as requiring `auth:` on untrusted LANs.
 - Legal/security scaffolding: `LICENSE` (PolyForm Noncommercial 1.0.0), `LICENSE-THIRD-PARTY`, `CLA.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `SECURITY.md`.
 - CI: build/test workflow, Dependabot (Swift + GitHub Actions ecosystems), gitleaks secret scanning on every push/PR, OpenSSF Scorecard, CLA Assistant bot.
-- Internal-only git-publishing toolchain (`scripts/publish-github.sh`, `.githooks/pre-push`) keeps local planning docs and the toolchain itself out of the public GitHub history.
+- Publishing pipeline keeps internal-only material out of the public history.

@@ -28,6 +28,22 @@ enum RouteMatch: Sendable {
     case notFound
 }
 
+/// Thrown at startup (`runAsync()`, `TestHost`) when routes share method and
+/// template shape, so only the first of each group could ever be reached.
+public struct AmbiguousRoutesError: Error, CustomStringConvertible {
+    /// Each group lists its routes as `"GET /users/{id}"`.
+    public let groups: [[String]]
+
+    public var description: String {
+        let list = groups.map { $0.map { "  \($0)" }.joined(separator: "\n") }.joined(separator: "\n  --\n")
+        return """
+        SwiftCoreWeb: ambiguous routes. These routes share the same method and shape, so only the first of each group is reachable:
+        \(list)
+        Fix: rename or remove one of each group, or give the placeholders different constraints (e.g. {id:int} and {id:uuid}).
+        """
+    }
+}
+
 /// The immutable, `Sendable` router built from all `map*`/`mapControllers`
 /// registrations at `WebApplication.build()`/first `runAsync()` time.
 ///
@@ -60,12 +76,32 @@ final class Router: RouteRegistry, @unchecked Sendable {
 
     /// Freezes the router, taking a stable snapshot for lock-free matching.
     /// Called once by the server engine before accepting connections.
-    func freeze() {
+    func freeze() throws {
         lock.lock()
         defer { lock.unlock() }
         guard !isFrozen else { return }
+        let ambiguous = Self.ambiguousRouteGroups(pendingRoutes)
+        if !ambiguous.isEmpty {
+            throw AmbiguousRoutesError(groups: ambiguous.map { $0.map { "\($0.method.rawValue) \($0.template.raw)" } })
+        }
         isFrozen = true
         frozenRoutes = pendingRoutes
+    }
+
+    /// Groups of routes that share method and template shape (`/users/{id}`
+    /// vs `/users/{name}`); only the first of each could ever be reached.
+    /// Different constraints give different shapes (`{id:int}` vs `{id:uuid}`),
+    /// so overlapping-but-unequal constraints are not reported — precedence
+    /// decides those.
+    static func ambiguousRouteGroups(_ routes: [Route]) -> [[Route]] {
+        var order: [String] = []
+        var groups: [String: [Route]] = [:]
+        for route in routes {
+            let key = "\(route.method.rawValue) \(route.template.shapeKey)"
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(route)
+        }
+        return order.compactMap { groups[$0] }.filter { $0.count > 1 }
     }
 
     /// All registered routes, for `/__routes` and `/openapi.json` (the realtime and OpenAPI contract design).
@@ -86,17 +122,14 @@ final class Router: RouteRegistry, @unchecked Sendable {
     func match(method: HttpMethod, path: String) -> RouteMatch {
         let components = splitPathComponents(path)
         var candidatesByMethod: [HttpMethod: (Route, [String: String])] = [:]
-        var bestSpecificity = -1
 
         for route in allRoutes {
             guard let values = route.template.match(pathComponents: components) else { continue }
-            // A more specific (more required literal/param segments) route
-            // for a given method wins over a less specific earlier one.
-            if let existing = candidatesByMethod[route.method] {
-                if route.template.requiredSegmentCount <= existing.0.template.requiredSegmentCount { continue }
-            }
+            // For a given method the strictly more specific route wins,
+            // whatever the registration order (see `precedence`).
+            if let existing = candidatesByMethod[route.method],
+               !route.template.precedence.lexicographicallyPrecedes(existing.0.template.precedence) { continue }
             candidatesByMethod[route.method] = (route, values)
-            bestSpecificity = max(bestSpecificity, route.template.requiredSegmentCount)
         }
 
         if let exact = candidatesByMethod[method] {

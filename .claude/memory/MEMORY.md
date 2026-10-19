@@ -1,7 +1,4 @@
-Note: cross-project generalizable memories live in `~/.claude/memory/` (separate index).
-
 ## Feedback (specific to this project)
-- [Use AskUserQuestion for confirmations](feedback_askuserquestion_for_confirm.md) — yes/no confirmations must use AskUserQuestion tool, not free-text questions
 
 ## Project
 - [SwiftCoreWebDashboard build/test command](dashboard-target-test-command.md) — needs xcodebuild + iOS Simulator destination, plain `swift test` can't compile it (UIKit)
@@ -9,3 +6,5 @@ Note: cross-project generalizable memories live in `~/.claude/memory/` (separate
 
 ## Reference
 - (none yet)
+- [Macros tests run on the host](macros-tests-run-on-host.md) — sim run executes a stale bundle; build-for-testing then `xcrun xctest` the macOS bundle
+- [CHANGELOG entries are expanded lists](feedback-changelog-expanded.md) — one detailed bullet per change, never a short summary

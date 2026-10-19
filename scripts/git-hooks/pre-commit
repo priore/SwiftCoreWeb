@@ -1,0 +1,11 @@
+#!/bin/sh
+# SwiftCoreWeb — optional contributor hook: block personal data in staged changes.
+# Active only for GitHub forks (see lib.sh). Silent no-op on the private repo.
+set -eu
+. "$(dirname "$0")/lib.sh"
+hooks_active || exit 0
+if ! hooks_scan_diff --cached; then
+    echo "pre-commit: possible personal data in the lines above (file:line)." >&2
+    echo "  false positive? add '# hooks:allow' on the line or a regex in .hooksignore" >&2
+    exit 1
+fi

@@ -50,11 +50,11 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 continue // RouteMethodMacro already reported the syntax error
             }
 
-            let normalizedRoutePath = RouteTemplateParser.normalizedPath(arguments.path, parameters: templateParameters)
-            let fullPath = joinedPath(prefix: prefix, path: normalizedRoutePath)
-            let routeKey = "\(arguments.method) \(fullPath)"
+            let fullPath = joinedPath(prefix: prefix, path: arguments.path)
+            // Keyed by template shape, so `/{id}` vs `/{name}` collide but `/{id:int}` vs `/{id:uuid}` do not.
+            let routeKey = "\(arguments.method) \(RouteTemplateParser.shapeKey(fullPath))"
             if !seenRouteKeys.insert(routeKey).inserted {
-                context.diagnose(RouteDiagnostic.duplicateRoute.at(function, detail: "'\(routeKey)'."))
+                context.diagnose(RouteDiagnostic.duplicateRoute.at(function, detail: "'\(arguments.method) \(fullPath)'."))
                 continue
             }
 

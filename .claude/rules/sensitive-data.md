@@ -14,3 +14,21 @@ This repository is public on GitHub. No sensitive data (credentials, signing key
    Both must return empty. If something shows up tracked, it must be removed from history (`git filter-repo` or equivalent) before pushing — removing it only from the working tree is not enough, it stays in past commits.
 
 Don't treat `.gitignore` as a one-time static guarantee: re-check it every time a new data source or example app is introduced, not just once at project start.
+
+## Private vs public repository
+
+Principle: the private/internal repository may contain everything; the public repository must never
+contain personal identifiers (real names, personal emails, absolute home paths, machine-specific
+details). Never rewrite the internal history to achieve this.
+
+- Fix problems at the source on the development branch (no absolute paths, neutral examples,
+  no references to non-public documents in published files).
+- Anything personal that must stay in the internal repo lives under an internal-only path
+  (`.claude/memory-private/`, `.claude/settings.local.json`, planning docs) that the publish
+  pipeline strips.
+- Personal strings and allowed identities are kept **outside the repository**, in the maintainer's
+  private configuration directory read by the publish script at run time — never in tracked files,
+  commit messages or reports.
+- Automatic controls: the publish script rewrites identities/contents on a throwaway clone and
+  aborts if anything personal remains; the `pre-push` hook refuses a direct push to a public
+  remote; contributors can opt in to `scripts/git-hooks/`, and CI runs the generic scan on PRs.

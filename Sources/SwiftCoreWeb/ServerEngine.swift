@@ -43,9 +43,9 @@ final class ServerEngine: @unchecked Sendable {
     private var previousIdleTimerApplied = false
     private let group: NIOTSEventLoopGroup
 
-    private init(app: WebApplication) {
+    private init(app: WebApplication) throws {
         self.app = app
-        self.dispatcher = app.buildDispatcher()
+        self.dispatcher = try app.makeDispatcher()
         self.rateLimiter = app.rateLimitOptions.map(RateLimiter.init)
         self.connectionGate = ConnectionGate(maxConcurrent: app.serverOptions.maxConcurrentConnections)
         self.group = NIOTSEventLoopGroup()
@@ -55,7 +55,7 @@ final class ServerEngine: @unchecked Sendable {
     /// `stop(timeout:)` is called. Stores itself on `app.engineBox` so
     /// `stopAsync()` can reach it.
     static func start(for app: WebApplication) async throws {
-        let engine = ServerEngine(app: app)
+        let engine = try ServerEngine(app: app)
         app.engineBox.engine = engine
         try await engine.run()
     }

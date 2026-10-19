@@ -18,7 +18,7 @@ SwiftCoreWeb's idiomatic-Swift camelCase API.
 | `RequireAuthorization()` | `.requireAuthorization(_:)` |
 | `[ApiController]` + `[Route]` | `@Controller(_ prefix:)` |
 | `[HttpGet]`/`[HttpPost]`/etc. | `@Get`/`@Post`/`@Put`/`@Patch`/<br>`@Delete`/`@Head`/`@Options`/`@Route` |
-| Route constraints (`{id:int}`) | Route constraints:<br>`{id:int}`, `{id:uuid}`, `{page?}`, `{*path}` |
+| Route constraints (`{id:int}`) | Route constraints:<br>`int`, `long`, `uuid`, `bool`, `double`, `alpha`, `min`, `max`, `range`, `length`, `minlength`, `maxlength`, chained as `{id:int:min(1)}`; plus `{page?}`, `{*path}` (no `regex`, `datetime`, `decimal`, `float`; see [Routing](ROUTING_AND_MIDDLEWARE.md#route-templates)) |
 | `IApplicationBuilder.Use(...)` | `app.use { ctx, next in ... }` |
 | `IMiddleware` | `Middleware` protocol |
 | `app.UseExceptionHandler()` | `app.useExceptionHandler()` |

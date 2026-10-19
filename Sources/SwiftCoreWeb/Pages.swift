@@ -11,7 +11,7 @@ import Security
 import NIOConcurrencyHelpers
 
 /// A server-rendered, stateful page whose template is a precompiled Vue
-/// component (the Vue Live Pages design — see `AI-Workspace/Plans/LIVE_PAGES_PLAN.md`).
+/// component (the Vue Live Pages design).
 ///
 /// `form` is the only part of the page a client may modify; every other
 /// stored property is server state the client can see (in the signed
