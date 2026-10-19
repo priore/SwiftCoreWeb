@@ -82,7 +82,7 @@ enum RouteTemplateParser {
     }
 
     /// Placeholder-name-independent shape of a route path, mirroring the
-    /// runtime router's `shapeKey` so both targets agree on what is a duplicate.
+    /// runtime `CompiledRouteTemplate.shapeKey` so both targets agree on what is a duplicate.
     static func shapeKey(_ path: String) -> String {
         path.split(separator: "/", omittingEmptySubsequences: true).map { segment -> String in
             guard segment.hasPrefix("{"), segment.hasSuffix("}") else { return "lit:\(segment)" }
@@ -90,8 +90,9 @@ enum RouteTemplateParser {
             if body.hasPrefix("*") { return "all" }
             let isOptional = body.hasSuffix("?")
             if isOptional { body.removeLast() }
-            let constraint = body.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
-            return "\(isOptional ? "opt" : "param"):\(constraint)"
+            let constraints = body.split(separator: ":", omittingEmptySubsequences: false).dropFirst()
+                .map { $0.filter { !$0.isWhitespace } }.joined(separator: ":")
+            return "\(isOptional ? "opt" : "param"):\(constraints)"
         }.joined(separator: "/")
     }
 

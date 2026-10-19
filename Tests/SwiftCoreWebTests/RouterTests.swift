@@ -77,4 +77,28 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(allowed, [.get, .head, .options])
         guard case .notFound = router.match(method: .get, path: "/nope") else { return XCTFail("expected 404") }
     }
+
+    // MARK: - Ambiguity detection
+
+    private func ambiguous(_ entries: [(HttpMethod, String)]) throws -> [[String]] {
+        let routes = try entries.map {
+            Route(method: $0.0, template: try CompiledRouteTemplate($0.1), auth: .none, summary: nil) { _ in voidHttpResult() }
+        }
+        return Router.ambiguousRouteGroups(routes).map { $0.map(\.template.raw) }
+    }
+
+    func testEquivalentTemplatesAreAmbiguous() throws {
+        XCTAssertEqual(try ambiguous([(.get, "/users/{id}"), (.get, "/users/{name}")]), [["/users/{id}", "/users/{name}"]])
+        XCTAssertEqual(try ambiguous([(.get, "/f/{*a}"), (.get, "/f/{*b}")]).count, 1)
+        XCTAssertEqual(try ambiguous([(.get, "/p/{n:int}"), (.get, "/p/{m: int}")]).count, 1)
+        XCTAssertEqual(try ambiguous([(.get, "/a/{x?}"), (.get, "/a/{y?}")]).count, 1)
+    }
+
+    func testDifferentShapesOrMethodsAreAllowed() throws {
+        XCTAssertTrue(try ambiguous([(.get, "/users/{id:int}"), (.get, "/users/{id:uuid}")]).isEmpty)
+        XCTAssertTrue(try ambiguous([(.get, "/users/{id}"), (.post, "/users/{id}")]).isEmpty)
+        XCTAssertTrue(try ambiguous([(.get, "/users/{id}"), (.get, "/users/me"), (.get, "/users/{id:int}")]).isEmpty)
+        XCTAssertTrue(try ambiguous([(.get, "/a/{x?}"), (.get, "/a/{*x}"), (.get, "/a")]).isEmpty)
+        XCTAssertTrue(try ambiguous([(.get, "/Users"), (.get, "/users")]).isEmpty) // literals are case-sensitive
+    }
 }

@@ -48,7 +48,8 @@ enum RouteConstraint: Sendable, Equatable {
     }
 
     /// Parses one constraint token such as `int` or `range(1,10)`.
-    static func parse(_ token: String, placeholder: String, template: String) throws -> RouteConstraint {
+    static func parse(_ rawToken: String, placeholder: String, template: String) throws -> RouteConstraint {
+        let token = rawToken.filter { !$0.isWhitespace } // the macro target ignores whitespace too
         func fail(_ reason: String) -> RouteTemplateSyntaxError {
             RouteTemplateSyntaxError(message: "\(reason) ':\(token)' on placeholder '{\(placeholder)}' in '\(template)'")
         }
@@ -107,9 +108,15 @@ struct CompiledRouteTemplate: Sendable {
     /// regardless of registration order (same order as ASP.NET Core).
     let precedence: [Int]
 
+    /// Placeholder-name-independent shape (`lit:users/param:int`): two routes
+    /// for the same method with equal shapes are ambiguous. Keep identical to
+    /// the macro target's `RouteTemplateParser.shapeKey`.
+    let shapeKey: String
+
     init(_ template: String) throws {
         self.raw = template
         self.segments = try Self.parse(template)
+        self.shapeKey = Self.shapeKey(of: template)
         self.precedence = segments.map { segment in
             switch segment {
             case .literal: 0
@@ -151,6 +158,19 @@ struct CompiledRouteTemplate: Sendable {
             }
         }
         return pathIndex == pathComponents.endIndex ? values : nil
+    }
+
+    private static func shapeKey(of template: String) -> String {
+        template.split(separator: "/", omittingEmptySubsequences: true).map { component -> String in
+            guard component.hasPrefix("{"), component.hasSuffix("}") else { return "lit:\(component)" }
+            var body = String(component.dropFirst().dropLast())
+            if body.hasPrefix("*") { return "all" }
+            let isOptional = body.hasSuffix("?")
+            if isOptional { body.removeLast() }
+            let constraints = body.split(separator: ":", omittingEmptySubsequences: false).dropFirst()
+                .map { $0.filter { !$0.isWhitespace } }.joined(separator: ":")
+            return "\(isOptional ? "opt" : "param"):\(constraints)"
+        }.joined(separator: "/")
     }
 
     private static func parse(_ template: String) throws -> [RouteSegment] {

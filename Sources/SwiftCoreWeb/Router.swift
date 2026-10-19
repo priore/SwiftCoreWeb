@@ -64,8 +64,31 @@ final class Router: RouteRegistry, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard !isFrozen else { return }
+        let ambiguous = Self.ambiguousRouteGroups(pendingRoutes)
+        if !ambiguous.isEmpty {
+            let lines = ambiguous.map { group in
+                group.map { "\($0.method.rawValue) \($0.template.raw)" }.joined(separator: " vs ")
+            }
+            preconditionFailure("SwiftCoreWeb: ambiguous routes (same method and shape, the later one would be unreachable): \(lines.joined(separator: "; "))")
+        }
         isFrozen = true
         frozenRoutes = pendingRoutes
+    }
+
+    /// Groups of routes that share method and template shape (`/users/{id}`
+    /// vs `/users/{name}`); only the first of each could ever be reached.
+    /// Different constraints give different shapes (`{id:int}` vs `{id:uuid}`),
+    /// so overlapping-but-unequal constraints are not reported — precedence
+    /// decides those.
+    static func ambiguousRouteGroups(_ routes: [Route]) -> [[Route]] {
+        var order: [String] = []
+        var groups: [String: [Route]] = [:]
+        for route in routes {
+            let key = "\(route.method.rawValue) \(route.template.shapeKey)"
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(route)
+        }
+        return order.compactMap { groups[$0] }.filter { $0.count > 1 }
     }
 
     /// All registered routes, for `/__routes` and `/openapi.json` (the realtime and OpenAPI contract design).
