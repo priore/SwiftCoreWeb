@@ -122,8 +122,20 @@ extension WebApplication {
     /// drive requests through. Idempotent: safe to call once from
     /// `runAsync()` and again from `TestHost`. Throws `AmbiguousRoutesError`
     /// if two routes for the same method are indistinguishable.
-    public func buildDispatcher() throws -> RequestDispatcher {
+    public func makeDispatcher() throws -> RequestDispatcher {
         try routeRegistry.freeze()
         return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics)
+    }
+
+    /// Non-throwing form kept for source compatibility: traps, printing the
+    /// route list, where `makeDispatcher()` throws.
+    @available(*, deprecated, renamed: "makeDispatcher()", message: "Use makeDispatcher(), which throws AmbiguousRoutesError instead of trapping.")
+    public func buildDispatcher() -> RequestDispatcher {
+        do {
+            return try makeDispatcher()
+        } catch {
+            fputs("\(error)\n", stderr)
+            preconditionFailure("SwiftCoreWeb: \(error)")
+        }
     }
 }

@@ -13,7 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   closure routes: a non-matching `{id:int}` is now `404` (or falls through to another route)
   instead of `400`.
 - Starting a server with two routes of the same method and shape (`/users/{id}` and
-  `/users/{name}`) now throws `AmbiguousRoutesError` (listing every group) from `runAsync()`/`TestHost`; the second route was already unreachable. `buildDispatcher()` is now `throws`.
+  `/users/{name}`) now throws `AmbiguousRoutesError` (listing every group) from `runAsync()`/`TestHost`; the second route was already unreachable. `buildDispatcher()` is deprecated (it still traps); use the throwing `makeDispatcher()`.
 
 ### Fixed
 - `@Controller` with an unconstrained placeholder bound to a non-`String` parameter (`{id}` with

@@ -45,7 +45,7 @@ final class ServerEngine: @unchecked Sendable {
 
     private init(app: WebApplication) throws {
         self.app = app
-        self.dispatcher = try app.buildDispatcher()
+        self.dispatcher = try app.makeDispatcher()
         self.rateLimiter = app.rateLimitOptions.map(RateLimiter.init)
         self.connectionGate = ConnectionGate(maxConcurrent: app.serverOptions.maxConcurrentConnections)
         self.group = NIOTSEventLoopGroup()
