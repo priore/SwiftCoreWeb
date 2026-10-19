@@ -7,24 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
-- Route precedence no longer depends on registration order: literal > constrained parameter >
-  parameter > optional parameter > catch-all, compared segment by segment.
-- `@Controller` routes keep their constraints at registration, so they take part in matching like
-  closure routes: a non-matching `{id:int}` is now `404` (or falls through to another route)
-  instead of `400`.
-- Starting a server with two routes of the same method and shape (`/users/{id}` and
-  `/users/{name}`) now throws `AmbiguousRoutesError` (listing every group) from `runAsync()`/`TestHost`; the second route was already unreachable. `buildDispatcher()` is deprecated (it still traps); use the throwing `makeDispatcher()`.
-
-### Fixed
-- `@Controller` with an unconstrained placeholder bound to a non-`String` parameter (`{id}` with
-  `id: Int`) now compiles; route values convert to the parameter's declared type.
-- The `@Controller` duplicate-route check no longer flags `{id:int}` vs `{id:uuid}` and now catches
-  `{id}` vs `{name}`.
+- Route precedence no longer depends on registration order. When several routes of the same method match a path, segments are compared left to right with the ranking literal > constrained parameter > unconstrained parameter > optional parameter > catch-all, and the strictly more specific route wins (`CompiledRouteTemplate.precedence` replaces `requiredSegmentCount`, which counted literals and parameters alike). A shorter route beats the same route with an optional tail (`/a` over `/a/{page?}`); on an exact tie the first registered route still wins.
+- `Router.match` no longer carries the unused `bestSpecificity` variable.
+- `@Controller` routes now register their path with constraints intact (`/api/users/{id:int}` instead of `/api/users/{id}`), so constraints take part in matching exactly as they do for closure `map*` routes. A value that fails a constraint is now a `404` (or falls through to another matching route) instead of a `400` from parameter binding. `RouteTemplateParser.normalizedPath` was removed from the macro target.
+- `@Controller` route values are now converted to the handler parameter's declared type instead of a type derived from the constraint.
+- Starting a server with two routes of the same method and template shape (placeholder names are ignored: `/users/{id}` and `/users/{name}`, `/f/{*a}` and `/f/{*b}`, `/a/{x?}` and `/a/{y?}`) now fails instead of silently leaving the later route unreachable. `Router.freeze()` throws `AmbiguousRoutesError`, which `runAsync()` and `TestHost` propagate. Constraints are part of the shape, so `{id:int}` and `{id:uuid}` remain allowed; overlapping but different constraints are not reported and are resolved by precedence.
+- Swift `Int64` is now a primitive bindable type for route placeholders and query values (needed by the `long` constraint).
+- CI (`.github/workflows/ci.yml`): the simulator test step skips `SwiftCoreWebMacrosTests`, which the package scheme only ever builds for the host. Two new steps build those tests and run the macOS bundle with `xcrun xctest`.
 
 ### Added
-- Route constraints `long`, `bool`, `double`, `alpha`, `min`, `max`, `range`, `length`,
-  `minlength`, `maxlength`, and chaining (`{id:int:min(1)}`), in closures and controllers.
-- Compile-time error when a controller constraint cannot bind to the parameter's type.
+- Route constraints `long` (`Int64`), `bool` (exactly `true`/`false`), `double`, `alpha` (one or more ASCII letters), `min(n)`, `max(n)`, `range(a,b)`, `length(n)`, `length(a,b)`, `minlength(n)` and `maxlength(n)`, accepted with the same syntax by the runtime router and by the `@Controller`/`@Get`/… macros.
+- Constraint chaining: `{id:int:min(1)}` matches only when every constraint matches; whitespace around tokens and arguments is ignored. Chains are supported on optional placeholders (`{page:int:min(1)?}`).
+- Registration-time validation of constraints: unknown names, missing or extra arguments, non-integer arguments, empty ranges (`range(5,1)`), negative or inverted length bounds and parenthesised parameterless constraints (`int(3)`) are rejected, by `RouteTemplateSyntaxError` at runtime and by an invalid-route-template diagnostic in the macro.
+- Compile-time diagnostic when a controller constraint cannot bind to the handler parameter's type (`{id:int}` with `id: UUID`, `{code:length(3)}` with `code: Int`); each constraint lists the Swift types it accepts.
+- `AmbiguousRoutesError` (public, `CustomStringConvertible`): `groups` holds the offending routes as `"GET /users/{id}"`, and the description lists every group, one route per line, with a hint on how to fix it.
+- `WebApplication.makeDispatcher() throws`, the throwing replacement for `buildDispatcher()`.
+- Tests: `RouterTests` (precedence in both registration orders, ambiguity detection, `405`/`Allow` and `HEAD` fallback unchanged), `RouteConstraintTests` (every constraint, chaining, malformed input), `RoutePrecedenceTests` (end to end through `TestHost`: controller `{id:int}` with a closure `{slug}` on the same prefix) and new `ControllerMacroTests` cases (constraints preserved, declared-type conversion, constraint/type mismatch, malformed constraint, equivalent and disjoint duplicates).
+- Docs: `docs/ROUTING_AND_MIDDLEWARE.md` gains the constraint table, "Route precedence" (rule plus examples) and "Ambiguous routes fail at startup"; `docs/DOTNET_MAPPING.md` lists the supported constraints and the ones intentionally left out.
+
+### Deprecated
+- `WebApplication.buildDispatcher()`: use `makeDispatcher()`. The deprecated form keeps its signature, prints the route list to stderr and stops the process if routes are ambiguous.
+
+### Fixed
+- `@Controller` with an unconstrained placeholder bound to a non-`String` parameter (`{id}` with `id: Int`) now compiles; before, the generated code passed a `String` to the `Int` parameter.
+- The `@Controller` duplicate-route check compared raw path strings: it wrongly flagged `{id:int}` against `{id:uuid}` and missed `{id}` against `{name}`. It now compares the template shape, mirroring the runtime check.
+- CI: remote runs failed with `Failed to create a bundle instance representing ... SwiftCoreWebMacrosTests.xctest` because the simulator run tried to execute a bundle that is never built for the simulator.
+
+### Not supported
+- `regex(...)` (ReDoS risk and per-request cost), `datetime`, `decimal`, `float` (locale-dependent parsing), `required`, `file`, `nonfile`. Take a `String` and convert in the handler instead.
 
 ## [1.1.0] - 2026-09-26
 
