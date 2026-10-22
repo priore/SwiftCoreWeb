@@ -29,3 +29,6 @@ AI-Workspace/Prompts/
 .playwright-mcp/
 # Personal / machine-local Claude files (never published)
 .claude/settings.local.json
+
+# Coverage profile written by test runs
+*.profraw
