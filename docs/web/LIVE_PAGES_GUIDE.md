@@ -108,10 +108,60 @@ app.mapPage("/orders/new", OrderPage.self)
 | checkbox group / `select multiple` | `v-model` (array) | `[String]` | `@change` |
 | radio group | `v-model` | `String` | `@change` |
 | select | `v-model` | `String` / `Int` | `@change` |
+| file input | — (not part of `form`) | `ctx.files: [UploadedFile]` | `@change="$swiftUpload('evt', $event, { multiple, accept })"` |
 | button / any element | — | — | `@click`, `@dblclick`, … any DOM event |
 | Swift → components | values (`form`), lists (`v-for` over state), `:disabled`, `v-if`/`v-show`, `:class`, errors (`errors.x`), `.redirect` | | |
 
-`$swift(event, { debounce?: ms, args?: [...] })`; `$live.busy` = a request is in flight.
+`$swift(event, { debounce?: ms, args?: [...] })`; `$live.busy` = a request is in flight (also while a file uploads).
+
+## Upload and download
+
+```swift
+struct DocumentsPage: Page {
+    static let template = "documents.html"
+    static let maxUploadBytes: Int? = 5_000_000            // total per event; the route's body limit follows
+    static let allowedUploadTypes: [String]? = ["application/pdf", "image/*", ".md"]
+    static let maxUploadFiles: Int? = 3
+
+    var names: [String] = []
+
+    mutating func onEvent(_ event: String, _ ctx: PageContext) async throws -> PageAction {
+        switch event {
+        case "upload":
+            for file in ctx.files {                          // temp files are deleted after the response…
+                try file.move(to: documentsDirectory.appendingPathComponent(file.fileName))   // …unless moved
+            }
+            names += ctx.files.map(\.fileName)
+        case "export":
+            return .download(data: try csv(names), fileName: "elenco è.csv", contentType: "text/csv")
+        default: break
+        }
+        return .render                                       // ctx.errors["files"] is set when a limit is hit
+    }
+}
+```
+
+```html
+<input type="file" multiple accept=".pdf,image/*,.md" @change="$swiftUpload('upload', $event, { multiple: true })">
+<button @click="$swift('export')" :disabled="$live.busy">Download list</button>
+<span v-if="errors.files" class="err">{{ errors.files }}</span>
+```
+
+In short: `$swiftUpload` sends the chosen files to your `onEvent` as `ctx.files`, and `.download(...)` makes the browser save a file. Nothing else to set up.
+
+### Things to know
+
+- **Upload.** Files are temporary: they are deleted when the response is sent. Call `file.move(to:)` to keep one.
+- **Limits.** `maxUploadBytes` is the total size of the files in one event; above it the answer is `413`. Too many files or a type that is not allowed leaves `ctx.files` empty and puts a message in `ctx.errors["files"]`, which you can show with `errors.files`. Without `maxUploadBytes` the app-wide request size limit applies (1 MB by default).
+- **Download.** Whatever you change in the page before returning `.download(...)` is kept. The browser gets a one-time link that works for about a minute and only for that visitor.
+- **`.result(...)`.** If `onEvent` returns a plain `.result(...)`, the server converts it for you: a redirect redirects, an empty success just re-renders, any other success becomes a download. An error status shows up as a `live:error` event on `document`.
+
+### Advanced: how it works
+
+- **Upload request.** `$swiftUpload(event, $event, { multiple?, accept?, args? })` sends `multipart/form-data` to the page path with the fields `snapshot`, `checksum`, `event`, `args` (JSON), `form` (JSON) and the files. The server checks the signed snapshot, the path and the antiforgery cookie exactly as for a normal event. It also requires the header `X-SCW-Live: 1`, which `live.js` adds; a plain form on another website cannot send a custom header without a permission check, so it cannot reach the endpoint (`403` without it). `accept` only filters in the browser; `allowedUploadTypes` is the real check. Files are held in memory while the request is parsed (there is no streaming parser).
+- **Page limits and the route.** `maxUploadBytes` also raises the body limit of the page's `POST` route to that size plus 1 MB for the snapshot and form fields.
+- **Download request.** The payload goes into a short-lived in-memory store (limited in entries and bytes). The event answers with the new snapshot plus `download: "/_framework/dl/<token>"`, and `live.js` clicks a hidden `<a download>` pointing to it. The response is an attachment with `Cache-Control: no-store` and can be fetched once. The token is tied to the antiforgery cookie (and the session cookie if there is one); anyone else gets `404`. It never uses `fetch` plus `createObjectURL`.
+- **Client safety.** `live.js` ignores a response that has no `snapshot` instead of trying to read it as page data. From `onLoad` (a plain `GET`), a `.download(...)` or `.result(...)` is simply served as the response.
 
 ## Protocol details (for when you need to know what's actually happening)
 
@@ -144,7 +194,7 @@ app.mapPage("/orders/new", OrderPage.self)
 
 ## Out of scope
 
-File upload, shared layouts, nested components (one page = one component), server push (possible
+Shared layouts, nested components (one page = one component), server push (possible
 later via the existing `mapSse`), a `@Page` macro.
 
 ## Next

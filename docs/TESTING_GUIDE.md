@@ -49,6 +49,11 @@ Generate `testToken` with the same HMAC secret your test build's `JwtOptions` us
 be generated and stored; tests can use a throwaway fixed secret since nothing here talks to a real
 network.
 
+## Body size limits
+
+`TestHost` applies the same request body limits as a real socket: a body above `maxRequestBodySize` (or the route group's
+own `.maxRequestBodySize(_:)`) answers `413`. A test that posts more than 1 MB needs the limit raised on the builder or the route group.
+
 ## Testing error paths
 
 Any thrown `HttpError` or unhandled error goes through `.useExceptionHandler()` and comes back as

@@ -213,13 +213,19 @@ final class ServerEngine: @unchecked Sendable {
             try await channel.executeThenClose { inbound, outbound in
                 var requestHead: HTTPRequestHead?
                 var bodyBuffer = ByteBuffer()
-                let maxBodySize = app.serverOptions.maxRequestBodySize
+                var maxBodySize = app.serverOptions.maxRequestBodySize
 
                 for try await part in inbound {
                     switch part {
                     case .head(let head):
                         requestHead = head
                         bodyBuffer.clear()
+                        // A route (or group) may override the global limit; resolved from the
+                        // head alone, so an oversized body is cut off before it is buffered.
+                        maxBodySize = dispatcher.bodyLimit(
+                            method: HttpMethod(rawValue: head.method.rawValue) ?? .get,
+                            path: splitPathAndQuery(head.uri).path
+                        )
 
                     case .body(var chunk):
                         bodyBuffer.writeBuffer(&chunk)
@@ -336,8 +342,10 @@ final class ServerEngine: @unchecked Sendable {
             try await writeFile(path, range: range, headers: headers, status: response.status, dropBody: dropBody, outbound: outbound)
 
         case .stream(let writer):
-            headers.remove(name: "Content-Length")
-            headers.replaceOrAdd(name: "Transfer-Encoding", value: "chunked")
+            // A known `Content-Length` (Results.stream(contentLength:)) is kept; otherwise chunked.
+            if !headers.contains(name: "Content-Length") {
+                headers.replaceOrAdd(name: "Transfer-Encoding", value: "chunked")
+            }
             try await outbound.write(.head(HTTPResponseHead(version: .http1_1, status: .init(statusCode: response.status.rawValue), headers: headers)))
             if !dropBody {
                 let sink = ChunkedByteSink(outbound: outbound)

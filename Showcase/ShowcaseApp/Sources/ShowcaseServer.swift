@@ -99,6 +99,8 @@ enum ShowcaseServer {
         // documented in Showcase/README.md; it does not exist in release
         // builds at all.
         app.useVue()
+        // blob: downloads for web code running inside the WKWebView (see ShowcaseWebView.swift).
+        app.useBlobDownloads()
         #if DEBUG
         app.useDevDeploy(root: .documents("www"))
         app.useSpa(root: .documents("www"))

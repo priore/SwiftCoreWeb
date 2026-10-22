@@ -49,6 +49,23 @@ public struct UploadedFile: Sendable {
         self.temporaryPath = temporaryPath
         self.sizeInBytes = sizeInBytes
     }
+
+    /// Moves the upload to `destination`, replacing any file already there.
+    /// Call it from the handler: files still at `temporaryPath` are deleted once
+    /// the response is produced, a moved one is not.
+    public func move(to destination: URL) throws {
+        let source = URL(fileURLWithPath: temporaryPath)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: source)
+        } else {
+            try FileManager.default.moveItem(at: source, to: destination)
+        }
+    }
+
+    /// The whole upload read into memory.
+    public func data() throws -> Data {
+        try Data(contentsOf: URL(fileURLWithPath: temporaryPath))
+    }
 }
 
 /// A parsed `multipart/form-data` or `application/x-www-form-urlencoded` request
@@ -124,7 +141,9 @@ struct TemporaryUploads: Sendable {
 ///   either encoding.
 public func bindForm(_ ctx: HttpContext) throws -> Form {
     let form = try parseForm(ctx.request)
-    ctx.items[TemporaryUploads.self] = TemporaryUploads(paths: form.files.map(\.temporaryPath))
+    var uploads = ctx.items[TemporaryUploads.self] ?? TemporaryUploads(paths: [])
+    uploads.paths += form.files.map(\.temporaryPath)
+    ctx.items[TemporaryUploads.self] = uploads
     return form
 }
 

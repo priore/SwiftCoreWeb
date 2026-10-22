@@ -7,9 +7,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Binary responses with a file name.**
+  - `Results.data(_:contentType:fileName:disposition:)` sends in-memory bytes.
+  - `Results.file` and `Results.stream` take `fileName:` and `disposition:` (`.attachment` or `.inline`).
+  - `Content-Disposition` carries a quoted ASCII `filename` fallback plus a percent-encoded `filename*=UTF-8''…` (RFC 6266/5987).
+  - Quotes, CR/LF, control characters and path separators in the name are neutralised, so any string is safe.
+  - `Results.stream(contentLength:)` sends `Content-Length` instead of chunked encoding.
+- **`Range`, `If-Range` and `HEAD` work for any `Results.file`.**
+  - Previously only the static file middleware answered `206`; the dispatcher now resolves them for every handler.
+  - A start past the end answers `416` with `Content-Range: bytes */size`.
 - **`Form` parameters bind `application/x-www-form-urlencoded` bodies.**
   - Text fields only, no files.
   - Works in addition to `multipart/form-data`.
+- **`UploadedFile.move(to:)` and `UploadedFile.data()`.**
+  - `move(to:)` replaces an existing destination and survives the post-response temporary file cleanup.
+- **Per-route request body limit.**
+  - `app.mapGroup("/files").maxRequestBodySize(_:)` overrides the global limit for the routes of that group (and nested groups).
+  - The server engine resolves it from the request head, before buffering the body.
+  - The dispatcher enforces the same limits, so `TestHost` answers `413` exactly like a real socket.
+- **Live Pages file upload and download.**
+  - `<input type="file" @change="$swiftUpload('evt', $event, { multiple, accept })">` posts `multipart/form-data` to the page path; handlers read `ctx.files`.
+  - The multipart event is verified like a JSON event (signed snapshot, path, antiforgery) and also requires the `X-SCW-Live: 1` header set by `live.js`.
+  - `Page.maxUploadBytes`, `allowedUploadTypes` and `maxUploadFiles` limit uploads (`413` or `ctx.errors["files"]`); `maxUploadBytes` also sets the route's body limit.
+  - `PageAction.download(data:)`, `download(filePath:)` and `download(stream:)` reply with a one-time `/_framework/dl/<token>` URL that `live.js` navigates to; no `blob:` URLs.
+  - A `.result(...)` from `onEvent` is converted on the server (redirect, re-render or download); `live.js` no longer parses a response without a `snapshot`.
+  - `$live.busy` is set while an upload is in flight.
+- **`app.useBlobDownloads(maxBytes:injection:)`: `blob:` downloads for unmodified web code inside `WKWebView`.**
+  - Independent of Vue, Pages, sessions and SPA hosting; works in an API-only app.
+  - `POST /_framework/blob` stores the uploaded bytes and returns a one-time `GET /_framework/dl/<token>` attachment URL, bound to the antiforgery (and session) cookie, bounded and in memory only.
+  - `GET /_framework/blob-download.js` serves the client shim, also exposed as `BlobDownloadShim.source`.
+  - `BlobShimInjection` (`.auto`, `.always`, `.never`) controls an optional middleware that adds the shim tag to HTML responses from any source; `.auto` only for `User-Agent`s containing `SwiftCoreWebHost/1`.
+- **`SwiftCoreWebKit` library product (optional, imports WebKit).**
+  - `BlobDownloadSupport` is a plain object your own `WKNavigationDelegate` forwards to; it is also the `WKDownloadDelegate`.
+  - `install(on:)` sets the user-agent token and adds the shim as a user script.
+- **Docs.** New [Blob downloads in WKWebView](docs/web/BLOB_DOWNLOADS.md); download, upload and per-route limit examples in the API basic examples; upload and download in the Live Pages guide.
+
+### Changed
+- **`TestHost` enforces the request body limit** (`413` above `maxRequestBodySize` or the route group's limit), as the server engine always did.
+  - A test that posts more than 1 MB now needs the limit raised on the builder or the route group.
+- **An unsatisfiable `Range` on a static file now answers `416`** instead of falling back to the full body (RFC 9110).
+- **`live.js` and `api.js`** gained multipart/`FormData` support and a guard against responses that are not page JSON; both are served with immutable caching, so a browser that cached the old files needs a hard reload.
+- **`bindForm(_ ctx:)` accumulates** the temporary files of several calls on one request instead of replacing the list.
 
 ### Deprecated
 - **`bindForm(_ request: HttpRequest)`**: use `bindForm(_ ctx: HttpContext)`, which the macros now generate.

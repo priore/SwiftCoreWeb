@@ -16,8 +16,11 @@ public struct RequestDispatcher: Sendable {
     let pipeline: MiddlewarePipeline
     let services: ServiceProvider
     let metrics: ServerMetrics
+    /// `ServerOptions.maxRequestBodySize`, the limit for routes without their own.
+    let maxBodySize: Int
 
-    init(router: Router, pipeline: MiddlewarePipeline, services: ServiceProvider, metrics: ServerMetrics) {
+    init(router: Router, pipeline: MiddlewarePipeline, services: ServiceProvider, metrics: ServerMetrics, maxBodySize: Int = Int.max) {
+        self.maxBodySize = maxBodySize
         self.router = router
         self.pipeline = pipeline
         self.services = services
@@ -48,7 +51,24 @@ public struct RequestDispatcher: Sendable {
         return response
     }
 
+    /// The request body limit for `method`/`path`: the matched route's own, else the global one.
+    /// The server engine calls this on the request head, before buffering the body.
+    func bodyLimit(method: HttpMethod, path: String) -> Int {
+        if case .matched(let route, _) = router.match(method: method, path: path), let limit = route.maxBodySize { return limit }
+        return maxBodySize
+    }
+
     private func dispatchWithoutMetrics(_ request: HttpRequest) async -> HttpResponse {
+        // ponytail: `router.match` runs here and again in `dispatchRouted`; cache the match if route tables get large.
+        // Also enforced here (the engine cuts the connection earlier) so `TestHost`,
+        // which has no body loop, applies the same limits as a real socket.
+        guard request.body.count <= bodyLimit(method: request.method, path: request.path) else {
+            return Results.problem(status: .payloadTooLarge, detail: nil).response
+        }
+        return applyByteRange(await dispatchRouted(request), for: request)
+    }
+
+    private func dispatchRouted(_ request: HttpRequest) async -> HttpResponse {
         let ctx = HttpContext(request: request, services: services)
 
         let match = router.match(method: request.method, path: request.path)
@@ -125,7 +145,7 @@ extension WebApplication {
     /// if two routes for the same method are indistinguishable.
     public func makeDispatcher() throws -> RequestDispatcher {
         try routeRegistry.freeze()
-        return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics)
+        return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics, maxBodySize: serverOptions.maxRequestBodySize)
     }
 
     /// Non-throwing form kept for source compatibility: traps, printing the

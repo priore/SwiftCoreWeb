@@ -29,12 +29,13 @@ Read these first, regardless of whether you're building a web app, an API, or bo
 - [Advanced examples](web/EXAMPLES_ADVANCED.md) — a linked multi-page site, zero-build Vue, the full Vite workflow, WebSocket and SSE pages.
 - [Auth and security](web/AUTH_AND_SECURITY.md) — protecting pages, cookies/sessions, CORS, security headers.
 - [On-device dashboard guide](web/DASHBOARD_GUIDE.md) — the on-device dashboard course (`SwiftCoreWebDashboard`): a live console on the device's own screen for the server running on it.
-- [Live Pages guide](web/LIVE_PAGES_GUIDE.md) — Vue components wired to Swift event handlers, Livewire-style: click in the browser, run Swift on the server, page updates.
+- [Live Pages guide](web/LIVE_PAGES_GUIDE.md) — Vue components wired to Swift event handlers, Livewire-style: click in the browser, run Swift on the server, page updates; includes file upload and download.
+- [Blob downloads in WKWebView](web/BLOB_DOWNLOADS.md) — make `URL.createObjectURL` + `<a download>` and attachment links work unchanged inside a `WKWebView` (`useBlobDownloads`, the shim, the optional `SwiftCoreWebKit` helper).
 
 ## API — serving JSON and REST
 
 - [Getting started](api/GETTING_STARTED.md) — your first JSON route, `Results`, `ProblemDetails`.
-- [Basic examples](api/EXAMPLES_BASIC.md) — a single GET/POST route, parameter binding from query/route/body.
+- [Basic examples](api/EXAMPLES_BASIC.md) — a single GET/POST route, parameter binding from query/route/body, file upload/download, per-route body limits.
 - [Advanced examples](api/EXAMPLES_ADVANCED.md) — a full CRUD API: routes, `@ApiModel`, DI, rate limiting, OpenAPI docs, tested end to end.
 - [Auth and security](api/AUTH_AND_SECURITY.md) — JWT, a custom API-key scheme, authorization policies, TLS on APIs.
 

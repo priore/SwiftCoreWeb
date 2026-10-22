@@ -115,7 +115,7 @@ rules above decide, and ties go to the route registered first.
 2. A name matching a route placeholder binds from the path.
 3. A non-primitive `Decodable` on `POST`/`PUT`/`PATCH` binds from the JSON body.
 4. A primitive or optional primitive binds from the query string.
-5. `Header<T>`, `Query<T>`, `Service<T>`, and `Form` (`multipart/form-data` or `application/x-www-form-urlencoded`, buffered up to `maxRequestBodySize`) give explicit control when the convention isn't enough.
+5. `Header<T>`, `Query<T>`, `Service<T>`, and `Form` (`multipart/form-data` or `application/x-www-form-urlencoded`, buffered up to `maxRequestBodySize`, or the group's own limit — see below) give explicit control when the convention isn't enough.
 
 Any conversion failure produces a `400` `ProblemDetails` naming the offending parameter — you never
 have to write that check yourself.
@@ -157,3 +157,17 @@ Built-ins:
 A single `NIOTSListenerBootstrap` (Network.framework via `NIOTransportServices`) serves HTTP and,
 when TLS is configured, HTTPS on the same pipeline. Handler code is plain `async throws` — never
 `EventLoopFuture` — thanks to `NIOAsyncChannel` bridging NIO to Swift Concurrency.
+
+## Request body limits per route
+
+`builder.maxRequestBodySize(_:)` (default 1 MB) is the global limit. A route group can replace it for its own routes
+— larger for an upload endpoint, smaller for a tiny one — without touching the rest of the app:
+
+```swift
+let files = app.mapGroup("/files").maxRequestBodySize(50_000_000)   // nested groups inherit it
+files.mapPost("/import") { (form: Form) in /* ... */ }
+```
+
+The server engine resolves the limit from the request head and stops reading as soon as the body exceeds it (`413`); the
+dispatcher enforces the same limit, so `TestHost` agrees with a real socket. Bodies are buffered in RAM, so keep the limit as low as the use case allows.
+Downloads (`Results.data`/`file`/`stream`, `Range`, `Content-Disposition`) are covered in [API: basic examples](api/EXAMPLES_BASIC.md).

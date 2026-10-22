@@ -14,6 +14,8 @@ struct Route: Sendable {
     let template: CompiledRouteTemplate
     let auth: AuthRequirement
     let summary: String?
+    /// Overrides `ServerOptions.maxRequestBodySize` for this route; `nil` = the global limit.
+    var maxBodySize: Int? = nil
     let handler: RouteHandler
 }
 
@@ -65,13 +67,25 @@ final class Router: RouteRegistry, @unchecked Sendable {
         summary: String?,
         handler: @escaping RouteHandler
     ) {
+        register(method: method, path: path, auth: auth, summary: summary, maxBodySize: nil, handler: handler)
+    }
+
+    /// `register` with a per-route request body limit (`RouteGroup.maxRequestBodySize(_:)`).
+    func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        handler: @escaping RouteHandler
+    ) {
         lock.lock()
         defer { lock.unlock() }
         precondition(!isFrozen, "SwiftCoreWeb: cannot register routes after the router has been frozen (runAsync() was called)")
         guard let template = try? CompiledRouteTemplate(path) else {
             preconditionFailure("SwiftCoreWeb: invalid route template '\(path)'")
         }
-        pendingRoutes.append(Route(method: method, template: template, auth: auth, summary: summary, handler: handler))
+        pendingRoutes.append(Route(method: method, template: template, auth: auth, summary: summary, maxBodySize: maxBodySize, handler: handler))
     }
 
     /// Freezes the router, taking a stable snapshot for lock-free matching.
@@ -166,11 +180,23 @@ public final class RouteGroup: @unchecked Sendable {
     let prefix: String
     let router: Router
     private var defaultAuth: AuthRequirement
+    private var bodyLimit: Int?
 
-    init(prefix: String, router: Router, defaultAuth: AuthRequirement = .none) {
+    init(prefix: String, router: Router, defaultAuth: AuthRequirement = .none, bodyLimit: Int? = nil) {
         self.prefix = prefix
         self.router = router
         self.defaultAuth = defaultAuth
+        self.bodyLimit = bodyLimit
+    }
+
+    /// Overrides the global request body limit for every route registered on
+    /// this group afterward (and nested groups), e.g. to accept uploads on
+    /// `/files` without raising the limit for the whole app. Larger or smaller
+    /// than the global value; over the limit the request gets `413`.
+    @discardableResult
+    public func maxRequestBodySize(_ bytes: Int) -> Self {
+        bodyLimit = bytes
+        return self
     }
 
     /// Requires authentication (or a specific requirement) for every route
@@ -184,7 +210,7 @@ public final class RouteGroup: @unchecked Sendable {
     /// Creates a nested group, concatenating path prefixes and inheriting
     /// this group's default authorization requirement.
     public func mapGroup(_ prefix: String) -> RouteGroup {
-        RouteGroup(prefix: self.prefix + prefix, router: router, defaultAuth: defaultAuth)
+        RouteGroup(prefix: self.prefix + prefix, router: router, defaultAuth: defaultAuth, bodyLimit: bodyLimit)
     }
 
     func fullPath(_ path: String) -> String {
@@ -255,13 +281,13 @@ extension RouteGroup {
     }
 
     private func map<T: Sendable>(_ method: HttpMethod, _ path: String, auth: AuthRequirement?, summary: String?, _ handler: @escaping @Sendable (HttpContext) async throws -> T) {
-        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary) { ctx in
+        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary, maxBodySize: bodyLimit) { ctx in
             try makeHttpResult(try await handler(ctx))
         }
     }
 
     private func map(_ method: HttpMethod, _ path: String, auth: AuthRequirement?, summary: String?, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) {
-        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary) { ctx in
+        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary, maxBodySize: bodyLimit) { ctx in
             try await handler(ctx)
             return voidHttpResult()
         }
