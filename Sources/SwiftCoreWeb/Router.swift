@@ -70,7 +70,7 @@ final class Router: RouteRegistry, @unchecked Sendable {
         register(method: method, path: path, auth: auth, summary: summary, maxBodySize: nil, handler: handler)
     }
 
-    /// `register` with a per-route request body limit (`RouteGroup.maxRequestBodySize(_:)`).
+    /// `register` with a per-route request body limit (`RouteGroup.maxRequestBodySize(_:)`, `maxRequestBodySize:` on `mapPost`…, `@Post(…, maxRequestBodySize:)`).
     func register(
         method: HttpMethod,
         path: String,

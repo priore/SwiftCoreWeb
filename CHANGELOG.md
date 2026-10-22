@@ -19,6 +19,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`Form` parameters bind `application/x-www-form-urlencoded` bodies.**
   - Text fields only, no files.
   - Works in addition to `multipart/form-data`.
+- **Per-route request body limit without a group.**
+  - `mapPost`, `mapPut`, `mapPatch`, `mapDelete` and `mapMethods` take `maxRequestBodySize:`.
+  - `@Post`, `@Put`, `@Patch` and `@Delete` take `maxRequestBodySize:` too.
+  - `RouteRegistry` gained a `register(…, maxBodySize:…)` requirement with a default that ignores the limit.
 - **`UploadedFile.move(to:)` and `UploadedFile.data()`.**
   - `move(to:)` replaces an existing destination and survives the post-response temporary file cleanup.
 - **Per-route request body limit.**
@@ -43,6 +47,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Docs.** New [Blob downloads in WKWebView](docs/web/BLOB_DOWNLOADS.md); download, upload and per-route limit examples in the API basic examples; upload and download in the Live Pages guide.
 
 ### Changed
+- **An over-limit request now gets its `413` reliably.**
+  - The engine answers with `Connection: close`, then reads and discards the rest of the request (at most 64 MB, 5 s) before closing; before, closing while the client was still sending made it see a connection reset.
+  - The same applies to the `429` of the rate limiter.
 - **`TestHost` enforces the request body limit** (`413` above `maxRequestBodySize` or the route group's limit), as the server engine always did.
   - A test that posts more than 1 MB now needs the limit raised on the builder or the route group.
 - **An unsatisfiable `Range` on a static file now answers `416`** instead of falling back to the full body (RFC 9110).

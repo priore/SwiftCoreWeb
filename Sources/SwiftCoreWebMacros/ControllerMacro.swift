@@ -79,6 +79,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 path: fullPath,
                 authExpr: authExpression(from: marker),
                 summaryExpr: summaryExpression(from: marker),
+                maxBodyExpr: namedArgumentExpression(marker, label: "maxRequestBodySize"),
                 functionName: function.name.text,
                 parameters: parameters,
                 bindings: bindings,
@@ -189,6 +190,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         path: String,
         authExpr: String,
         summaryExpr: String,
+        maxBodyExpr: String?,
         functionName: String,
         parameters: [BindableParameter],
         bindings: [ParameterBindingKind],
@@ -226,7 +228,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
         let argumentsBlock = argumentLines.map { "    \($0)" }.joined(separator: "\n")
         return """
-        router.register(method: .\(method.lowercased()), path: "\(path)", auth: \(authExpr), summary: \(summaryExpr)) { ctx in
+        router.register(method: .\(method.lowercased()), path: "\(path)", auth: \(authExpr), summary: \(summaryExpr)\(maxBodyExpr.map { ", maxBodySize: \($0)" } ?? "")) { ctx in
         \(argumentsBlock.isEmpty ? "" : argumentsBlock + "\n")    \(resultLine)
         }
         """

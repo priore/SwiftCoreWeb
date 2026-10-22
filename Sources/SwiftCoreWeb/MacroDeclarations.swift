@@ -38,22 +38,22 @@ public macro Get(_ path: String, auth: AuthRequirement = .none, summary: String?
 
 /// Marks a controller method as a `POST` route handler. See `@Get`.
 @attached(peer)
-public macro Post(_ path: String, auth: AuthRequirement = .none, summary: String? = nil) =
+public macro Post(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil) =
     #externalMacro(module: "SwiftCoreWebMacros", type: "RouteMethodMacro")
 
 /// Marks a controller method as a `PUT` route handler. See `@Get`.
 @attached(peer)
-public macro Put(_ path: String, auth: AuthRequirement = .none, summary: String? = nil) =
+public macro Put(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil) =
     #externalMacro(module: "SwiftCoreWebMacros", type: "RouteMethodMacro")
 
 /// Marks a controller method as a `PATCH` route handler. See `@Get`.
 @attached(peer)
-public macro Patch(_ path: String, auth: AuthRequirement = .none, summary: String? = nil) =
+public macro Patch(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil) =
     #externalMacro(module: "SwiftCoreWebMacros", type: "RouteMethodMacro")
 
 /// Marks a controller method as a `DELETE` route handler. See `@Get`.
 @attached(peer)
-public macro Delete(_ path: String, auth: AuthRequirement = .none, summary: String? = nil) =
+public macro Delete(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil) =
     #externalMacro(module: "SwiftCoreWebMacros", type: "RouteMethodMacro")
 
 /// Marks a controller method as a `HEAD` route handler. See `@Get`.

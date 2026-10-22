@@ -200,13 +200,10 @@ final class ServerEngine: @unchecked Sendable {
         remoteIP: String,
         rawChannel: Channel
     ) async {
+        var rateLimited = false
         if let rateLimiter, await !rateLimiter.allow(clientIP: remoteIP) {
             app.metrics.recordRejected(.rateLimited)
-            let headers = HTTPHeaders([("Retry-After", "1"), ("Content-Length", "0")])
-            try? await channel.outbound.write(.head(HTTPResponseHead(version: .http1_1, status: .tooManyRequests, headers: headers)))
-            try? await channel.outbound.write(.end(nil))
-            try? await rawChannel.close()
-            return
+            rateLimited = true
         }
 
         do {
@@ -215,7 +212,27 @@ final class ServerEngine: @unchecked Sendable {
                 var bodyBuffer = ByteBuffer()
                 var maxBodySize = app.serverOptions.maxRequestBodySize
 
+                // An early rejection (413, 429) is sent with `Connection: close`, then the rest of the
+                // request is read and thrown away (bounded in bytes and time) before the connection
+                // closes: closing while the client is still sending makes it see a reset, not the status.
+                var rejected = false
+                var discarded = 0
+                var closer: Scheduled<Void>?
+                defer { closer?.cancel() }
+                func reject(_ status: HTTPResponseStatus, _ extra: [(String, String)] = []) async throws {
+                    try await writeSimpleResponse(outbound, status: status, extraHeaders: extra + [("Connection", "close")])
+                    rejected = true
+                    closer = rawChannel.eventLoop.scheduleTask(in: .seconds(Self.rejectDrainSeconds)) { rawChannel.close(promise: nil) }
+                }
+                if rateLimited { try await reject(.tooManyRequests, [("Retry-After", "1")]) }
+
                 for try await part in inbound {
+                    if rejected {
+                        if case .body(let chunk) = part { discarded += chunk.readableBytes }
+                        if case .end = part { return }
+                        if discarded > Self.rejectDrainBytes { return }
+                        continue
+                    }
                     switch part {
                     case .head(let head):
                         requestHead = head
@@ -230,8 +247,8 @@ final class ServerEngine: @unchecked Sendable {
                     case .body(var chunk):
                         bodyBuffer.writeBuffer(&chunk)
                         if bodyBuffer.readableBytes > maxBodySize {
-                            try await writeSimpleResponse(outbound, status: .payloadTooLarge)
-                            return
+                            bodyBuffer = ByteBuffer() // free what was buffered; nothing more is kept
+                            try await reject(.payloadTooLarge)
                         }
 
                     case .end:
@@ -255,11 +272,16 @@ final class ServerEngine: @unchecked Sendable {
         }
     }
 
+    /// How much of a rejected request's body is read and discarded, and for how long, before closing.
+    private static let rejectDrainBytes = 64 * 1024 * 1024
+    private static let rejectDrainSeconds: Int64 = 5
+
     private func writeSimpleResponse(
         _ outbound: NIOAsyncChannelOutboundWriter<HTTPServerResponsePart>,
-        status: HTTPResponseStatus
+        status: HTTPResponseStatus,
+        extraHeaders: [(String, String)] = []
     ) async throws {
-        let headers = HTTPHeaders([("Content-Length", "0")])
+        let headers = HTTPHeaders([("Content-Length", "0")] + extraHeaders)
         try await outbound.write(.head(HTTPResponseHead(version: .http1_1, status: status, headers: headers)))
         try await outbound.write(.end(nil))
     }

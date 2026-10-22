@@ -87,6 +87,36 @@ final class ControllerMacroTests: XCTestCase {
         )
     }
 
+    func testMaxRequestBodySizeArgumentIsPassedToRegistration() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class BigController {
+                @Post("/big", maxRequestBodySize: 5_000_000)
+                func big() async throws {
+                }
+            }
+            """,
+            expandedSource: """
+            final class BigController {
+                func big() async throws {
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/big", auth: AuthRequirement.none, summary: nil, maxBodySize: 5_000_000) { ctx in
+                        try await Self.init().big()
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                }
+            }
+
+            extension BigController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func testVoidReturnGeneratesNoContentDispatch() {
         assertMacroExpansion(
             """

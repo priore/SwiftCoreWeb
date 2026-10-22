@@ -30,9 +30,10 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement = .none,
         summary: String? = nil,
+        maxRequestBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.post, path, auth: auth, summary: summary, handler)
+        map(.post, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     /// Registers a `PUT` route with a closure handler.
@@ -41,9 +42,10 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement = .none,
         summary: String? = nil,
+        maxRequestBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.put, path, auth: auth, summary: summary, handler)
+        map(.put, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     /// Registers a `PATCH` route with a closure handler.
@@ -52,9 +54,10 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement = .none,
         summary: String? = nil,
+        maxRequestBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.patch, path, auth: auth, summary: summary, handler)
+        map(.patch, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     /// Registers a `DELETE` route with a closure handler.
@@ -63,9 +66,10 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement = .none,
         summary: String? = nil,
+        maxRequestBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.delete, path, auth: auth, summary: summary, handler)
+        map(.delete, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     /// Registers a `HEAD` route with a closure handler. `GET` routes are
@@ -100,10 +104,11 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement = .none,
         summary: String? = nil,
+        maxRequestBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
         for method in methods {
-            _ = map(method, path, auth: auth, summary: summary, handler)
+            _ = map(method, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
         }
         return self
     }
@@ -124,26 +129,26 @@ extension WebApplication {
 
     @_disfavoredOverload
     @discardableResult
-    public func mapPost(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.post, path, auth: auth, summary: summary, handler)
+    public func mapPost(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.post, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     @_disfavoredOverload
     @discardableResult
-    public func mapPut(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.put, path, auth: auth, summary: summary, handler)
+    public func mapPut(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.put, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     @_disfavoredOverload
     @discardableResult
-    public func mapPatch(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.patch, path, auth: auth, summary: summary, handler)
+    public func mapPatch(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.patch, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     @_disfavoredOverload
     @discardableResult
-    public func mapDelete(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.delete, path, auth: auth, summary: summary, handler)
+    public func mapDelete(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.delete, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
     }
 
     @_disfavoredOverload
@@ -174,9 +179,10 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement,
         summary: String?,
+        maxBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        routeRegistry.register(method: method, path: path, auth: auth, summary: summary) { ctx in
+        routeRegistry.register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize) { ctx in
             try makeHttpResult(try await handler(ctx))
         }
         return self
@@ -190,9 +196,10 @@ extension WebApplication {
         _ path: String,
         auth: AuthRequirement,
         summary: String?,
+        maxBodySize: Int? = nil,
         _ handler: @escaping @Sendable (HttpContext) async throws -> Void
     ) -> Self {
-        routeRegistry.register(method: method, path: path, auth: auth, summary: summary) { ctx in
+        routeRegistry.register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize) { ctx in
             try await handler(ctx)
             return voidHttpResult()
         }

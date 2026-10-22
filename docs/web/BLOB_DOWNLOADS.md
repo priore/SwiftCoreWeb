@@ -104,15 +104,13 @@ Needs iOS 14.5 / macOS 11.3 or newer (that is when `WKDownload` appeared).
 
 ## Check that it works
 
-Run this on an iPad and on a Mac:
+Try these in your app, on the devices you ship to:
 
 1. A page that creates a blob and clicks a download link saves the file with the right name.
 2. A normal link to a file served with `Content-Disposition: attachment` downloads.
 3. `window.open` on such a link downloads and the page stays where it is.
 4. The same page in Safari or Chrome on the Mac works as before.
 5. A file bigger than 10 MB arrives identical.
-
-The automated tests cover the server, the script injection, the script itself (against a fake page) and the helper's decisions. They cannot start a real WebKit download.
 
 ---
 

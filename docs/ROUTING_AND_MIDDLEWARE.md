@@ -168,6 +168,20 @@ let files = app.mapGroup("/files").maxRequestBodySize(50_000_000)   // nested gr
 files.mapPost("/import") { (form: Form) in /* ... */ }
 ```
 
+A single route can do the same, without a group:
+
+```swift
+app.mapPost("/import", maxRequestBodySize: 50_000_000) { (form: Form) in /* ... */ }   // also mapPut, mapPatch, mapDelete, mapMethods
+```
+
+```swift
+@Controller("/files")
+struct FileController {
+    @Post("/import", maxRequestBodySize: 50_000_000)   // also @Put, @Patch, @Delete
+    func importFile(form: Form) async throws -> String { /* ... */ }
+}
+```
+
 The server engine resolves the limit from the request head and stops reading as soon as the body exceeds it (`413`); the
 dispatcher enforces the same limit, so `TestHost` agrees with a real socket. Bodies are buffered in RAM, so keep the limit as low as the use case allows.
 Downloads (`Results.data`/`file`/`stream`, `Range`, `Content-Disposition`) are covered in [API: basic examples](api/EXAMPLES_BASIC.md).

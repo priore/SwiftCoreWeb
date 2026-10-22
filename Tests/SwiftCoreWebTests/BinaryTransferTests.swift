@@ -99,6 +99,27 @@ struct BinaryTransferTests {
         #expect(try await host.post("/global", body: Data(count: 1000)).status == 200)
     }
 
+    @Test func directAndControllerRoutesCanRaiseTheLimit() async throws {
+        let app = WebApplication.createBuilder().build() // global: 1 MB
+        app.mapPost("/direct", maxRequestBodySize: 3_000_000) { ctx in "\(ctx.request.body.count)" }
+        app.mapPut("/direct", maxRequestBodySize: 3_000_000) { ctx in "\(ctx.request.body.count)" }
+        app.mapMethods([.patch], "/multi", maxRequestBodySize: 3_000_000) { ctx in "\(ctx.request.body.count)" }
+        app.mapPost("/plain") { ctx in "\(ctx.request.body.count)" }
+        app.mapControllers(LimitController.self)
+        let host = try await TestHost(app)
+        let twoMB = Data(count: 2_000_000), fourMB = Data(count: 4_000_000)
+
+        #expect(try await host.post("/direct", body: twoMB).status == 200)
+        #expect(try await host.post("/direct", body: fourMB).status == 413)
+        #expect(try await host.put("/direct", body: twoMB).status == 200)
+        #expect(try await host.patch("/multi", body: twoMB).status == 200)
+        #expect(try await host.post("/api/ctl", body: twoMB).status == 200)
+        #expect(try await host.post("/api/ctl", body: fourMB).status == 413)
+        #expect(try await host.post("/api/ctl-default", body: twoMB).status == 413, "controller route without an override keeps the global limit")
+        #expect(try await host.post("/plain", body: twoMB).status == 413, "global unchanged")
+        #expect(try await host.post("/plain", body: Data(count: 1000)).status == 200)
+    }
+
     // MARK: A3 — Range for any Results.file
 
     @Test func resultsFileHonoursRangeIfRangeAndHead() async throws {
@@ -194,6 +215,19 @@ struct BinaryTransferTests {
         let (_, unknown) = try await request("/unknown")
         #expect(unknown.expectedContentLength == -1, "chunked")
         #expect(try await request("/up/x", method: "POST", body: Data(count: 2_000_000)).1.statusCode == 200)
-        #expect(try await request("/global", method: "POST", body: Data(count: 2_000_000)).1.statusCode == 413)
+        // The engine answers 413 while the client is still sending: the client must see the status, not a reset.
+        for _ in 0..<20 {
+            #expect(try await request("/global", method: "POST", body: Data(count: 2_000_000)).1.statusCode == 413)
+            #expect(try await request("/up/x", method: "POST", body: Data(count: 4_000_000)).1.statusCode == 413)
+        }
     }
+}
+
+@Controller("/api")
+private struct LimitController {
+    @Post("/ctl", maxRequestBodySize: 3_000_000)
+    func big() -> String { "ok" }
+
+    @Post("/ctl-default")
+    func small() -> String { "ok" }
 }
