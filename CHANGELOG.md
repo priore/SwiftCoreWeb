@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`Form` parameters bind `application/x-www-form-urlencoded` bodies.**
+  - Text fields only, no files.
+  - Works in addition to `multipart/form-data`.
+
+### Deprecated
+- **`bindForm(_ request: HttpRequest)`**: use `bindForm(_ ctx: HttpContext)`, which the macros now generate.
+  - The deprecated form leaves the uploaded temporary files for the caller to delete.
+
+### Fixed
+- **`Form` parameters were always empty.**
+  - `multipart/form-data` bodies are now parsed into `fields` and `files`.
+  - Uploaded files are written to temporary files named by a UUID, never by the client's filename.
+  - The temporary files are deleted after the response.
+  - A body that is not valid multipart, or has any other `Content-Type`, answers `400`.
+- **Dev deploy (`useDevDeploy`) upload handling.**
+  - No longer writes outside its temporary directory when an uploaded filename contains `..` or is absolute.
+  - No longer truncates a file that contains the multipart boundary string.
+  - Now shares the multipart parser used by `Form`.
+
 ## [1.2.0] - 2026-10-19
 
 ### Changed

@@ -56,6 +56,37 @@ final class ControllerMacroTests: XCTestCase {
         )
     }
 
+    func testFormParameterBindsThroughContext() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class UploadController {
+                @Post("/upload")
+                func upload(form: Form) async throws {
+                }
+            }
+            """,
+            expandedSource: """
+            final class UploadController {
+                func upload(form: Form) async throws {
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/upload", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_form = try SwiftCoreWeb.bindForm(ctx)
+                        try await Self.init().upload(form: arg_form)
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                }
+            }
+
+            extension UploadController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func testVoidReturnGeneratesNoContentDispatch() {
         assertMacroExpansion(
             """

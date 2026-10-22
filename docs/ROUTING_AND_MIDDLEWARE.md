@@ -115,7 +115,7 @@ rules above decide, and ties go to the route registered first.
 2. A name matching a route placeholder binds from the path.
 3. A non-primitive `Decodable` on `POST`/`PUT`/`PATCH` binds from the JSON body.
 4. A primitive or optional primitive binds from the query string.
-5. `Header<T>`, `Query<T>`, `Service<T>`, and `Form` give explicit control when the convention isn't enough.
+5. `Header<T>`, `Query<T>`, `Service<T>`, and `Form` (`multipart/form-data` or `application/x-www-form-urlencoded`, buffered up to `maxRequestBodySize`) give explicit control when the convention isn't enough.
 
 Any conversion failure produces a `400` `ProblemDetails` naming the offending parameter — you never
 have to write that check yourself.

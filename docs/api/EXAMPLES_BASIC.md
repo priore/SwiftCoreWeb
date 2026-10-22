@@ -59,6 +59,23 @@ app.mapPost("/api/users") { (request: CreateUserRequest) in
 A non-primitive `Decodable` parameter on `POST`/`PUT`/`PATCH` binds from the JSON body
 automatically — no explicit `Content-Type` check, no manual decoding.
 
+## POST with a form or a file upload
+
+```swift
+@Post("/avatars")
+func upload(form: Form) async throws -> String {
+    guard let avatar = form.files.first else { throw HttpError(.badRequest, "Missing file") }
+    // Move it before the handler returns: temporaryPath is deleted after the response.
+    try FileManager.default.moveItem(atPath: avatar.temporaryPath, toPath: "/path/to/\(UUID().uuidString)")
+    return "\(form.fields["title"] ?? "untitled"): \(avatar.fileName), \(avatar.sizeInBytes) bytes"
+}
+```
+
+A `Form` parameter binds `multipart/form-data` (fields and files) and
+`application/x-www-form-urlencoded` (fields only); any other `Content-Type` is a `400`. The whole
+body is buffered, so uploads are limited by `maxRequestBodySize`. `fileName` is the client's
+filename, for display only — never build a path from it.
+
 ## Reading a header explicitly
 
 ```swift

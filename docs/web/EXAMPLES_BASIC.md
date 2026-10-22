@@ -42,7 +42,9 @@ app.mapPost("/contact") { (form: ContactForm) in
 
 A non-primitive `Decodable` parameter on `POST` binds from the JSON body automatically — see
 [Routing and middleware](../ROUTING_AND_MIDDLEWARE.md) for the full binding order. For a
-plain HTML `<form>` (URL-encoded, not JSON), use the `Form` parameter-binding wrapper instead.
+plain HTML `<form>`, use a `Form` parameter instead: it binds `application/x-www-form-urlencoded` (fields only) and
+`multipart/form-data` (fields plus uploaded files, written to temporary files that are deleted after the response; the
+whole body is buffered, so uploads are limited by `maxRequestBodySize`).
 
 ## A server-rendered page with a model
 

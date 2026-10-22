@@ -69,6 +69,7 @@ public struct RequestDispatcher: Sendable {
                 body: request.body
             )
             let boundCtx = HttpContext(request: boundRequest, services: services, user: ctx.user, items: ctx.items)
+            defer { boundCtx.items[TemporaryUploads.self]?.paths.forEach { try? FileManager.default.removeItem(atPath: $0) } }
             return await runPipeline(boundCtx, routeAuth: routeAuth) {
                 let result = try await route.handler(boundCtx)
                 boundCtx.response = try result.toHttpResult().response

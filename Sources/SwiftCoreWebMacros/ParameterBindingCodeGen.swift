@@ -174,7 +174,7 @@ func bindingExpression(for binding: ParameterBindingKind, parameterName: String,
     case .service:
         return "ctx.services.get(\(bodyTypeName).self)"
     case .form:
-        return "try SwiftCoreWeb.bindForm(ctx.request)"
+        return "try SwiftCoreWeb.bindForm(ctx)"
     }
 }
 
