@@ -60,6 +60,10 @@ public struct HttpResponse: Sendable {
     /// responses that permit `206 Partial Content`).
     public var acceptsRanges: Bool
 
+    /// Runs once the engine has finished writing this response (or failed to): used to delete
+    /// a one-time download's disk-backed file after it has been served.
+    var onSent: (@Sendable () -> Void)?
+
     public init(
         status: HttpStatusCode = .ok,
         headers: HttpHeaders = HttpHeaders(),

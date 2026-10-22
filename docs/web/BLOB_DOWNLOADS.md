@@ -49,7 +49,7 @@ app.useBlobDownloads()
 
 It does not need `useVue()`, `usePages()`, sessions or SPA hosting. It also works in a server that only has JSON routes.
 
-Options: `useBlobDownloads(maxBytes: 64 * 1024 * 1024, injection: .auto)`. `maxBytes` is the biggest file accepted (default 64 MB).
+Options: `useBlobDownloads(maxBytes: 64 * 1024 * 1024, injection: .auto)`. `maxBytes` is the biggest file accepted (default 64 MB). Above 8 MB the endpoint receives the file on disk and serves it from disk: it never sits in memory. Those downloads share a disk budget (512 MB in total, at most 8 waiting at once; the oldest is dropped to make room); the file is deleted when it is downloaded, expires (60 s) or is dropped. Keep `maxBytes` modest — it is also what a single client can make the device store.
 
 ### 2. Get the script into the page
 

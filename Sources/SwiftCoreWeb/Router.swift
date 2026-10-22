@@ -16,6 +16,9 @@ struct Route: Sendable {
     let summary: String?
     /// Overrides `ServerOptions.maxRequestBodySize` for this route; `nil` = the global limit.
     var maxBodySize: Int? = nil
+    /// The engine streams the request body to a temporary file (`HttpRequest.bodyFile`) instead of buffering it
+    /// when it is declared longer than this many bytes (or has no `Content-Length`): `nil` = never, `0` = always.
+    var spoolAbove: Int? = nil
     let handler: RouteHandler
 }
 
@@ -79,13 +82,39 @@ final class Router: RouteRegistry, @unchecked Sendable {
         maxBodySize: Int?,
         handler: @escaping RouteHandler
     ) {
+        register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize, spoolBody: false, handler: handler)
+    }
+
+    /// `register` that also streams the request body to disk (`spoolBodyToDisk`).
+    func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        spoolBody: Bool,
+        handler: @escaping RouteHandler
+    ) {
+        register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize, spoolAbove: spoolBody ? 0 : nil, handler: handler)
+    }
+
+    /// `register` that streams the request body to disk only when it is over `spoolAbove` bytes (see `Route.spoolAbove`).
+    func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        spoolAbove: Int?,
+        handler: @escaping RouteHandler
+    ) {
         lock.lock()
         defer { lock.unlock() }
         precondition(!isFrozen, "SwiftCoreWeb: cannot register routes after the router has been frozen (runAsync() was called)")
         guard let template = try? CompiledRouteTemplate(path) else {
             preconditionFailure("SwiftCoreWeb: invalid route template '\(path)'")
         }
-        pendingRoutes.append(Route(method: method, template: template, auth: auth, summary: summary, maxBodySize: maxBodySize, handler: handler))
+        pendingRoutes.append(Route(method: method, template: template, auth: auth, summary: summary, maxBodySize: maxBodySize, spoolAbove: spoolAbove, handler: handler))
     }
 
     /// Freezes the router, taking a stable snapshot for lock-free matching.
@@ -181,12 +210,23 @@ public final class RouteGroup: @unchecked Sendable {
     let router: Router
     private var defaultAuth: AuthRequirement
     private var bodyLimit: Int?
+    private var spoolBody: Bool
 
-    init(prefix: String, router: Router, defaultAuth: AuthRequirement = .none, bodyLimit: Int? = nil) {
+    init(prefix: String, router: Router, defaultAuth: AuthRequirement = .none, bodyLimit: Int? = nil, spoolBody: Bool = false) {
         self.prefix = prefix
         self.router = router
         self.defaultAuth = defaultAuth
         self.bodyLimit = bodyLimit
+        self.spoolBody = spoolBody
+    }
+
+    /// Streams the request body of every route registered on this group afterward (and nested
+    /// groups) to a temporary file instead of buffering it: `HttpRequest.bodyFile` is set and
+    /// `body` stays empty. For uploads too big to hold in memory; pair it with `maxRequestBodySize(_:)`.
+    @discardableResult
+    public func spoolBodyToDisk() -> Self {
+        spoolBody = true
+        return self
     }
 
     /// Overrides the global request body limit for every route registered on
@@ -210,7 +250,7 @@ public final class RouteGroup: @unchecked Sendable {
     /// Creates a nested group, concatenating path prefixes and inheriting
     /// this group's default authorization requirement.
     public func mapGroup(_ prefix: String) -> RouteGroup {
-        RouteGroup(prefix: self.prefix + prefix, router: router, defaultAuth: defaultAuth, bodyLimit: bodyLimit)
+        RouteGroup(prefix: self.prefix + prefix, router: router, defaultAuth: defaultAuth, bodyLimit: bodyLimit, spoolBody: spoolBody)
     }
 
     func fullPath(_ path: String) -> String {
@@ -281,13 +321,13 @@ extension RouteGroup {
     }
 
     private func map<T: Sendable>(_ method: HttpMethod, _ path: String, auth: AuthRequirement?, summary: String?, _ handler: @escaping @Sendable (HttpContext) async throws -> T) {
-        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary, maxBodySize: bodyLimit) { ctx in
+        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary, maxBodySize: bodyLimit, spoolBody: spoolBody) { ctx in
             try makeHttpResult(try await handler(ctx))
         }
     }
 
     private func map(_ method: HttpMethod, _ path: String, auth: AuthRequirement?, summary: String?, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) {
-        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary, maxBodySize: bodyLimit) { ctx in
+        router.register(method: method, path: fullPath(path), auth: effectiveAuth(auth), summary: summary, maxBodySize: bodyLimit, spoolBody: spoolBody) { ctx in
             try await handler(ctx)
             return voidHttpResult()
         }

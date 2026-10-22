@@ -36,8 +36,16 @@ public struct HttpRequest: Sendable {
     public let remoteAddress: String?
 
     /// The full, buffered request body. Populated by the server engine up to
-    /// `maxRequestBodySize`; empty for bodyless requests.
+    /// `maxRequestBodySize`; empty for bodyless requests and on `spoolBodyToDisk`
+    /// routes (see `bodyFile`).
     public let body: Data
+
+    /// The request body spooled to disk, set instead of `body` (which stays empty) on routes
+    /// registered with `spoolBodyToDisk`. A UUID-named file in the uploads directory that is
+    /// deleted once the response is produced: read it in the handler, or move it elsewhere
+    /// (`FileManager.moveItem`) to keep it. For `multipart/form-data` and url-encoded bodies
+    /// use `bindForm(_:)`, which parses it from disk.
+    public let bodyFile: URL?
 
     public init(
         method: HttpMethod,
@@ -47,7 +55,8 @@ public struct HttpRequest: Sendable {
         queryAll: [String: [String]] = [:],
         headers: HttpHeaders = HttpHeaders(),
         remoteAddress: String? = nil,
-        body: Data = Data()
+        body: Data = Data(),
+        bodyFile: URL? = nil
     ) {
         self.method = method
         self.path = path
@@ -57,6 +66,17 @@ public struct HttpRequest: Sendable {
         self.headers = headers
         self.remoteAddress = remoteAddress
         self.body = body
+        self.bodyFile = bodyFile
+    }
+
+    /// The body as bytes, whether buffered or spooled: a spooled one is read from disk only
+    /// if it is at most `limit` bytes, else `413` (it is meant for form fields and JSON, not uploads).
+    func smallBody(limit: Int = MultipartFileParser.maxFieldBytes) throws -> Data {
+        guard let bodyFile else { return body }
+        guard UploadStorage.size(of: bodyFile) <= limit else {
+            throw HttpError(.payloadTooLarge, "Request body exceeds \(limit) bytes")
+        }
+        return try Data(contentsOf: bodyFile)
     }
 
     /// Decodes the request body as JSON into the given `Decodable` type.

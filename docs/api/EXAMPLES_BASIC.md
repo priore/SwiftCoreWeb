@@ -73,8 +73,8 @@ func upload(form: Form) async throws -> String {
 
 A `Form` parameter binds `multipart/form-data` (fields and files) and
 `application/x-www-form-urlencoded` (fields only); any other `Content-Type` is a `400`. The whole
-body is buffered in RAM (no streaming parser), so uploads are limited by `maxRequestBodySize` — or
-by a per-route limit, see below. `fileName` is the client's filename, for display only — never build
+body is buffered in RAM, so uploads are limited by `maxRequestBodySize` — or by a per-route limit, see below —
+unless the route spools to disk (see "A very large upload"). `fileName` is the client's filename, for display only — never build
 a path from it. `avatar.move(to:)` replaces an existing destination; `try avatar.data()` reads the
 upload into memory instead.
 
@@ -87,6 +87,30 @@ app.mapGroup("/api").maxRequestBodySize(20_000_000).mapPut("/avatar") { ctx in
     return Results.noContent()
 }
 ```
+
+## A very large upload
+
+A backup of a few hundred MB must not sit in memory. `spoolBodyToDisk` streams the request body to a temporary file;
+the `Form` is then parsed from that file in blocks, with the same `Form` / `UploadedFile` API as above:
+
+```swift
+@Post("/backup", maxRequestBodySize: 500_000_000, spoolBodyToDisk: true)
+func backup(form: Form) async throws -> String {
+    guard let backup = form.files.first else { throw HttpError(.badRequest, "Missing file") }
+    try backup.move(to: backupsDirectory.appendingPathComponent(UUID().uuidString))   // otherwise deleted after the response
+    return "\(backup.sizeInBytes) bytes"
+}
+
+app.mapPut("/restore", maxRequestBodySize: 500_000_000, spoolBodyToDisk: true) { ctx in
+    // Content-Type: application/octet-stream — no Form: the whole body is the file ctx.request.bodyFile (request.body is empty).
+    guard let file = ctx.request.bodyFile else { throw HttpError(.badRequest, "Missing body") }
+    try FileManager.default.moveItem(at: file, to: restoreURL)   // or just read it
+    return Results.noContent()
+}
+```
+
+Over `maxRequestBodySize` the answer is `413` and the partial file is deleted. Text fields of the form are limited to
+1 MB in total. Details and guarantees: [Routing and middleware](../ROUTING_AND_MIDDLEWARE.md).
 
 ## A per-route body limit
 

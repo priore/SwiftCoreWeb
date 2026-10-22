@@ -49,6 +49,17 @@ public protocol RouteRegistry: AnyObject, Sendable {
         maxBodySize: Int?,
         handler: @escaping RouteHandler
     )
+
+    /// `register` with a per-route limit and, if `spoolBody`, the body streamed to disk (`HttpRequest.bodyFile`).
+    func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        spoolBody: Bool,
+        handler: @escaping RouteHandler
+    )
 }
 
 extension RouteRegistry {
@@ -62,6 +73,19 @@ extension RouteRegistry {
         handler: @escaping RouteHandler
     ) {
         register(method: method, path: path, auth: auth, summary: summary, handler: handler)
+    }
+
+    /// Default for registries that cannot spool: the body stays buffered in memory.
+    public func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        spoolBody: Bool,
+        handler: @escaping RouteHandler
+    ) {
+        register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize, handler: handler)
     }
 }
 

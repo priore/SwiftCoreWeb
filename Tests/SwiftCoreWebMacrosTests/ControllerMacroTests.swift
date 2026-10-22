@@ -117,6 +117,46 @@ final class ControllerMacroTests: XCTestCase {
         )
     }
 
+    func testSpoolBodyToDiskArgumentIsPassedToRegistration() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class BackupController {
+                @Post("/backup", maxRequestBodySize: 5_000_000, spoolBodyToDisk: true)
+                func backup() async throws {
+                }
+
+                @Put("/restore", spoolBodyToDisk: true)
+                func restore() async throws {
+                }
+            }
+            """,
+            expandedSource: """
+            final class BackupController {
+                func backup() async throws {
+                }
+                func restore() async throws {
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/backup", auth: AuthRequirement.none, summary: nil, maxBodySize: 5_000_000, spoolBody: true) { ctx in
+                        try await Self.init().backup()
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                    router.register(method: .put, path: "/api/restore", auth: AuthRequirement.none, summary: nil, maxBodySize: nil, spoolBody: true) { ctx in
+                        try await Self.init().restore()
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                }
+            }
+
+            extension BackupController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func testVoidReturnGeneratesNoContentDispatch() {
         assertMacroExpansion(
             """

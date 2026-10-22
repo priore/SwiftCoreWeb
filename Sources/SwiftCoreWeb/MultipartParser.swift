@@ -46,8 +46,22 @@ enum MultipartParser {
     }
 
     private static func part(_ chunk: Data) throws -> Part {
-        guard let split = chunk.range(of: Data("\r\n\r\n".utf8)),
-              let head = String(data: chunk[..<split.lowerBound], encoding: .utf8) else {
+        guard let split = chunk.range(of: Data("\r\n\r\n".utf8)) else {
+            throw HttpError(.badRequest, "Malformed multipart part")
+        }
+        let head = try partHead(chunk[..<split.lowerBound])
+        return Part(name: head.name, filename: head.filename, contentType: head.contentType, data: chunk[split.upperBound...])
+    }
+
+    struct PartHead {
+        let name: String
+        let filename: String?
+        let contentType: String?
+    }
+
+    /// The part headers (the bytes before the blank line) of one part.
+    static func partHead(_ bytes: Data) throws -> PartHead {
+        guard let head = String(data: bytes, encoding: .utf8) else {
             throw HttpError(.badRequest, "Malformed multipart part")
         }
         let headers = head.components(separatedBy: "\r\n").compactMap { line -> (String, String)? in
@@ -58,12 +72,7 @@ enum MultipartParser {
         guard let name = parameter("name", in: disposition) else {
             throw HttpError(.badRequest, "Multipart part without a name")
         }
-        return Part(
-            name: name,
-            filename: parameter("filename", in: disposition),
-            contentType: headers.first { $0.0 == "content-type" }?.1,
-            data: chunk[split.upperBound...]
-        )
+        return PartHead(name: name, filename: parameter("filename", in: disposition), contentType: headers.first { $0.0 == "content-type" }?.1)
     }
 
     /// The quoted value of `key="..."` in a header value; the lookbehind keeps `name` from matching inside `filename`.

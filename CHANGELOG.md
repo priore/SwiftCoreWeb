@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Upload spooling to disk (`spoolBodyToDisk`).**
+  - Opt-in per route, decided from the request head like the body limit: `spoolBodyToDisk: true` on `mapPost`, `mapPut`, `mapPatch`, `mapDelete` and `mapMethods`, `spoolBodyToDisk()` on a route group, `spoolBodyToDisk:` on `@Post`, `@Put`, `@Patch` and `@Delete`.
+  - The engine writes the incoming chunks to a UUID-named temporary file and never accumulates them in memory; the route limit is enforced while writing (`413` with the reliable close, partial file deleted).
+  - `HttpRequest.bodyFile` holds the file; `body` stays empty on these routes.
+  - The file is deleted after the response, also when the handler throws, the client disconnects mid-upload or the server stops; stale files in the uploads directory older than one day are swept at startup.
+  - `bindForm(ctx)` reads a spooled multipart body in fixed-size blocks (boundary-sized overlap between blocks) and writes each file part to its own temporary file; text fields stay in memory up to 1 MB. `Form`, `UploadedFile` and `ctx.files` work unchanged.
+  - Live Pages with `maxUploadBytes` above 8 MB spool their `POST` automatically, and `useBlobDownloads` spools a blob longer than 8 MB (decided from `Content-Length`; smaller blobs stay in memory).
+  - Blob downloads above that size are kept on disk by `OneTimeDownloadStore`, with a separate disk budget (512 MB, 8 entries); the file is deleted once served, expired or evicted.
+  - `RouteRegistry` gained a `register(…, maxBodySize:, spoolBody:…)` requirement with a default that keeps the body buffered. Routes without the option behave as before.
 - **Binary responses with a file name.**
   - `Results.data(_:contentType:fileName:disposition:)` sends in-memory bytes.
   - `Results.file` and `Results.stream` take `fileName:` and `disposition:` (`.attachment` or `.inline`).

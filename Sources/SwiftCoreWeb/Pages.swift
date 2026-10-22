@@ -309,8 +309,11 @@ extension WebApplication {
 
         // Room for the snapshot/form fields next to the files.
         let postLimit = P.maxUploadBytes.map { $0 + 1_048_576 }
+        // Big uploads are received on disk. The snapshot, checksum and `X-SCW-Live` checks still run
+        // in `handlePage`, after the body is complete; the parts are discarded if they fail.
+        let spool = (P.maxUploadBytes ?? 0) > spoolThresholdBytes
         for method in [HttpMethod.get, .post] {
-            routeRegistry.register(method: method, path: path, auth: auth, summary: nil, maxBodySize: method == .post ? postLimit : nil) { ctx in
+            routeRegistry.register(method: method, path: path, auth: auth, summary: nil, maxBodySize: method == .post ? postLimit : nil, spoolBody: method == .post && spool) { ctx in
                 try await self.handlePage(P.self, ctx)
             }
         }
@@ -427,7 +430,13 @@ extension WebApplication {
         guard contentType.hasPrefix("application/json") else {
             throw HttpError(HttpStatusCode(415), "Expected application/json")
         }
-        return (try ctx.request.decode(PageEventRequest.self), [])
+        // A spooled route also receives its JSON events on disk; they are small.
+        let data = try ctx.request.smallBody()
+        do {
+            return (try JSONDecoder().decode(PageEventRequest.self, from: data), [])
+        } catch {
+            throw HttpError(.badRequest, "Could not decode request body as PageEventRequest: \(error)")
+        }
     }
 
     /// Applies the page's upload limits: over `maxUploadBytes` is a `413`; too many files

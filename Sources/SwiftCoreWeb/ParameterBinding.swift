@@ -154,26 +154,27 @@ public func bindForm(_ request: HttpRequest) throws -> Form {
     try parseForm(request)
 }
 
-// ponytail: the engine buffers the whole body (up to maxRequestBodySize) before
-// binding, so uploads are held in RAM and written out afterwards. Streaming
-// needs incremental parsing in ServerEngine's `.body` loop.
+// ponytail: on a buffered route the engine holds the whole body (up to the route's limit) in RAM
+// before binding and the parts are written out afterwards; `spoolBodyToDisk` routes parse from the
+// spooled file instead (`MultipartFileParser`), which is what large uploads need.
 private func parseForm(_ request: HttpRequest) throws -> Form {
     let contentType = request.headers["Content-Type"] ?? ""
     if contentType.lowercased().hasPrefix("application/x-www-form-urlencoded") {
-        return Form(fields: parseQueryString(String(decoding: request.body, as: UTF8.self)).query)
+        return Form(fields: parseQueryString(String(decoding: try request.smallBody(), as: UTF8.self)).query)
     }
     guard contentType.lowercased().contains("multipart/form-data") else {
         throw HttpError(.badRequest, "Expected multipart/form-data or application/x-www-form-urlencoded request body")
     }
+    if let bodyFile = request.bodyFile {
+        return try MultipartFileParser.parse(file: bodyFile, boundary: MultipartParser.boundary(in: contentType))
+    }
 
     var fields: [String: String] = [:]
     var files: [UploadedFile] = []
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SwiftCoreWeb-uploads")
     for part in try MultipartParser.parse(request.body, boundary: MultipartParser.boundary(in: contentType)) {
         if let fileName = part.filename {
             // The client's filename is only metadata: the path on disk is never derived from it.
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let path = directory.appendingPathComponent(UUID().uuidString)
+            let path = try UploadStorage.newFileURL()
             try part.data.write(to: path)
             files.append(UploadedFile(fieldName: part.name, fileName: fileName, contentType: part.contentType, temporaryPath: path.path, sizeInBytes: part.data.count))
         } else {

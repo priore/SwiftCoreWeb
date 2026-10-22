@@ -37,6 +37,8 @@ public struct RequestDispatcher: Sendable {
     /// (`ServerEngine` or `SwiftCoreWebTesting.TestHost`), since both route
     /// through here — the single point that sees every request either way.
     public func dispatch(_ request: HttpRequest) async -> HttpResponse {
+        // A spooled body lives only as long as the request: a handler that wants it moves it away.
+        defer { if let bodyFile = request.bodyFile { try? FileManager.default.removeItem(at: bodyFile) } }
         let startedAt = DispatchTime.now()
         let response = await dispatchWithoutMetrics(request)
         let elapsedMilliseconds = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000
@@ -54,15 +56,25 @@ public struct RequestDispatcher: Sendable {
     /// The request body limit for `method`/`path`: the matched route's own, else the global one.
     /// The server engine calls this on the request head, before buffering the body.
     func bodyLimit(method: HttpMethod, path: String) -> Int {
-        if case .matched(let route, _) = router.match(method: method, path: path), let limit = route.maxBodySize { return limit }
-        return maxBodySize
+        bodyPlan(method: method, path: path).limit
+    }
+
+    /// How the engine receives the body of `method`/`path`: the limit (see `bodyLimit`) and
+    /// whether it is streamed to a file (`spoolBodyToDisk`) instead of buffered. `contentLength` is the
+    /// head's `Content-Length` (`nil` when absent, e.g. chunked): a route that spools only above a size
+    /// (blob downloads) spools an unknown length too.
+    func bodyPlan(method: HttpMethod, path: String, contentLength: Int? = nil) -> (limit: Int, spool: Bool) {
+        guard case .matched(let route, _) = router.match(method: method, path: path) else { return (maxBodySize, false) }
+        let spool = route.spoolAbove.map { threshold in contentLength.map { $0 > threshold } ?? true } ?? false
+        return (route.maxBodySize ?? maxBodySize, spool)
     }
 
     private func dispatchWithoutMetrics(_ request: HttpRequest) async -> HttpResponse {
         // ponytail: `router.match` runs here and again in `dispatchRouted`; cache the match if route tables get large.
         // Also enforced here (the engine cuts the connection earlier) so `TestHost`,
         // which has no body loop, applies the same limits as a real socket.
-        guard request.body.count <= bodyLimit(method: request.method, path: request.path) else {
+        let bodySize = request.bodyFile.map(UploadStorage.size(of:)) ?? request.body.count
+        guard bodySize <= bodyLimit(method: request.method, path: request.path) else {
             return Results.problem(status: .payloadTooLarge, detail: nil).response
         }
         return applyByteRange(await dispatchRouted(request), for: request)
@@ -86,7 +98,8 @@ public struct RequestDispatcher: Sendable {
                 queryAll: request.queryAll,
                 headers: request.headers,
                 remoteAddress: request.remoteAddress,
-                body: request.body
+                body: request.body,
+                bodyFile: request.bodyFile
             )
             let boundCtx = HttpContext(request: boundRequest, services: services, user: ctx.user, items: ctx.items)
             defer { boundCtx.items[TemporaryUploads.self]?.paths.forEach { try? FileManager.default.removeItem(atPath: $0) } }

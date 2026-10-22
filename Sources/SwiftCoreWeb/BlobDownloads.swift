@@ -18,6 +18,9 @@ public enum BlobShimInjection: Sendable {
     case never
 }
 
+/// Live Pages with a `maxUploadBytes` above this spool their `POST`; a blob upload is spooled when it is longer than this.
+let spoolThresholdBytes = 8 * 1024 * 1024
+
 private let shimTag = "<script src=\"/_framework/blob-download.js\"></script>"
 
 extension WebApplication {
@@ -30,23 +33,43 @@ extension WebApplication {
     /// - `GET /_framework/dl/<token>`: serves the bytes once, as an attachment.
     /// - `GET /_framework/blob-download.js`: the client shim (`BlobDownloadShim.source`).
     ///
+    /// A blob longer than 8 MB (or of unknown length) is received on disk (`spoolBodyToDisk`) and its
+    /// one-time download is served from that file, so a large blob never sits in memory; a smaller one
+    /// is handled in memory as before. Disk-backed downloads are bounded by the store's disk budget (`OneTimeDownloadStore.maxDiskBytes`,
+    /// `maxDiskEntries`) and the file is deleted once served, expired or evicted. Keep `maxBytes`
+    /// modest: the default is 64 MB.
+    ///
     /// The one-time URL is bound to the client's antiforgery cookie (minted
     /// here if absent) and, when present, its session cookie.
     @discardableResult
     public func useBlobDownloads(maxBytes: Int = 64 * 1024 * 1024, injection: BlobShimInjection = .auto) -> Self {
         let store = oneTimeDownloads()
 
-        routeRegistry.register(method: .post, path: "/_framework/blob", auth: .none, summary: nil, maxBodySize: maxBytes) { [self] ctx in
+        routeRegistry.register(method: .post, path: "/_framework/blob", auth: .none, summary: nil, maxBodySize: maxBytes, spoolAbove: spoolThresholdBytes) { [self] ctx in
             guard ctx.request.headers["X-SCW-Blob"] == "1" else {
                 return Results.problem(status: .forbidden, detail: "Missing X-SCW-Blob header")
             }
-            guard !ctx.request.body.isEmpty else { return Results.badRequest("Empty blob") }
             let fileName = ctx.request.headers["X-SCW-Filename"].flatMap { $0.removingPercentEncoding } ?? "download"
             let contentType = ctx.request.headers["Content-Type"] ?? "application/octet-stream"
 
+            let response: HttpResponse
+            var ownedFile: String?
+            if let spooled = ctx.request.bodyFile {
+                guard UploadStorage.size(of: spooled) > 0 else { return Results.badRequest("Empty blob") }
+                // Moved out of the request's reach: the dispatcher deletes `bodyFile` after the response.
+                let kept = try UploadStorage.newFileURL()
+                try FileManager.default.moveItem(at: spooled, to: kept)
+                ownedFile = kept.path
+                response = Results.file(kept.path, contentType: contentType, fileName: fileName).response
+            } else {
+                guard !ctx.request.body.isEmpty else { return Results.badRequest("Empty blob") }
+                response = Results.data(ctx.request.body, contentType: contentType, fileName: fileName).response
+            }
+
             let (af, isNew) = antiforgery(for: ctx.request)
             let owner = DownloadOwner(antiforgery: af, request: ctx.request)
-            guard let token = store.put(Results.data(ctx.request.body, contentType: contentType, fileName: fileName).response, owner: owner) else {
+            guard let token = store.put(response, owner: owner, ownedFile: ownedFile) else {
+                if let ownedFile { try? FileManager.default.removeItem(atPath: ownedFile) }
                 return Results.problem(status: HttpStatusCode(507), detail: "Download store is full")
             }
             var result = Results.ok(["url": "/_framework/dl/\(token)"])

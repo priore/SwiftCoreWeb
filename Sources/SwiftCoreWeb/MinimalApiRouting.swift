@@ -31,9 +31,10 @@ extension WebApplication {
         auth: AuthRequirement = .none,
         summary: String? = nil,
         maxRequestBodySize: Int? = nil,
+        spoolBodyToDisk: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.post, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+        map(.post, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     /// Registers a `PUT` route with a closure handler.
@@ -43,9 +44,10 @@ extension WebApplication {
         auth: AuthRequirement = .none,
         summary: String? = nil,
         maxRequestBodySize: Int? = nil,
+        spoolBodyToDisk: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.put, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+        map(.put, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     /// Registers a `PATCH` route with a closure handler.
@@ -55,9 +57,10 @@ extension WebApplication {
         auth: AuthRequirement = .none,
         summary: String? = nil,
         maxRequestBodySize: Int? = nil,
+        spoolBodyToDisk: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.patch, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+        map(.patch, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     /// Registers a `DELETE` route with a closure handler.
@@ -67,9 +70,10 @@ extension WebApplication {
         auth: AuthRequirement = .none,
         summary: String? = nil,
         maxRequestBodySize: Int? = nil,
+        spoolBodyToDisk: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        map(.delete, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+        map(.delete, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     /// Registers a `HEAD` route with a closure handler. `GET` routes are
@@ -105,10 +109,11 @@ extension WebApplication {
         auth: AuthRequirement = .none,
         summary: String? = nil,
         maxRequestBodySize: Int? = nil,
+        spoolBodyToDisk: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
         for method in methods {
-            _ = map(method, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+            _ = map(method, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
         }
         return self
     }
@@ -129,26 +134,26 @@ extension WebApplication {
 
     @_disfavoredOverload
     @discardableResult
-    public func mapPost(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.post, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+    public func mapPost(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, spoolBodyToDisk: Bool = false, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.post, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     @_disfavoredOverload
     @discardableResult
-    public func mapPut(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.put, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+    public func mapPut(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, spoolBodyToDisk: Bool = false, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.put, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     @_disfavoredOverload
     @discardableResult
-    public func mapPatch(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.patch, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+    public func mapPatch(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, spoolBodyToDisk: Bool = false, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.patch, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     @_disfavoredOverload
     @discardableResult
-    public func mapDelete(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
-        map(.delete, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, handler)
+    public func mapDelete(_ path: String, auth: AuthRequirement = .none, summary: String? = nil, maxRequestBodySize: Int? = nil, spoolBodyToDisk: Bool = false, _ handler: @escaping @Sendable (HttpContext) async throws -> Void) -> Self {
+        map(.delete, path, auth: auth, summary: summary, maxBodySize: maxRequestBodySize, spoolBody: spoolBodyToDisk, handler)
     }
 
     @_disfavoredOverload
@@ -180,9 +185,10 @@ extension WebApplication {
         auth: AuthRequirement,
         summary: String?,
         maxBodySize: Int? = nil,
+        spoolBody: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> T
     ) -> Self {
-        routeRegistry.register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize) { ctx in
+        routeRegistry.register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize, spoolBody: spoolBody) { ctx in
             try makeHttpResult(try await handler(ctx))
         }
         return self
@@ -197,9 +203,10 @@ extension WebApplication {
         auth: AuthRequirement,
         summary: String?,
         maxBodySize: Int? = nil,
+        spoolBody: Bool = false,
         _ handler: @escaping @Sendable (HttpContext) async throws -> Void
     ) -> Self {
-        routeRegistry.register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize) { ctx in
+        routeRegistry.register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize, spoolBody: spoolBody) { ctx in
             try await handler(ctx)
             return voidHttpResult()
         }

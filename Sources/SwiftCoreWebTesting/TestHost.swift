@@ -134,14 +134,26 @@ public final class TestHost: @unchecked Sendable {
             requestHeaders.add(name, value)
         }
 
+        // A spoolBodyToDisk route gets its body on disk, as it would from the real engine.
+        var bodyData = bodyBuffer.readData(length: bodyBuffer.readableBytes) ?? Data()
+        var bodyFile: URL?
+        let requestMethod = HttpMethod(rawValue: head.method.rawValue) ?? method
+        if dispatcher.bodyPlan(method: requestMethod, path: path0, contentLength: bodyData.count).spool {
+            let url = try UploadStorage.newFileURL()
+            try bodyData.write(to: url)
+            bodyFile = url
+            bodyData = Data()
+        }
+
         let request = HttpRequest(
-            method: HttpMethod(rawValue: head.method.rawValue) ?? method,
+            method: requestMethod,
             path: path0,
             query: query,
             queryAll: queryAll,
             headers: requestHeaders,
             remoteAddress: "127.0.0.1",
-            body: bodyBuffer.readData(length: bodyBuffer.readableBytes) ?? Data()
+            body: bodyData,
+            bodyFile: bodyFile
         )
 
         let response = await dispatcher.dispatch(request)
@@ -171,6 +183,7 @@ public final class TestHost: @unchecked Sendable {
             bodyData = data
             headers.replaceOrAdd(name: "Content-Length", value: "\(bodyData.count)")
         case .file(let path, let range):
+            defer { response.onSent?() }
             bodyData = try readFile(at: path, range: range)
             headers.replaceOrAdd(name: "Content-Length", value: "\(bodyData.count)")
         case .stream(let writer):
