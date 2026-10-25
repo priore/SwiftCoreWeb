@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-25
+
+### Fixed
+- **Link failure `Undefined symbols ... ByteBuffer.readData(length:)` in Xcode projects.**
+  - `ServerEngine`, `UploadStorage` and `SwiftCoreWebTesting.TestHost` call `ByteBuffer.readData(length:)`, which lives in `NIOFoundationCompat`; the product was missing from the dependencies of the `SwiftCoreWeb` and `SwiftCoreWebTesting` targets.
+  - Both targets now declare `NIOFoundationCompat`. `swift build` did not report the omission; an Xcode project linking the package did (v1.3.0 is affected).
+
 ## [1.3.0] - 2026-10-25
 
 ### Added
