@@ -50,6 +50,7 @@ let package = Package(
             dependencies: [
                 "SwiftCoreWebMacros",
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
@@ -86,6 +87,7 @@ let package = Package(
             dependencies: [
                 "SwiftCoreWeb",
                 .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
                 .product(name: "NIOEmbedded", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio")
             ],
