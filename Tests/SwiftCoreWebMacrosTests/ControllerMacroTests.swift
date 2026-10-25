@@ -56,6 +56,107 @@ final class ControllerMacroTests: XCTestCase {
         )
     }
 
+    func testFormParameterBindsThroughContext() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class UploadController {
+                @Post("/upload")
+                func upload(form: Form) async throws {
+                }
+            }
+            """,
+            expandedSource: """
+            final class UploadController {
+                func upload(form: Form) async throws {
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/upload", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_form = try SwiftCoreWeb.bindForm(ctx)
+                        try await Self.init().upload(form: arg_form)
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                }
+            }
+
+            extension UploadController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testMaxRequestBodySizeArgumentIsPassedToRegistration() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class BigController {
+                @Post("/big", maxRequestBodySize: 5_000_000)
+                func big() async throws {
+                }
+            }
+            """,
+            expandedSource: """
+            final class BigController {
+                func big() async throws {
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/big", auth: AuthRequirement.none, summary: nil, maxBodySize: 5_000_000) { ctx in
+                        try await Self.init().big()
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                }
+            }
+
+            extension BigController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testSpoolBodyToDiskArgumentIsPassedToRegistration() {
+        assertMacroExpansion(
+            """
+            @Controller("/api")
+            final class BackupController {
+                @Post("/backup", maxRequestBodySize: 5_000_000, spoolBodyToDisk: true)
+                func backup() async throws {
+                }
+
+                @Put("/restore", spoolBodyToDisk: true)
+                func restore() async throws {
+                }
+            }
+            """,
+            expandedSource: """
+            final class BackupController {
+                func backup() async throws {
+                }
+                func restore() async throws {
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/backup", auth: AuthRequirement.none, summary: nil, maxBodySize: 5_000_000, spoolBody: true) { ctx in
+                        try await Self.init().backup()
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                    router.register(method: .put, path: "/api/restore", auth: AuthRequirement.none, summary: nil, maxBodySize: nil, spoolBody: true) { ctx in
+                        try await Self.init().restore()
+                        return SwiftCoreWeb.voidHttpResult()
+                    }
+                }
+            }
+
+            extension BackupController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func testVoidReturnGeneratesNoContentDispatch() {
         assertMacroExpansion(
             """

@@ -43,6 +43,12 @@ final class ServerEngine: @unchecked Sendable {
     private var previousIdleTimerApplied = false
     private let group: NIOTSEventLoopGroup
 
+    /// Bytes ever appended to an in-memory request-body buffer: stays 0 for spooled routes
+    /// (the memory-bound test asserts on it, not on process RSS).
+    let bufferedBodyBytes = NIOLockedValueBox(0)
+    /// Test seam: told about every spool file the moment it is created.
+    var onSpoolCreated: (@Sendable (URL) -> Void)?
+
     private init(app: WebApplication) throws {
         self.app = app
         self.dispatcher = try app.makeDispatcher()
@@ -55,6 +61,7 @@ final class ServerEngine: @unchecked Sendable {
     /// `stop(timeout:)` is called. Stores itself on `app.engineBox` so
     /// `stopAsync()` can reach it.
     static func start(for app: WebApplication) async throws {
+        UploadStorage.sweepStale()
         let engine = try ServerEngine(app: app)
         app.engineBox.engine = engine
         try await engine.run()
@@ -200,32 +207,89 @@ final class ServerEngine: @unchecked Sendable {
         remoteIP: String,
         rawChannel: Channel
     ) async {
+        var rateLimited = false
         if let rateLimiter, await !rateLimiter.allow(clientIP: remoteIP) {
             app.metrics.recordRejected(.rateLimited)
-            let headers = HTTPHeaders([("Retry-After", "1"), ("Content-Length", "0")])
-            try? await channel.outbound.write(.head(HTTPResponseHead(version: .http1_1, status: .tooManyRequests, headers: headers)))
-            try? await channel.outbound.write(.end(nil))
-            try? await rawChannel.close()
-            return
+            rateLimited = true
         }
 
         do {
             try await channel.executeThenClose { inbound, outbound in
                 var requestHead: HTTPRequestHead?
                 var bodyBuffer = ByteBuffer()
-                let maxBodySize = app.serverOptions.maxRequestBodySize
+                var maxBodySize = app.serverOptions.maxRequestBodySize
+                // Set while the body of a `spoolBodyToDisk` route is being written to its file.
+                // Every way out of this closure (413, disconnect, shutdown, error) discards a
+                // spool that was not handed to the dispatcher, which deletes the file itself.
+                var spool: BodySpool?
+                defer { spool?.discard() }
+
+                // An early rejection (413, 429) is sent with `Connection: close`, then the rest of the
+                // request is read and thrown away (bounded in bytes and time) before the connection
+                // closes: closing while the client is still sending makes it see a reset, not the status.
+                var rejected = false
+                var discarded = 0
+                var closer: Scheduled<Void>?
+                defer { closer?.cancel() }
+                func reject(_ status: HTTPResponseStatus, _ extra: [(String, String)] = []) async throws {
+                    try await writeSimpleResponse(outbound, status: status, extraHeaders: extra + [("Connection", "close")])
+                    rejected = true
+                    closer = rawChannel.eventLoop.scheduleTask(in: .seconds(Self.rejectDrainSeconds)) { rawChannel.close(promise: nil) }
+                }
+                if rateLimited { try await reject(.tooManyRequests, [("Retry-After", "1")]) }
 
                 for try await part in inbound {
+                    if rejected {
+                        if case .body(let chunk) = part { discarded += chunk.readableBytes }
+                        if case .end = part { return }
+                        if discarded > Self.rejectDrainBytes { return }
+                        continue
+                    }
                     switch part {
                     case .head(let head):
                         requestHead = head
                         bodyBuffer.clear()
+                        spool?.discard()
+                        spool = nil
+                        // A route (or group) may override the global limit and ask for the body on
+                        // disk; resolved from the head alone, so an oversized body is cut off
+                        // before it is buffered.
+                        let plan = dispatcher.bodyPlan(
+                            method: HttpMethod(rawValue: head.method.rawValue) ?? .get,
+                            path: splitPathAndQuery(head.uri).path,
+                            contentLength: head.headers.first(name: "Content-Length").flatMap { Int($0) }
+                        )
+                        maxBodySize = plan.limit
+                        if plan.spool {
+                            do {
+                                let created = try BodySpool()
+                                spool = created
+                                onSpoolCreated?(created.url)
+                            } catch {
+                                try await reject(.insufficientStorage)
+                            }
+                        }
 
                     case .body(var chunk):
+                        if let current = spool {
+                            do { try current.write(&chunk) } catch {
+                                current.discard()
+                                spool = nil
+                                try await reject(.insufficientStorage)
+                                continue
+                            }
+                            if current.written > maxBodySize {
+                                current.discard() // the partial file goes away with the rejected request
+                                spool = nil
+                                try await reject(.payloadTooLarge)
+                            }
+                            continue
+                        }
+                        bufferedBodyBytes.withLockedValue { $0 += chunk.readableBytes }
                         bodyBuffer.writeBuffer(&chunk)
                         if bodyBuffer.readableBytes > maxBodySize {
-                            try await writeSimpleResponse(outbound, status: .payloadTooLarge)
-                            return
+                            bodyBuffer = ByteBuffer() // free what was buffered; nothing more is kept
+                            try await reject(.payloadTooLarge)
                         }
 
                     case .end:
@@ -236,7 +300,9 @@ final class ServerEngine: @unchecked Sendable {
                             return
                         }
 
-                        let request = makeHttpRequest(head: head, body: bodyBuffer, remoteAddress: remoteIP)
+                        let bodyFile = spool?.finish()
+                        spool = nil // the dispatcher deletes the file once the response is produced
+                        let request = makeHttpRequest(head: head, body: bodyBuffer, remoteAddress: remoteIP, bodyFile: bodyFile)
                         let response = await dispatcher.dispatch(request)
                         try await write(response, method: head.method, to: outbound)
                         requestHead = nil
@@ -249,16 +315,21 @@ final class ServerEngine: @unchecked Sendable {
         }
     }
 
+    /// How much of a rejected request's body is read and discarded, and for how long, before closing.
+    private static let rejectDrainBytes = 64 * 1024 * 1024
+    private static let rejectDrainSeconds: Int64 = 5
+
     private func writeSimpleResponse(
         _ outbound: NIOAsyncChannelOutboundWriter<HTTPServerResponsePart>,
-        status: HTTPResponseStatus
+        status: HTTPResponseStatus,
+        extraHeaders: [(String, String)] = []
     ) async throws {
-        let headers = HTTPHeaders([("Content-Length", "0")])
+        let headers = HTTPHeaders([("Content-Length", "0")] + extraHeaders)
         try await outbound.write(.head(HTTPResponseHead(version: .http1_1, status: status, headers: headers)))
         try await outbound.write(.end(nil))
     }
 
-    private func makeHttpRequest(head: HTTPRequestHead, body: ByteBuffer, remoteAddress: String) -> HttpRequest {
+    private func makeHttpRequest(head: HTTPRequestHead, body: ByteBuffer, remoteAddress: String, bodyFile: URL? = nil) -> HttpRequest {
         let uri = head.uri
         let (path, rawQuery) = splitPathAndQuery(uri)
         let (query, queryAll) = parseQueryString(rawQuery)
@@ -279,7 +350,8 @@ final class ServerEngine: @unchecked Sendable {
             queryAll: queryAll,
             headers: headers,
             remoteAddress: remoteAddress,
-            body: bodyData
+            body: bodyData,
+            bodyFile: bodyFile
         )
     }
 
@@ -288,6 +360,7 @@ final class ServerEngine: @unchecked Sendable {
         method: HTTPMethod,
         to outbound: NIOAsyncChannelOutboundWriter<HTTPServerResponsePart>
     ) async throws {
+        defer { response.onSent?() }
         var headers = HTTPHeaders()
         for (name, value) in response.headers.all {
             headers.add(name: name, value: value)
@@ -336,8 +409,10 @@ final class ServerEngine: @unchecked Sendable {
             try await writeFile(path, range: range, headers: headers, status: response.status, dropBody: dropBody, outbound: outbound)
 
         case .stream(let writer):
-            headers.remove(name: "Content-Length")
-            headers.replaceOrAdd(name: "Transfer-Encoding", value: "chunked")
+            // A known `Content-Length` (Results.stream(contentLength:)) is kept; otherwise chunked.
+            if !headers.contains(name: "Content-Length") {
+                headers.replaceOrAdd(name: "Transfer-Encoding", value: "chunked")
+            }
             try await outbound.write(.head(HTTPResponseHead(version: .http1_1, status: .init(statusCode: response.status.rawValue), headers: headers)))
             if !dropBody {
                 let sink = ChunkedByteSink(outbound: outbound)

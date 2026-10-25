@@ -39,6 +39,54 @@ public protocol RouteRegistry: AnyObject, Sendable {
         summary: String?,
         handler: @escaping RouteHandler
     )
+
+    /// `register` with a per-route request body limit (`nil` = the global limit).
+    func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        handler: @escaping RouteHandler
+    )
+
+    /// `register` with a per-route limit and, if `spoolBody`, the body streamed to disk (`HttpRequest.bodyFile`).
+    func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        spoolBody: Bool,
+        handler: @escaping RouteHandler
+    )
+}
+
+extension RouteRegistry {
+    /// Default for registries that do not support per-route limits: the limit is ignored.
+    public func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        handler: @escaping RouteHandler
+    ) {
+        register(method: method, path: path, auth: auth, summary: summary, handler: handler)
+    }
+
+    /// Default for registries that cannot spool: the body stays buffered in memory.
+    public func register(
+        method: HttpMethod,
+        path: String,
+        auth: AuthRequirement,
+        summary: String?,
+        maxBodySize: Int?,
+        spoolBody: Bool,
+        handler: @escaping RouteHandler
+    ) {
+        register(method: method, path: path, auth: auth, summary: summary, maxBodySize: maxBodySize, handler: handler)
+    }
 }
 
 /// A type that can register its routes with a `RouteRegistry`.

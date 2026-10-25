@@ -79,6 +79,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
                 path: fullPath,
                 authExpr: authExpression(from: marker),
                 summaryExpr: summaryExpression(from: marker),
+                maxBodyExpr: namedArgumentExpression(marker, label: "maxRequestBodySize"),
+                spoolExpr: namedArgumentExpression(marker, label: "spoolBodyToDisk"),
                 functionName: function.name.text,
                 parameters: parameters,
                 bindings: bindings,
@@ -189,6 +191,8 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
         path: String,
         authExpr: String,
         summaryExpr: String,
+        maxBodyExpr: String?,
+        spoolExpr: String?,
         functionName: String,
         parameters: [BindableParameter],
         bindings: [ParameterBindingKind],
@@ -224,9 +228,13 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             ? "\(call)\n    return SwiftCoreWeb.voidHttpResult()"
             : "return try \(call.hasPrefix("try ") ? String(call.dropFirst(4)) : call).toHttpResult()"
 
+        // Only the arguments the user wrote reach the expansion, so existing controllers expand unchanged.
+        let bodyArguments = (maxBodyExpr == nil && spoolExpr == nil) ? ""
+            : ", maxBodySize: \(maxBodyExpr ?? "nil")" + (spoolExpr.map { ", spoolBody: \($0)" } ?? "")
+
         let argumentsBlock = argumentLines.map { "    \($0)" }.joined(separator: "\n")
         return """
-        router.register(method: .\(method.lowercased()), path: "\(path)", auth: \(authExpr), summary: \(summaryExpr)) { ctx in
+        router.register(method: .\(method.lowercased()), path: "\(path)", auth: \(authExpr), summary: \(summaryExpr)\(bodyArguments)) { ctx in
         \(argumentsBlock.isEmpty ? "" : argumentsBlock + "\n")    \(resultLine)
         }
         """

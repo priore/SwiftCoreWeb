@@ -21,9 +21,11 @@ public enum VueRuntime {
 /// `await api.get('/api/users')` instead of hand-rolling `fetch` + error
 /// handling on every call site.
 private let apiHelperScript = """
-export async function request(method, path, body) {
-  const init = { method, headers: {} };
-  if (body !== undefined) {
+export async function request(method, path, body, headers) {
+  const init = { method, headers: Object.assign({}, headers) };
+  if (body instanceof FormData) {
+    init.body = body; // multipart: the browser sets Content-Type with its boundary
+  } else if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
@@ -60,6 +62,8 @@ export const api = {
 /// response, every non-`form` field is applied; `form` fields are applied
 /// only where the user hasn't retyped that key since the request was sent
 /// (no clobbering an in-flight edit).
+///
+/// ponytail: `$live.busy` only, no upload progress (that needs `XMLHttpRequest.upload` instead of `fetch`).
 private let liveHelperScript = """
 import * as Vue from '/_framework/vue.js';
 import { request } from '/_framework/api.js';
@@ -75,7 +79,21 @@ function mountLivePage() {
   let queued = null;
   let sentFormKeys = null;
 
+  // Navigates a hidden anchor to a one-time /_framework/dl/<token> URL (an attachment): never fetch + blob:.
+  function startDownload(url) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   function applyResponse(json) {
+    if (!json || typeof json !== 'object' || typeof json.snapshot !== 'string') {
+      throw new Error('Unexpected response to a live event');
+    }
     if (json.redirect) { location.assign(json.redirect); return; }
     snapshot = json.snapshot;
     checksum = json.checksum;
@@ -90,14 +108,27 @@ function mountLivePage() {
       if (sentFormKeys && !sentFormKeys.has(key)) continue; // user edited it meanwhile, keep their value
       currentForm[key] = nextForm[key];
     }
+    if (json.download) startDownload(json.download);
   }
 
-  async function send(event, args) {
-    if (live.busy) { queued = { event, args }; return; }
+  async function send(event, args, files) {
+    if (live.busy) { queued = { event, args, files }; return; }
     live.busy = true;
     sentFormKeys = new Set(Object.keys(state.form || {}));
     try {
-      const json = await request('POST', location.pathname, { snapshot, checksum, form: state.form, event, args });
+      let json;
+      if (files && files.length) {
+        const data = new FormData();
+        data.append('snapshot', snapshot);
+        data.append('checksum', checksum);
+        data.append('event', event);
+        data.append('args', JSON.stringify(args));
+        data.append('form', JSON.stringify(state.form || {}));
+        for (const file of files) data.append('files', file, file.name);
+        json = await request('POST', location.pathname, data, { 'X-SCW-Live': '1' });
+      } else {
+        json = await request('POST', location.pathname, { snapshot, checksum, form: state.form, event, args });
+      }
       applyResponse(json);
     } catch (error) {
       if (error.status === 400) { location.reload(); return; }
@@ -106,7 +137,7 @@ function mountLivePage() {
     } finally {
       live.busy = false;
       sentFormKeys = null;
-      if (queued) { const next = queued; queued = null; send(next.event, next.args); }
+      if (queued) { const next = queued; queued = null; send(next.event, next.args, next.files); }
     }
   }
 
@@ -122,9 +153,25 @@ function mountLivePage() {
     send(event, args);
   }
 
+  // <input type="file" @change="$swiftUpload('evt', $event, { multiple, accept })">
+  function swiftUpload(event, domEvent, options) {
+    const input = domEvent.target;
+    let files = Array.from(input.files || []);
+    const accept = ((options && options.accept) || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+    // Client-side filter is UX only; the page's allowedUploadTypes is the enforcement.
+    if (accept.length) {
+      files = files.filter((f) => accept.some((t) => t.startsWith('.') ? f.name.toLowerCase().endsWith(t)
+        : t.endsWith('/*') ? f.type.startsWith(t.slice(0, -1)) : f.type === t));
+    }
+    if (!(options && options.multiple)) files = files.slice(0, 1);
+    input.value = ''; // allow choosing the same file again
+    if (files.length) send(event, (options && options.args) || [], files);
+  }
+
   const render = window.__scwLive[Object.keys(window.__scwLive)[0]](Vue);
   const app = Vue.createApp({ render, setup: () => state });
   app.config.globalProperties.$swift = swift;
+  app.config.globalProperties.$swiftUpload = swiftUpload;
   app.config.globalProperties.$live = live;
   app.mount('#app');
 }

@@ -28,6 +28,13 @@ struct MiddlewarePipeline: Sendable {
         steps.append(handler)
     }
 
+    /// Adds a step that runs before every step registered so far (and after
+    /// none), for response post-processors that must also see responses of
+    /// middleware that short-circuit (`useStaticFiles`, `useSpa`).
+    mutating func prepend(_ handler: @escaping MiddlewareHandler) {
+        steps.insert(handler, at: 0)
+    }
+
     /// Runs the pipeline against `ctx`, ending with `terminal` (route
     /// dispatch) if every step calls `next()`.
     func run(_ ctx: HttpContext, terminal: @escaping MiddlewareNext) async throws {

@@ -26,9 +26,22 @@ public protocol Page: Codable, Sendable {
     init()
     mutating func onLoad(_ ctx: PageContext) async throws -> PageAction?
     mutating func onEvent(_ event: String, _ ctx: PageContext) async throws -> PageAction
+    /// Upper bound for the total size of files uploaded in one event
+    /// (`$swiftUpload`); also lifts the request body limit of this page's `POST`
+    /// route to that size. `nil` = the app's global request body limit. Over: `413`.
+    static var maxUploadBytes: Int? { get }
+    /// Allowed upload types: MIME types (`image/png`), wildcards (`image/*`) or
+    /// extensions (`.pdf`). `nil` = any. A violation sets `ctx.errors["files"]`
+    /// and `ctx.files` stays empty.
+    static var allowedUploadTypes: [String]? { get }
+    /// Maximum number of files per event; a violation is handled like a type violation.
+    static var maxUploadFiles: Int? { get }
 }
 
 extension Page {
+    public static var maxUploadBytes: Int? { nil }
+    public static var allowedUploadTypes: [String]? { nil }
+    public static var maxUploadFiles: Int? { nil }
     public static var title: String { "" }
     public static var stylesheets: [String] { [] }
     public mutating func onLoad(_ ctx: PageContext) async throws -> PageAction? { nil }
@@ -43,11 +56,46 @@ extension Page where Form == NoForm {
 }
 
 /// The outcome of `onLoad`/`onEvent`: re-render the page, redirect the
-/// client, or hand back a raw result (an escape hatch, e.g. a file download).
+/// client, hand the client a download, or hand back a raw result (an escape hatch).
+///
+/// From `onEvent`, a `.result` is not sent to the browser as-is: the Live Pages
+/// client expects JSON, so a redirect result becomes a client redirect, an empty
+/// `2xx` re-renders, and any other `2xx` body is stored as a one-time download
+/// (like `download(...)`). Other statuses are passed through and surface as a
+/// `live:error` event on the client.
 public enum PageAction: Sendable {
     case render
     case redirect(String)
     case result(any HttpResultConvertible)
+}
+
+/// A download built by `PageAction.download(...)`: a complete attachment response.
+/// Returned from `onLoad` (a `GET`) it is served directly.
+struct PageDownload: HttpResultConvertible {
+    let response: HttpResponse
+    func toHttpResult() throws -> HttpResult { HttpResult(response) }
+}
+
+extension PageAction {
+    /// Sends `data` to the browser as a file download, without a `blob:` URL: the
+    /// event replies with a one-time `/_framework/dl/<token>` URL the client navigates to.
+    public static func download(data: Data, fileName: String, contentType: String = "application/octet-stream") -> PageAction {
+        .result(PageDownload(response: Results.data(data, contentType: contentType, fileName: fileName).response))
+    }
+
+    /// Sends the file at `filePath` (read when the browser fetches it, not now).
+    public static func download(filePath: String, fileName: String? = nil, contentType: String = "application/octet-stream") -> PageAction {
+        .result(PageDownload(response: Results.file(filePath, contentType: contentType, fileName: fileName ?? (filePath as NSString).lastPathComponent).response))
+    }
+
+    /// Sends bytes produced by `stream` when the browser fetches the download.
+    public static func download(
+        fileName: String,
+        contentType: String = "application/octet-stream",
+        stream: @escaping @Sendable (any AsyncByteSink) async throws -> Void
+    ) -> PageAction {
+        .result(PageDownload(response: Results.stream(contentType: contentType, fileName: fileName, stream).response))
+    }
 }
 
 /// Per-request context passed to `onLoad`/`onEvent`, alongside `HttpContext`.
@@ -56,6 +104,9 @@ public struct PageContext: Sendable {
     public let isPostBack: Bool
     public let args: [String]
     public let errors: PageErrors
+    /// Files uploaded with this event (`$swiftUpload`); temporary files are deleted
+    /// after the response unless moved with `UploadedFile.move(to:)`.
+    public let files: [UploadedFile]
     public var isValid: Bool { errors.isEmpty }
     public var session: Session { http.session }
 }
@@ -226,6 +277,8 @@ private struct PageEventResponse: Encodable {
     let snapshot: String
     let checksum: String
     let redirect: String?
+    /// `/_framework/dl/<token>` when the event produced a download.
+    var download: String? = nil
 }
 
 // MARK: - mapPage
@@ -252,9 +305,19 @@ extension WebApplication {
             }
         }
 
-        return mapMethods([.get, .post], path, auth: auth) { ctx in
-            try await self.handlePage(P.self, ctx)
+        oneTimeDownloads() // `.download` events fetch from /_framework/dl/{token}, which must exist before the router freezes
+
+        // Room for the snapshot/form fields next to the files.
+        let postLimit = P.maxUploadBytes.map { $0 + 1_048_576 }
+        // Big uploads are received on disk. The snapshot, checksum and `X-SCW-Live` checks still run
+        // in `handlePage`, after the body is complete; the parts are discarded if they fail.
+        let spool = (P.maxUploadBytes ?? 0) > spoolThresholdBytes
+        for method in [HttpMethod.get, .post] {
+            routeRegistry.register(method: method, path: path, auth: auth, summary: nil, maxBodySize: method == .post ? postLimit : nil, spoolBody: method == .post && spool) { ctx in
+                try await self.handlePage(P.self, ctx)
+            }
         }
+        return self
     }
 
     private func liveScriptResult(for templateName: String) throws -> HttpResult {
@@ -281,11 +344,8 @@ extension WebApplication {
         // must be added to the `HttpResult` actually returned, not to
         // `ctx.response` directly — that mutation would just be discarded.
         var newAntiforgeryCookie: String?
-        let antiforgery = existingAntiforgery(ctx) ?? {
-            let token = makeAntiforgeryToken()
-            newAntiforgeryCookie = token
-            return token
-        }()
+        let (antiforgery, isNew) = self.antiforgery(for: ctx.request)
+        if isNew { newAntiforgeryCookie = antiforgery }
 
         var result: HttpResult
         do {
@@ -298,7 +358,7 @@ extension WebApplication {
             result = Results.problem(status: httpError.status, detail: httpError.detail)
         }
         if let newAntiforgeryCookie {
-            result.response.setCookie("__scw_af", newAntiforgeryCookie, secure: tlsOptions != nil, sameSite: "Lax")
+            setAntiforgeryCookie(newAntiforgeryCookie, on: &result.response)
         }
         return result
     }
@@ -307,7 +367,7 @@ extension WebApplication {
         switch ctx.request.method {
         case .get:
             var page = P()
-            let pageCtx = PageContext(http: ctx, isPostBack: false, args: [], errors: PageErrors())
+            let pageCtx = PageContext(http: ctx, isPostBack: false, args: [], errors: PageErrors(), files: [])
             let action = try await page.onLoad(pageCtx)
             if case .redirect(let location) = action {
                 return Results.redirect(location)
@@ -318,10 +378,7 @@ extension WebApplication {
             return try renderShell(page, path: ctx.request.path, antiforgery: antiforgery)
 
         default: // .post
-            guard (ctx.request.headers["Content-Type"] ?? "").hasPrefix("application/json") else {
-                throw HttpError(HttpStatusCode(415), "Expected application/json")
-            }
-            let body = try ctx.request.decode(PageEventRequest.self)
+            let (body, uploads) = try eventRequest(ctx)
             guard let snapshot = sharedPageSnapshotSignerBox.signer.verify(snapshot: body.snapshot, checksum: body.checksum),
                   snapshot.path == ctx.request.path,
                   snapshot.af == antiforgery else {
@@ -331,8 +388,9 @@ extension WebApplication {
             var page = try decodePage(P.self, from: snapshot.page)
             let errors = PageErrors()
             bindForm(&page, received: body.form, errors: errors)
+            let files = try acceptUploads(P.self, uploads, errors: errors)
 
-            let pageCtx = PageContext(http: ctx, isPostBack: true, args: body.args ?? [], errors: errors)
+            let pageCtx = PageContext(http: ctx, isPostBack: true, args: body.args ?? [], errors: errors, files: files)
             let action = try await page.onEvent(body.event, pageCtx)
 
             switch action {
@@ -340,23 +398,89 @@ extension WebApplication {
                 let (snapshotString, checksum) = try sharedPageSnapshotSignerBox.signer.sign(snapshot)
                 return Results.ok(PageEventResponse(snapshot: snapshotString, checksum: checksum, redirect: location))
             case .result(let result):
-                return try result.toHttpResult()
+                return try eventResult(result, page: page, ctx: ctx, antiforgery: antiforgery, errors: errors)
             case .render:
                 return try renderEventResponse(page, path: ctx.request.path, antiforgery: antiforgery, errors: errors)
             }
         }
     }
 
-    /// Reads `__scw_af` if present, otherwise mints and sets a new one (the
-    /// Vue Live Pages design's antiforgery cookie). Returns the value either way.
-    private func existingAntiforgery(_ ctx: HttpContext) -> String? {
-        ctx.request.cookies["__scw_af"]
+    /// The event request, from `application/json` or, for uploads, `multipart/form-data`
+    /// with the fields `snapshot`, `checksum`, `event`, `args` (JSON), `form` (JSON) plus file parts.
+    /// A multipart request must carry `X-SCW-Live: 1`: a custom header cannot be sent
+    /// cross-site without a CORS preflight, which a plain `<form>` post (no preflight) could skip.
+    private func eventRequest(_ ctx: HttpContext) throws -> (PageEventRequest, [UploadedFile]) {
+        let contentType = (ctx.request.headers["Content-Type"] ?? "").lowercased()
+        if contentType.hasPrefix("multipart/form-data") {
+            guard ctx.request.headers["X-SCW-Live"] == "1" else {
+                throw HttpError(.forbidden, "Missing X-SCW-Live header")
+            }
+            // ponytail: the parts are written to temporary files before the snapshot is verified
+            // (bounded by the route's body limit, deleted after the response).
+            let form = try SwiftCoreWeb.bindForm(ctx)
+            guard let snapshot = form.fields["snapshot"], let checksum = form.fields["checksum"], let event = form.fields["event"] else {
+                throw HttpError(.badRequest, "Missing snapshot, checksum or event")
+            }
+            func json<T: Decodable>(_ key: String, as type: T.Type) -> T? {
+                form.fields[key].flatMap { try? JSONDecoder().decode(T.self, from: Data($0.utf8)) }
+            }
+            let request = PageEventRequest(snapshot: snapshot, checksum: checksum, form: json("form", as: JSONValue.self), event: event, args: json("args", as: [String].self))
+            return (request, form.files)
+        }
+        guard contentType.hasPrefix("application/json") else {
+            throw HttpError(HttpStatusCode(415), "Expected application/json")
+        }
+        // A spooled route also receives its JSON events on disk; they are small.
+        let data = try ctx.request.smallBody()
+        do {
+            return (try JSONDecoder().decode(PageEventRequest.self, from: data), [])
+        } catch {
+            throw HttpError(.badRequest, "Could not decode request body as PageEventRequest: \(error)")
+        }
     }
 
-    private func makeAntiforgeryToken() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes).base64EncodedString()
+    /// Applies the page's upload limits: over `maxUploadBytes` is a `413`; too many files
+    /// or a disallowed type sets `errors["files"]` and drops the files.
+    private func acceptUploads<P: Page>(_ type: P.Type, _ files: [UploadedFile], errors: PageErrors) throws -> [UploadedFile] {
+        if let maxBytes = P.maxUploadBytes, files.reduce(0, { $0 + $1.sizeInBytes }) > maxBytes {
+            throw HttpError(.payloadTooLarge, "Upload exceeds \(maxBytes) bytes")
+        }
+        if let maxFiles = P.maxUploadFiles, files.count > maxFiles {
+            errors["files"] = "At most \(maxFiles) file(s) allowed"
+            return []
+        }
+        if let allowed = P.allowedUploadTypes, !files.allSatisfy({ file in allowed.contains { uploadMatches(file, $0) } }) {
+            errors["files"] = "File type not allowed"
+            return []
+        }
+        return files
+    }
+
+    private func uploadMatches(_ file: UploadedFile, _ pattern: String) -> Bool {
+        let pattern = pattern.lowercased()
+        if pattern.hasPrefix(".") { return file.fileName.lowercased().hasSuffix(pattern) }
+        let type = (file.contentType ?? "").lowercased()
+        return pattern.hasSuffix("/*") ? type.hasPrefix(pattern.dropLast()) : type == pattern
+    }
+
+    /// `PageAction.result` from an event. The client only understands page JSON, so:
+    /// a redirect result redirects, an empty `2xx` re-renders, another `2xx` body becomes
+    /// a one-time download, anything else is returned unchanged (the client reports `live:error`).
+    private func eventResult<P: Page>(_ result: any HttpResultConvertible, page: P, ctx: HttpContext, antiforgery: String, errors: PageErrors) throws -> HttpResult {
+        let http = try result.toHttpResult()
+        let response = http.response
+        if (300..<400).contains(response.status.rawValue), let location = response.headers["Location"] {
+            return try renderEventResponse(page, path: ctx.request.path, antiforgery: antiforgery, errors: errors, redirect: location)
+        }
+        guard (200..<300).contains(response.status.rawValue) else { return http }
+        if case .empty = response.body {
+            return try renderEventResponse(page, path: ctx.request.path, antiforgery: antiforgery, errors: errors)
+        }
+        let owner = DownloadOwner(antiforgery: antiforgery, request: ctx.request)
+        guard let token = oneTimeDownloads().put(response, owner: owner) else {
+            throw HttpError(HttpStatusCode(507), "Download too large")
+        }
+        return try renderEventResponse(page, path: ctx.request.path, antiforgery: antiforgery, errors: errors, download: "/_framework/dl/\(token)")
     }
 
     private func renderShell<P: Page>(_ page: P, path: String, antiforgery: String) throws -> HttpResult {
@@ -383,11 +507,11 @@ extension WebApplication {
         return HttpResult(HttpResponse(status: .ok, headers: headers, body: .text(html)))
     }
 
-    private func renderEventResponse<P: Page>(_ page: P, path: String, antiforgery: String, errors: PageErrors) throws -> HttpResult {
+    private func renderEventResponse<P: Page>(_ page: P, path: String, antiforgery: String, errors: PageErrors, redirect: String? = nil, download: String? = nil) throws -> HttpResult {
         let (snapshotString, checksum) = try sharedPageSnapshotSignerBox.signer.sign(
             try makeSnapshot(page, path: path, antiforgery: antiforgery, errors: errors.snapshot)
         )
-        return Results.ok(PageEventResponse(snapshot: snapshotString, checksum: checksum, redirect: nil))
+        return Results.ok(PageEventResponse(snapshot: snapshotString, checksum: checksum, redirect: redirect, download: download))
     }
 
     private func makeSnapshot<P: Page>(_ page: P, path: String, antiforgery: String, errors: [String: String]) throws -> PageSnapshot {

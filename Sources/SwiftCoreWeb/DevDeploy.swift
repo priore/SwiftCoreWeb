@@ -111,7 +111,7 @@ extension WebApplication {
 /// a temp directory, then swap) so a partial upload never leaves the served
 /// site broken mid-write.
 enum DevDeployUnpacker {
-    enum UnpackError: Error { case unsupportedContentType, emptyPayload }
+    enum UnpackError: Error { case unsupportedContentType, emptyPayload, invalidFilename }
 
     static func unpack(_ body: Data, contentType: String?, into destinationRoot: String) throws {
         guard !body.isEmpty else { throw UnpackError.emptyPayload }
@@ -152,52 +152,20 @@ enum DevDeployUnpacker {
     }
 }
 
-/// A minimal multipart/form-data parser sufficient for the dev-deploy
-/// upload: extracts each file part's filename and bytes, writes each to
-/// `directory` preserving the relative path given in its filename.
+/// Writes each file part of the dev-deploy upload to `directory`, preserving
+/// the relative path given in its filename.
 enum MultipartFormData {
     static func writeFiles(from body: Data, contentType: String, into directory: URL) throws {
-        guard let boundaryRange = contentType.range(of: "boundary=") else {
-            throw DevDeployUnpacker.UnpackError.unsupportedContentType
-        }
-        let boundary = "--" + contentType[boundaryRange.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        let boundaryData = Data(boundary.utf8)
-
-        var parts: [Data] = []
-        var searchRange = body.startIndex..<body.endIndex
-        while let range = body.range(of: boundaryData, in: searchRange) {
-            if range.upperBound < body.endIndex {
-                let nextSearchStart = range.upperBound
-                if let nextRange = body.range(of: boundaryData, in: nextSearchStart..<body.endIndex) {
-                    parts.append(body[nextSearchStart..<nextRange.lowerBound])
-                }
-            }
-            searchRange = range.upperBound..<body.endIndex
-        }
-
+        let parts = try MultipartParser.parse(body, boundary: MultipartParser.boundary(in: contentType))
         for part in parts {
-            guard let headerEndRange = part.range(of: Data("\r\n\r\n".utf8)) else { continue }
-            let headerData = part[part.startIndex..<headerEndRange.lowerBound]
-            guard let headerText = String(data: headerData, encoding: .utf8),
-                  let filename = extractFilename(from: headerText) else { continue }
-
-            var fileData = part[headerEndRange.upperBound...]
-            if fileData.suffix(2) == Data("\r\n".utf8) {
-                fileData = fileData.dropLast(2)
+            guard let filename = part.filename, !filename.isEmpty else { continue }
+            guard !filename.hasPrefix("/"), !filename.split(separator: "/").contains("..") else {
+                throw DevDeployUnpacker.UnpackError.invalidFilename
             }
-
             let destination = directory.appendingPathComponent(filename)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fileData.write(to: destination)
+            try part.data.write(to: destination)
         }
-    }
-
-    private static func extractFilename(from headerText: String) -> String? {
-        guard let range = headerText.range(of: "filename=\"") else { return nil }
-        let rest = headerText[range.upperBound...]
-        guard let endQuote = rest.firstIndex(of: "\"") else { return nil }
-        let filename = String(rest[rest.startIndex..<endQuote])
-        return filename.isEmpty ? nil : filename
     }
 }
 #endif

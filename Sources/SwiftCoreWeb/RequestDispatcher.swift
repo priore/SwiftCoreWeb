@@ -16,8 +16,11 @@ public struct RequestDispatcher: Sendable {
     let pipeline: MiddlewarePipeline
     let services: ServiceProvider
     let metrics: ServerMetrics
+    /// `ServerOptions.maxRequestBodySize`, the limit for routes without their own.
+    let maxBodySize: Int
 
-    init(router: Router, pipeline: MiddlewarePipeline, services: ServiceProvider, metrics: ServerMetrics) {
+    init(router: Router, pipeline: MiddlewarePipeline, services: ServiceProvider, metrics: ServerMetrics, maxBodySize: Int = Int.max) {
+        self.maxBodySize = maxBodySize
         self.router = router
         self.pipeline = pipeline
         self.services = services
@@ -34,6 +37,8 @@ public struct RequestDispatcher: Sendable {
     /// (`ServerEngine` or `SwiftCoreWebTesting.TestHost`), since both route
     /// through here — the single point that sees every request either way.
     public func dispatch(_ request: HttpRequest) async -> HttpResponse {
+        // A spooled body lives only as long as the request: a handler that wants it moves it away.
+        defer { if let bodyFile = request.bodyFile { try? FileManager.default.removeItem(at: bodyFile) } }
         let startedAt = DispatchTime.now()
         let response = await dispatchWithoutMetrics(request)
         let elapsedMilliseconds = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000
@@ -48,7 +53,34 @@ public struct RequestDispatcher: Sendable {
         return response
     }
 
+    /// The request body limit for `method`/`path`: the matched route's own, else the global one.
+    /// The server engine calls this on the request head, before buffering the body.
+    func bodyLimit(method: HttpMethod, path: String) -> Int {
+        bodyPlan(method: method, path: path).limit
+    }
+
+    /// How the engine receives the body of `method`/`path`: the limit (see `bodyLimit`) and
+    /// whether it is streamed to a file (`spoolBodyToDisk`) instead of buffered. `contentLength` is the
+    /// head's `Content-Length` (`nil` when absent, e.g. chunked): a route that spools only above a size
+    /// (blob downloads) spools an unknown length too.
+    func bodyPlan(method: HttpMethod, path: String, contentLength: Int? = nil) -> (limit: Int, spool: Bool) {
+        guard case .matched(let route, _) = router.match(method: method, path: path) else { return (maxBodySize, false) }
+        let spool = route.spoolAbove.map { threshold in contentLength.map { $0 > threshold } ?? true } ?? false
+        return (route.maxBodySize ?? maxBodySize, spool)
+    }
+
     private func dispatchWithoutMetrics(_ request: HttpRequest) async -> HttpResponse {
+        // ponytail: `router.match` runs here and again in `dispatchRouted`; cache the match if route tables get large.
+        // Also enforced here (the engine cuts the connection earlier) so `TestHost`,
+        // which has no body loop, applies the same limits as a real socket.
+        let bodySize = request.bodyFile.map(UploadStorage.size(of:)) ?? request.body.count
+        guard bodySize <= bodyLimit(method: request.method, path: request.path) else {
+            return Results.problem(status: .payloadTooLarge, detail: nil).response
+        }
+        return applyByteRange(await dispatchRouted(request), for: request)
+    }
+
+    private func dispatchRouted(_ request: HttpRequest) async -> HttpResponse {
         let ctx = HttpContext(request: request, services: services)
 
         let match = router.match(method: request.method, path: request.path)
@@ -66,9 +98,11 @@ public struct RequestDispatcher: Sendable {
                 queryAll: request.queryAll,
                 headers: request.headers,
                 remoteAddress: request.remoteAddress,
-                body: request.body
+                body: request.body,
+                bodyFile: request.bodyFile
             )
             let boundCtx = HttpContext(request: boundRequest, services: services, user: ctx.user, items: ctx.items)
+            defer { boundCtx.items[TemporaryUploads.self]?.paths.forEach { try? FileManager.default.removeItem(atPath: $0) } }
             return await runPipeline(boundCtx, routeAuth: routeAuth) {
                 let result = try await route.handler(boundCtx)
                 boundCtx.response = try result.toHttpResult().response
@@ -124,7 +158,7 @@ extension WebApplication {
     /// if two routes for the same method are indistinguishable.
     public func makeDispatcher() throws -> RequestDispatcher {
         try routeRegistry.freeze()
-        return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics)
+        return RequestDispatcher(router: routeRegistry, pipeline: middlewarePipeline, services: services, metrics: metrics, maxBodySize: serverOptions.maxRequestBodySize)
     }
 
     /// Non-throwing form kept for source compatibility: traps, printing the

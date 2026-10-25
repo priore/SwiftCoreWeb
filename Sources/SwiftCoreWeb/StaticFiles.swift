@@ -83,7 +83,7 @@ func fileETag(path: String) -> String? {
 /// Parses a single-range `Range: bytes=start-end` header against a file of
 /// `fileSize` bytes. Multi-range requests are not supported (rare for media
 /// playback/seek, the actual use case); returns `nil` for anything else,
-/// which falls back to a full `200` response.
+/// which falls back to a full `200` response (or `416`, see `isUnsatisfiableByteRange`).
 func parseByteRange(_ header: String, fileSize: Int) -> ClosedRange<Int>? {
     guard fileSize > 0, header.hasPrefix("bytes="), !header.contains(",") else { return nil }
     let spec = header.dropFirst("bytes=".count)
@@ -171,18 +171,10 @@ func staticFileResponse(filePath: String, requestPath: String, request: HttpRequ
         headers["Vary"] = "Accept-Encoding"
     }
 
-    guard let attrs = try? FileManager.default.attributesOfItem(atPath: servedPath),
-          let fileSize = attrs[.size] as? Int else {
+    guard FileManager.default.fileExists(atPath: servedPath) else {
         return Results.notFound().response
     }
 
-    if let rangeHeader = request.headers["Range"],
-       let range = parseByteRange(rangeHeader, fileSize: fileSize) {
-        headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound)/\(fileSize)"
-        headers["Accept-Ranges"] = "bytes"
-        return HttpResponse(status: .partialContent, headers: headers, body: .file(path: servedPath, range: range), acceptsRanges: true)
-    }
-
-    headers["Accept-Ranges"] = "bytes"
-    return HttpResponse(status: .ok, headers: headers, body: .file(path: servedPath, range: nil), acceptsRanges: true)
+    // `Range`/`If-Range` (206/416) are resolved by `applyByteRange` in the dispatcher.
+    return applyByteRange(HttpResponse(status: .ok, headers: headers, body: .file(path: servedPath, range: nil), acceptsRanges: true), for: request)
 }

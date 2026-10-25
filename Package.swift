@@ -14,7 +14,8 @@ let package = Package(
     products: [
         .library(name: "SwiftCoreWeb", targets: ["SwiftCoreWeb"]),
         .library(name: "SwiftCoreWebTesting", targets: ["SwiftCoreWebTesting"]),
-        .library(name: "SwiftCoreWebDashboard", targets: ["SwiftCoreWebDashboard"])
+        .library(name: "SwiftCoreWebDashboard", targets: ["SwiftCoreWebDashboard"]),
+        .library(name: "SwiftCoreWebKit", targets: ["SwiftCoreWebKit"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
@@ -71,6 +72,14 @@ let package = Package(
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
 
+        // MARK: - Optional WebKit helper (opt-in, imports WebKit; nothing depends on it)
+        .target(
+            name: "SwiftCoreWebKit",
+            dependencies: ["SwiftCoreWeb"],
+            path: "Sources/SwiftCoreWebKit",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: - In-memory test host
         .target(
             name: "SwiftCoreWebTesting",
@@ -98,6 +107,12 @@ let package = Package(
             name: "SwiftCoreWebTests",
             dependencies: ["SwiftCoreWeb", "SwiftCoreWebTesting"],
             path: "Tests/SwiftCoreWebTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "SwiftCoreWebKitTests",
+            dependencies: ["SwiftCoreWebKit"],
+            path: "Tests/SwiftCoreWebKitTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

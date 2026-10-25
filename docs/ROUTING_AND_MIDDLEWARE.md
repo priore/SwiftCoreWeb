@@ -115,7 +115,7 @@ rules above decide, and ties go to the route registered first.
 2. A name matching a route placeholder binds from the path.
 3. A non-primitive `Decodable` on `POST`/`PUT`/`PATCH` binds from the JSON body.
 4. A primitive or optional primitive binds from the query string.
-5. `Header<T>`, `Query<T>`, `Service<T>`, and `Form` give explicit control when the convention isn't enough.
+5. `Header<T>`, `Query<T>`, `Service<T>`, and `Form` (`multipart/form-data` or `application/x-www-form-urlencoded`, buffered up to `maxRequestBodySize`, or the group's own limit — see below) give explicit control when the convention isn't enough.
 
 Any conversion failure produces a `400` `ProblemDetails` naming the offending parameter — you never
 have to write that check yourself.
@@ -157,3 +157,65 @@ Built-ins:
 A single `NIOTSListenerBootstrap` (Network.framework via `NIOTransportServices`) serves HTTP and,
 when TLS is configured, HTTPS on the same pipeline. Handler code is plain `async throws` — never
 `EventLoopFuture` — thanks to `NIOAsyncChannel` bridging NIO to Swift Concurrency.
+
+## Request body limits per route
+
+`builder.maxRequestBodySize(_:)` (default 1 MB) is the global limit. A route group can replace it for its own routes
+— larger for an upload endpoint, smaller for a tiny one — without touching the rest of the app:
+
+```swift
+let files = app.mapGroup("/files").maxRequestBodySize(50_000_000)   // nested groups inherit it
+files.mapPost("/import") { (form: Form) in /* ... */ }
+```
+
+A single route can do the same, without a group:
+
+```swift
+app.mapPost("/import", maxRequestBodySize: 50_000_000) { (form: Form) in /* ... */ }   // also mapPut, mapPatch, mapDelete, mapMethods
+```
+
+```swift
+@Controller("/files")
+struct FileController {
+    @Post("/import", maxRequestBodySize: 50_000_000)   // also @Put, @Patch, @Delete
+    func importFile(form: Form) async throws -> String { /* ... */ }
+}
+```
+
+The server engine resolves the limit from the request head and stops reading as soon as the body exceeds it (`413`); the
+dispatcher enforces the same limit, so `TestHost` agrees with a real socket. By default bodies are buffered in RAM, so keep the limit as low as the use case allows,
+or spool the body to disk (next section).
+Downloads (`Results.data`/`file`/`stream`, `Range`, `Content-Disposition`) are covered in [API: basic examples](api/EXAMPLES_BASIC.md).
+
+## Large uploads: spooling the body to disk
+
+An upload of a few hundred MB cannot be buffered (the body would sit in RAM, then be copied once more when a
+`Form` is parsed). A route can ask for the body on disk instead. It is opt-in, attached like the limit, and
+decided from the request head; every other route keeps the buffered behaviour:
+
+```swift
+app.mapPost("/backup", maxRequestBodySize: 500_000_000, spoolBodyToDisk: true) { (form: Form) in /* ... */ }
+app.mapGroup("/files").maxRequestBodySize(500_000_000).spoolBodyToDisk().mapPost("/import") { (form: Form) in /* ... */ }
+```
+
+```swift
+@Post("/backup", maxRequestBodySize: 500_000_000, spoolBodyToDisk: true)   // also @Put, @Patch, @Delete
+func backup(form: Form) async throws -> String { /* ... */ }
+```
+
+- The engine writes each chunk straight to a UUID-named temporary file and enforces the route limit while writing.
+  Over it: `413` (with `Connection: close`, as for any early rejection) and the partial file is deleted. Nothing of the
+  body is kept in memory. Set `maxRequestBodySize` too: without it the global limit (1 MB) applies.
+- `HttpRequest.body` stays **empty**; the body is `HttpRequest.bodyFile`. `decode(_:)` and `bodyString` therefore do
+  not work on such a route.
+- `Form` / `bindForm(ctx)` read the file in blocks and write every file part to its own temporary file, so memory stays at
+  about one block. Text fields (all together) are kept in memory up to 1 MB, over that is `413`. `UploadedFile` and
+  `ctx.files` of a Live Page work unchanged. Other content types (such as `application/octet-stream`) are yours: read
+  `ctx.request.bodyFile`, or move it with `FileManager.moveItem(at:to:)` to keep it.
+- Authentication, middleware and CORS run as usual, after the body is complete and before the handler. The body file,
+  and any uploaded part not moved away, is deleted after the response — also when the handler throws, the client
+  disconnects or the server stops. On start the server also removes files in the uploads directory
+  (`<temporary directory>/SwiftCoreWeb-uploads`) older than one day, left behind by a crashed process.
+- `TestHost` writes the body to a file for such routes too, so a test sees `bodyFile`, not `body`.
+- Live Pages whose `maxUploadBytes` is above 8 MB spool their `POST` route automatically, and
+  `useBlobDownloads` receives a blob longer than 8 MB on disk too (smaller ones stay in memory, so with the default `maxBytes` nothing changes for them).
