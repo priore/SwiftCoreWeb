@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-25
+
 ### Added
 - **Upload spooling to disk (`spoolBodyToDisk`).**
   - Opt-in per route, decided from the request head like the body limit: `spoolBodyToDisk: true` on `mapPost`, `mapPut`, `mapPatch`, `mapDelete` and `mapMethods`, `spoolBodyToDisk()` on a route group, `spoolBodyToDisk:` on `@Post`, `@Put`, `@Patch` and `@Delete`.
