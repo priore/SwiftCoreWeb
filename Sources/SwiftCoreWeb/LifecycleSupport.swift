@@ -143,6 +143,9 @@ public final class LifecycleBinding {
     private let app: WebApplication
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var wasRunning = false
+    /// Stop and restart run one after the other: a return to `.active` while the stop is still in flight
+    /// used to see `isRunning == true`, skip the restart, and leave the port closed for good.
+    private var transition: Task<Void, Never>?
 
     init(app: WebApplication) {
         self.app = app
@@ -166,18 +169,27 @@ public final class LifecycleBinding {
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "SwiftCoreWeb.shutdown") { [weak self] in
             self?.endBackgroundTask()
         }
-        Task {
+        enqueue { [app, weak self] in
             try? await app.stopAsync()
-            await MainActor.run { self.endBackgroundTask() }
+            await self?.endBackgroundTask()
         }
     }
 
     @objc private func didBecomeActive() {
-        guard wasRunning, !app.isRunning else { return }
+        guard wasRunning else { return }
         wasRunning = false
-        Task {
-            try? await app.runAsync()
+        // `isRunning` is read when the restart runs, i.e. after any queued stop has finished.
+        enqueue { [app] in
+            guard !app.isRunning else { return }
+            Task.detached { try? await app.runAsync() }
+            // `runAsync` returns only when the server stops: wait until it listens again.
+            for _ in 0..<150 where !app.isRunning { try? await Task.sleep(nanoseconds: 20_000_000) }
         }
+    }
+
+    private func enqueue(_ work: @escaping @Sendable () async -> Void) {
+        let previous = transition
+        transition = Task { await previous?.value; await work() }
     }
 
     private func endBackgroundTask() {
