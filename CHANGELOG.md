@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-08
+
 ### Fixed
 - **`bindToLifecycle()` left the server stopped after a quick background → foreground round trip.**
   - Returning to `.active` while the stop started on `didEnterBackground` was still in flight saw `isRunning == true`, skipped the restart, and the port stayed closed until the app was relaunched.
