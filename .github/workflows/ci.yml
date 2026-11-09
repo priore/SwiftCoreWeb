@@ -14,13 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build (iOS)
-        run: xcodebuild build -scheme SwiftCoreWeb-Package -destination 'generic/platform=iOS Simulator'
+        run: xcodebuild build -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'generic/platform=iOS Simulator'
       - name: Test (iOS Simulator)
-        run: xcodebuild test -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -skip-testing:SwiftCoreWebMacrosTests
+        run: xcodebuild test -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -skip-testing:SwiftCoreWebMacrosTests
+      # -skipMacroValidation: CI is non-interactive, so Xcode cannot ask to trust the package macros.
       # The macro tests are only ever built for the host (macOS), never for the simulator, so the
       # simulator run above cannot execute them; run the host bundle directly.
       - name: Build macro tests (host)
-        run: xcodebuild build-for-testing -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftCoreWebMacrosTests
+        run: xcodebuild build-for-testing -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftCoreWebMacrosTests
       - name: Test macros (host)
         run: xcrun xctest "$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug/SwiftCoreWebMacrosTests.xctest' -not -path '*/SourcePackages/*' -maxdepth 6 | head -1)"
 

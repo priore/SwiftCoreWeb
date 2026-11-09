@@ -114,6 +114,21 @@ Two more things worth knowing exist, kept out of this file to keep it short:
 
 ---
 
+## Building in Xcode: enabling the macro plugin
+
+Like every Swift package that ships macros, SwiftCoreWeb asks Xcode for a one-time approval of its macro plugin (`SwiftCoreWebMacros`) the first time you build: click **Trust & Enable**. It is a standard Apple prompt shown for any package with macros, not a warning about this one.
+
+Why it is safe, all checkable in [`Sources/SwiftCoreWebMacros/`](Sources/SwiftCoreWebMacros) (about 900 lines):
+
+- **It only rewrites source code.** The macros (`@Controller`, the route attributes such as `@Get`/`@Post`, `@ApiModel`) read the declaration they are attached to and generate Swift source (the route table and parameter-binding code). You can see exactly what they produce with *Right-click → Expand Macro* in Xcode.
+- **It touches nothing else.** The plugin imports only `SwiftSyntax`, `SwiftSyntaxMacros`, `SwiftSyntaxBuilder`, `SwiftDiagnostics` and `SwiftCompilerPlugin`. It does not import `Foundation` and has no code for files, network, processes or environment variables.
+- **It never ships in your app.** It runs on your Mac at compile time only; nothing from it is linked into your binary, so there is no runtime cost and no runtime access.
+- **Its only dependency is Apple's.** [`swift-syntax`](https://github.com/apple/swift-syntax) is the package every Swift macro is built on.
+
+Xcode stores the approval per macro and package version, so the prompt can come back after you update SwiftCoreWeb.
+
+**CI / command line:** `xcodebuild` cannot show the prompt, so the build fails until the macro is approved. Pass `-skipMacroValidation` (only for packages you have reviewed, like this one) or approve it once in Xcode.
+
 ## License
 
 SwiftCoreWeb is licensed under the **[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)**.

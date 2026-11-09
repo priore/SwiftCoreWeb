@@ -58,19 +58,29 @@ final class ServerEngine: @unchecked Sendable {
     }
 
     /// Builds, binds, and runs the engine for `app`, suspending until
-    /// `stop(timeout:)` is called. Stores itself on `app.engineBox` so
-    /// `stopAsync()` can reach it.
+    /// `stop(timeout:)` is called. Registers itself on `app.engineBox` (so
+    /// `stopAsync()` can reach it) only once the listeners are bound, and
+    /// unregisters as soon as it ends for any reason (a failed bind, a
+    /// listener closed by the OS), not only through `stopAsync()`: that keeps
+    /// `isRunning` equal to "listening" instead of "an engine was created".
     static func start(for app: WebApplication) async throws {
         UploadStorage.sweepStale()
         let engine = try ServerEngine(app: app)
-        app.engineBox.engine = engine
+        defer { app.engineBox.clear(ifCurrent: engine) }
         try await engine.run()
     }
 
     private func run() async throws {
         await applyKeepAwakeIfNeeded()
 
-        try await bindListeners()
+        do {
+            try await bindListeners()
+        } catch {
+            // Undo what was set up before the bind (keep-awake, event loop group); the caller sees the bind error.
+            try? await stop(timeout: 0)
+            throw error
+        }
+        app.engineBox.engine = self
 
         if let bonjourName = app.bonjourName {
             startBonjour(name: bonjourName)

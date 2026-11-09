@@ -32,6 +32,14 @@ its "Allow this app to find devices on your local network?" prompt. The default 
 binding needs nothing extra. See [Getting started](GETTING_STARTED.md) and
 [Web: auth and security](web/AUTH_AND_SECURITY.md) for the exact keys.
 
+#### Xcode asks me to enable the SwiftCoreWebMacros macro — is it safe?
+
+Yes. Xcode asks this for every package that ships a macro. SwiftCoreWebMacros only generates Swift
+source at compile time (visible via *Expand Macro*), imports nothing but `swift-syntax`, has no
+file/network/process code, and is never linked into your app. Click **Trust & Enable**; on CI pass
+`-skipMacroValidation` to `xcodebuild`. Full explanation in the
+[README](../README.md#building-in-xcode-enabling-the-macro-plugin).
+
 #### Will running a server get my app rejected by App Review?
 
 Not by itself. What gets an app rejected is a missing permission prompt, or personal data left
