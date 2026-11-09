@@ -58,6 +58,7 @@ PAGE_NAMES = {
     "web/AUTH_AND_SECURITY.md": "Web-Auth-and-Security",
     "web/DASHBOARD_GUIDE.md": "Web-Dashboard-Guide",
     "web/LIVE_PAGES_GUIDE.md": "Web-Live-Pages-Guide",
+    "web/BLOB_DOWNLOADS.md": "Web-Blob-Downloads",
     "api/GETTING_STARTED.md": "API-Getting-Started",
     "api/EXAMPLES_BASIC.md": "API-Basic-Examples",
     "api/EXAMPLES_ADVANCED.md": "API-Advanced-Examples",
