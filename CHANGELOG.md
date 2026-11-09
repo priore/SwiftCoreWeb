@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-09
+
 ### Fixed
 - **`isRunning` was `true` while nothing was listening.**
   - The engine registered itself before binding, so a failed bind (for example the port still held by a previous socket after a quick restart) left `isRunning == true` with a closed port; `runAsync()` threw, but callers using `try?` never saw it.
