@@ -229,7 +229,8 @@ public final class WebApplication: @unchecked Sendable {
     private var urlsStorage: [String] = []
     private let urlsLock = NSLock()
 
-    /// Whether the server engine is currently accepting connections.
+    /// Whether the server engine is currently accepting connections: `true` only while the listeners are bound. It turns
+    /// `false` when `runAsync()` fails to bind or when the listener closes for any reason, not only after `stopAsync()`.
     public var isRunning: Bool { engineBox.engine != nil }
 
     /// Backing store for the closure `map*` routing methods (see
@@ -282,8 +283,9 @@ public final class WebApplication: @unchecked Sendable {
     /// in-flight requests up to `timeout` seconds, closes WebSocket clients,
     /// and closes sockets.
     public func stopAsync(timeout: Double = 10) async throws {
-        try await engineBox.engine?.stop(timeout: timeout)
-        engineBox.engine = nil
+        guard let engine = engineBox.engine else { return }
+        try await engine.stop(timeout: timeout)
+        engineBox.clear(ifCurrent: engine)
     }
 }
 
@@ -298,5 +300,12 @@ final class ServerEngineBox: @unchecked Sendable {
     var engine: ServerEngine? {
         get { lock.lock(); defer { lock.unlock() }; return _engine }
         set { lock.lock(); defer { lock.unlock() }; _engine = newValue }
+    }
+
+    /// Clears the box only if it still holds `candidate`: an engine that ended late must not unregister its successor
+    /// (restart right after a stop).
+    func clear(ifCurrent candidate: ServerEngine) {
+        lock.lock(); defer { lock.unlock() }
+        if _engine === candidate { _engine = nil }
     }
 }

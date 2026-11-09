@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`isRunning` was `true` while nothing was listening.**
+  - The engine registered itself before binding, so a failed bind (for example the port still held by a previous socket after a quick restart) left `isRunning == true` with a closed port; `runAsync()` threw, but callers using `try?` never saw it.
+  - Apps that guard their restart on `isRunning` then skipped the restart for good, and every request to the server failed until the app was relaunched.
+  - The engine now registers only once the listeners are bound, so `isRunning` means "listening".
+- **A server that ended without `stopAsync()` stayed registered.**
+  - If the listener closed for any reason (for example the system closing the socket), `runAsync()` returned but `isRunning` stayed `true`.
+  - The engine now unregisters itself whenever it ends, and a late-ending engine never unregisters its successor after a restart.
+- **A failed bind no longer leaks resources.**
+  - The event loop group and the keep-awake setting applied before the bind are released when the bind fails.
+
 ## [1.3.2] - 2026-11-08
 
 ### Fixed
