@@ -25,5 +25,7 @@ middleware, auth mechanism, example category):
 5. If an existing file is growing too large for one concern (the same symptom that originally split
    the on-device dashboard and .NET mapping table out of the root `README.md`), split it along the
    same Foundation/Web/API axis already established — not an ad-hoc split.
-6. If the change is synced to GitHub Wiki (`.github/workflows/wiki-sync.yml` on push to `master`),
-   no extra step is needed — the workflow picks up any `docs/**` change automatically.
+6. The wiki (`.github/workflows/wiki-sync.yml` on push to `master`) flattens `docs/` with
+   `scripts/wiki-flatten.py`. Every added, renamed or moved doc file needs a `PAGE_NAMES` entry there, in the
+   same commit; without it the sync job fails after the push. Check locally:
+   `python3 scripts/wiki-flatten.py docs "$(mktemp -d)"` must exit 0.
