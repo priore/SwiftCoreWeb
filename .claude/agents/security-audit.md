@@ -1,66 +1,17 @@
 ---
 name: security-audit
-description: Audit sicurezza su auth middleware, session handling, CORS
-context: fork
-user-invocable: false
+description: Security audit of the authentication middleware, session handling and CORS in SwiftCoreWeb. Use for auth-related changes or before a release.
+tools: Read, Grep, Glob
 ---
 
-# Security Audit Subagent
+Audit `Sources/SwiftCoreWeb/{AuthenticationMiddleware,AuthenticationSchemes,Session,CorsMiddleware}.swift`
+and any route that touches JWT or credentials. Check:
 
-Esamina authentication middleware + session handling per vulnerabilità comuni.
+- Token expiry is enforced and compared correctly at the boundary; clock skew is handled.
+- CORS origin validation cannot be bypassed by header manipulation; credentials flag is correct; preflight does not skip auth.
+- Session fixation: a new session after login, old tokens rejected after an auth upgrade, logout invalidates the token.
+- Constant-time comparison for secrets and signatures; Bearer format and JWT claims validated before use.
+- Cookies set `Secure`/`HttpOnly`; HSTS where applicable.
 
-## Scope
-
-Analizza:
-- `Sources/SwiftCoreWeb/AuthenticationMiddleware.swift` — token verification, expiry checks
-- `Sources/SwiftCoreWeb/Session.swift` — session lifecycle, fixation risks
-- `Sources/SwiftCoreWeb/CorsMiddleware.swift` — origin validation, header bypass
-- Qualunque route che tocca JWT o credenziali
-- Qualunque middleware di autenticazione custom
-
-## Checks
-
-1. **Token Expiry**
-   - Usa `<=` non `<` per confronti time boundary
-   - Expiry non è mai ignorato
-   - Clock skew è gestito (se applicabile)
-
-2. **CORS Bypass**
-   - Origin validation non è bypassabile con origin header manipulation
-   - Credentials flag è corretto
-   - Preflight non bypassa auth
-
-3. **Session Fixation**
-   - Nuova sessione dopo login
-   - Old session token non riusa dopo upgrade auth
-   - Logout invalida token
-
-4. **Timing Attacks**
-   - JWT verification non dipende da lunghezza/content
-   - Constant-time comparison usato dove necessario
-
-5. **HTTPS Enforcement**
-   - Secure flag su cookies
-   - HSTS header presente (se applicable)
-
-6. **Input Validation**
-   - Bearer token format validato
-   - JWT claims validati prima di uso
-
-## Output
-
-Report con:
-- ✅ Aree sicure
-- ⚠️ Rischi low/medium
-- 🔴 Vulnerabilità confirmed con scenario exploit
-- 💡 Fix consigliate
-
-## Trigger
-
-Automatico: prima di merge su master (via hook commit).
-Manuale: invocazione diretta in caso di change auth-related.
-
-Esempio:
-```
-claude -p "@claude audit all auth code for timing attacks and session fixation"
-```
+Report: safe areas, low/medium risks, confirmed vulnerabilities with an exploit scenario, suggested fixes.
+Read-only: never edit files.
