@@ -46,11 +46,9 @@ public final class SSHTunnelServer: Sendable {
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            // A peer that vanishes without a FIN (a phone changing network) is eventually detected and frees its slot.
-            .childChannelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
             .childChannelInitializer { [weak self] channel in
                 guard let self else { return channel.eventLoop.makeFailedFuture(TunnelError.notConnected) }
-                return self.serve(channel)
+                return TCPKeepAlive.apply(to: channel).flatMap { self.serve(channel) }
             }
         let channel = try await bootstrap.bind(host: host, port: port).get()
         pairing.setRevocationHandler { [registry] deviceID in registry.closeAll(deviceID: deviceID) }

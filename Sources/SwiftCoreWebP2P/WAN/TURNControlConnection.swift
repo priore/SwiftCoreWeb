@@ -36,8 +36,7 @@ final class TURNControlConnection: Sendable {
         let router = Router(attempts: continuation)
         let routerBox = UncheckedSendableBox(router)
         let channel = try await ClientBootstrap(group: group.next())
-            .channelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
-            .channelInitializer { channel in channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(routerBox.value) } }
+            .channelInitializer { channel in TCPKeepAlive.apply(to: channel).flatMapThrowing { try channel.pipeline.syncOperations.addHandler(routerBox.value) } }
             .connect(host: host, port: port).get()
         return TURNControlConnection(channel: channel, router: router, attempts: attempts)
     }

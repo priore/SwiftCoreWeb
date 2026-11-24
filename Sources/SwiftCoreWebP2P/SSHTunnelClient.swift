@@ -40,10 +40,8 @@ final class SSHTunnelClient: Sendable {
         let bootstrap = ClientBootstrap(group: eventLoop)
             // An address that does not answer must not hold up the next way of reaching the host.
             .connectTimeout(.seconds(4))
-            // A host that vanishes without a FIN (it went to sleep, the network changed) is noticed instead of waited on forever.
-            .channelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
             .channelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture {
+                TCPKeepAlive.apply(to: channel).flatMapThrowing {
                     let configuration = SSHClientConfiguration(
                         userAuthDelegate: CredentialAuthDelegate(key: privateKey, credential: credential),
                         serverAuthDelegate: PinnedHostKeyDelegate(isTrusted: trustedHostKey)

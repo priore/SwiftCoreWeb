@@ -152,8 +152,7 @@ final class TURNAllocation: Sendable {
         let binder = TURNBindHandler()
         let binderBox = UncheckedSendableBox(binder)
         let channel = try await ClientBootstrap(group: group.next())
-            .channelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
-            .channelInitializer { channel in channel.eventLoop.makeCompletedFuture { try channel.pipeline.syncOperations.addHandler(binderBox.value) } }
+            .channelInitializer { channel in TCPKeepAlive.apply(to: channel).flatMapThrowing { try channel.pipeline.syncOperations.addHandler(binderBox.value) } }
             .connect(host: serverHost, port: serverPort).get()
         do {
             let request = Self.signed(
