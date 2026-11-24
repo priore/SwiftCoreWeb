@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`WebSocket.Transport` and `WebSocket(transport:)`.**
+  - A `WebSocket` is no longer tied to a NIO channel: any carrier that supplies `messages`, `send` and `close` can back one, which lets an opt-in module hand `mapWebSocket` handlers sockets that do not come from the HTTP upgrade.
+  - Handlers and the HTTP upgrade path are unchanged.
+
 ### Fixed
 - **`mapWebSocket(_:auth:_:)` ignored its `auth` requirement.**
   - The route's `AuthRequirement` was stored but never checked, so any client could open a protected WebSocket.

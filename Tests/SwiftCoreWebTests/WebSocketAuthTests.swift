@@ -25,17 +25,17 @@ final class WebSocketAuthTests: XCTestCase {
     }
 
     func testUnauthenticatedUpgradeIsRejectedWith401() async throws {
-        let denied = await try makeDispatcher().authorizeUpgrade(request(key: nil), auth: .authenticated)
+        let denied = try await makeDispatcher().authorizeUpgrade(request(key: nil), auth: .authenticated)
         XCTAssertEqual(denied?.status.rawValue, 401)
     }
 
     func testAuthenticatedUpgradeProceeds() async throws {
-        let denied = await try makeDispatcher().authorizeUpgrade(request(key: "ok"), auth: .authenticated)
+        let denied = try await makeDispatcher().authorizeUpgrade(request(key: "ok"), auth: .authenticated)
         XCTAssertNil(denied)
     }
 
     func testMissingRoleIsRejectedWith403() async throws {
-        let denied = await try makeDispatcher().authorizeUpgrade(request(key: "ok"), auth: .roles(["root"]))
+        let denied = try await makeDispatcher().authorizeUpgrade(request(key: "ok"), auth: .roles(["root"]))
         XCTAssertEqual(denied?.status.rawValue, 403)
     }
 }
