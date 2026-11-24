@@ -52,6 +52,33 @@ final class WebSocketUpgradeTests: XCTestCase {
         XCTAssertEqual(String(decoding: data, as: UTF8.self), "pong")
     }
 
+    func testLargeMessagePingAndServerInitiatedClose() async throws {
+        let port = Int.random(in: 30_000..<60_000)
+        let builder = WebApplication.createBuilder()
+        builder.usePort(port)
+        let app = builder.build()
+        app.mapWebSocket("/once") { socket in
+            for try await message in socket.messages() {
+                if case .text(let text) = message { try await socket.send("\(text.utf8.count)"); return } // returns: server closes
+            }
+        }
+        Task { try? await app.runAsync() }
+        for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
+        addTeardownBlock { try? await app.stopAsync() }
+
+        let task = URLSession(configuration: .ephemeral).webSocketTask(with: URL(string: "ws://127.0.0.1:\(port)/once")!)
+        task.resume()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            task.sendPing { error in error.map { continuation.resume(throwing: $0) } ?? continuation.resume() } // answered with a pong
+        }
+        try await task.send(.string(String(repeating: "a", count: 300_000))) // well above NIO's 16 KiB default frame size
+        guard case .string(let size) = try await task.receive() else { return XCTFail("expected text") }
+        XCTAssertEqual(size, "300000")
+        // The handler returned: the server says goodbye with a close frame, the client sees a clean close.
+        do { _ = try await task.receive(); XCTFail("the connection should be closed") } catch {}
+        XCTAssertEqual(task.closeCode, .normalClosure)
+    }
+
     func testUnknownWebSocketPathIsRefusedWithoutHarmingTheServer() async throws {
         let (_, port) = try await startApp()
         let task = URLSession(configuration: .ephemeral).webSocketTask(with: URL(string: "ws://127.0.0.1:\(port)/nope")!)

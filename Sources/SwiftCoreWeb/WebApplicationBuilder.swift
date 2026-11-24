@@ -232,7 +232,8 @@ public final class WebApplication: @unchecked Sendable {
     private let urlsLock = NSLock()
 
     /// Whether the server engine is currently accepting connections: `true` only while the listeners are bound. It turns
-    /// `false` when `runAsync()` fails to bind or when the listener closes for any reason, not only after `stopAsync()`.
+    /// `false` when `runAsync()` fails to bind or when a listener is closed by the system, not only after `stopAsync()`.
+    /// It stays `true` while the server waits for the next network change after a failed rebind.
     public var isRunning: Bool { engineBox.engine != nil }
 
     /// Backing store for the closure `map*` routing methods (see

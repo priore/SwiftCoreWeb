@@ -175,17 +175,22 @@ final class ServerEngine: @unchecked Sendable {
 
     private func bindListeners() async throws {
         var bound: [Channel] = []
-
-        let httpChannel = try await makeBootstrap(tls: false)
-            .bind(host: app.serverOptions.host, port: app.serverOptions.port)
-            .get()
-        bound.append(httpChannel)
-
-        if let tlsOptions = app.tlsOptions {
-            let tlsChannel = try await makeBootstrap(tls: true, tlsOptions: tlsOptions)
-                .bind(host: app.serverOptions.host, port: app.serverOptions.port + 1)
+        do {
+            let httpChannel = try await makeBootstrap(tls: false)
+                .bind(host: app.serverOptions.host, port: app.serverOptions.port)
                 .get()
-            bound.append(tlsChannel)
+            bound.append(httpChannel)
+
+            if let tlsOptions = app.tlsOptions {
+                let tlsChannel = try await makeBootstrap(tls: true, tlsOptions: tlsOptions)
+                    .bind(host: app.serverOptions.host, port: app.serverOptions.port + 1)
+                    .get()
+                bound.append(tlsChannel)
+            }
+        } catch {
+            // A listener that did bind must not outlive a failed pair: nothing else would ever close it.
+            for channel in bound { try? await channel.close() }
+            throw error
         }
 
         listenerChannels.withLockedValue { $0 = bound }
@@ -606,6 +611,7 @@ final class ServerEngine: @unchecked Sendable {
         app.metrics.webSocketOpened()
         defer { app.metrics.webSocketClosed() }
         try? await route.handler(socket)
+        try? await socket.close() // a handler that just returns still says goodbye (1000) before the connection drops
     }
 
     private static let httpEncoderName = "SwiftCoreWeb.HTTPResponseEncoder"
@@ -654,6 +660,7 @@ final class ServerEngine: @unchecked Sendable {
             }
             do {
                 try await bindListeners()
+                if lifecycle.withLockedValue({ $0.stopping }) { break }
                 app.urls = reachableURLs()
                 let listeningURLs = app.urls.joined(separator: ", ")
                 serverLogger.info("Rebound; now listening on \(listeningURLs, privacy: .public)")
@@ -706,7 +713,11 @@ final class ServerEngine: @unchecked Sendable {
             state.stopping = true
             return !already
         }
-        guard first else { return }
+        guard first else {
+            // Someone else is already stopping: return when that has finished, so the port is really free.
+            try? await finished.futureResult.get()
+            return
+        }
         defer { finish() }
         for serverExtension in app.extensions { await serverExtension.stop() }
         watchdog?.stop()
