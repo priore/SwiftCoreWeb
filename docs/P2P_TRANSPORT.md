@@ -7,7 +7,7 @@ opening a port to the network, without a VPN and without a server in between**. 
 (`mapGet`, `mapPost`, `mapSse`…) answer the other device; only the way in is new. Used both for Web and API.
 
 > **Status.** LAN only. Pairing, the tunnel, the Bonjour announcement and per-device identity are implemented and
-> tested on the iOS Simulator and macOS. Not done yet: reaching the host from another network (NAT traversal), finding
+> tested on the iOS Simulator. Not done yet: reaching the host from another network (NAT traversal), finding
 > the host again on the client when its address changes, and exposing individual routes to or hiding them from paired
 > devices. See [Limits](#limits).
 
@@ -22,8 +22,7 @@ opening a port to the network, without a VPN and without a server in between**. 
                                   └──────────────────────────────┘
 ```
 
-- The tunnel is **SSH** (`swift-nio-ssh`): standard encryption and authentication, no custom protocol. A normal
-  OpenSSH client could talk to it too.
+- The tunnel is **SSH** (`swift-nio-ssh`): standard encryption and authentication, no custom protocol.
 - A device is trusted because it **paired**: it scanned a one-time code and the host remembered its key. After that it
   connects with the key alone.
 - The tunnel forwards to **one destination only**, your app's own HTTP port. It cannot be used as an open proxy.
@@ -72,7 +71,7 @@ QR code (`QRCodeView` in `SwiftCoreWebDashboard` renders any URL):
 ```swift
 let host = LocalAddresses.ipv4().first ?? "127.0.0.1"   // an address the other device can reach
 if let payload = p2p.openPairing(host: host, name: "Living room Mac") {
-    show(qrFor: payload.link)    // scw-p2p://192.168.1.5:49321?sp=8080&t=…&fp=SHA256:…
+    show(qrFor: payload.link)    // scw-p2p://192.168.1.5:49321?sp=8080&t=…&fp=SHA256%3A…
 }
 ```
 
@@ -97,7 +96,7 @@ What protects pairing:
 ## Manage devices
 
 ```swift
-p2p.pairing?.devices                          // [PairedDevice]
+let devices = p2p.pairing?.devices            // [PairedDevice]
 p2p.pairing?.rename(deviceID: id, to: "Anna's iPhone")
 try p2p.pairing?.revoke(deviceID: id)         // refuses it from now on and closes its open connections
 ```

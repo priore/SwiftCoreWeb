@@ -126,7 +126,7 @@ the `git ls-files` verification command to run before every push.
 
 ## Keys of peer-to-peer pairing
 
-[Peer-to-peer access](P2P_TRANSPORT.md) (`SwiftCoreWebP2P`) needs no certificate and no CA. It keeps three things,
+[Peer-to-peer access](P2P_TRANSPORT.md) (`SwiftCoreWebP2P`) needs no certificate and no CA. It keeps these items,
 all in the Keychain under the service name `SwiftCoreWebP2P` (through `KeychainTunnelStorage`, never a file): the host's
-Ed25519 key, the list of paired devices, and on a client its own device key. The pairing link shows only the
+Ed25519 key, the list of paired devices, on a client its own device key and the paired-host records, and the tunnel port (`p2p.tunnel-port`) reused across launches. The pairing link shows only the
 fingerprint of the host's *public* key and a one-time token; no private key is ever displayed or exported.

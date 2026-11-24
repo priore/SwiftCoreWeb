@@ -5,8 +5,8 @@
 // See LICENSE at the repository root. Source-available, not open-source.
 //
 
-/// Whether routes are reachable over the peer-to-peer transport. Set as the default for every route with
-/// `builder.useP2P(_:)` and overridden per route.
+/// Whether the peer-to-peer transport is active for the whole app, set with `builder.useP2P(_:)`.
+/// Per-route exposure is not supported.
 public enum P2PMode: Sendable, Equatable {
     case enable
     case disable
