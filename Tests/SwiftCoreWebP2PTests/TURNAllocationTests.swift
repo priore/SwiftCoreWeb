@@ -87,6 +87,17 @@ final class TURNAllocationTests: XCTestCase {
         XCTAssertEqual(collector.received.withLockedValue { String(buffer: $0) }, "first words")
     }
 
+    func testOnlyIPv4AddressesAreLetThroughAndABadOneDoesNotBreakTheAllocation() async throws {
+        let allocation = try await TURNAllocation.allocate(server: "127.0.0.1", port: 34780, credentials: credentials, refreshEvery: .seconds(1))
+        addTeardownBlock { await allocation.close() }
+        for bad in ["::1", "unknown", "2001:db8::1"] {
+            do { try await allocation.permit(ip: bad); XCTFail("\(bad) must be refused") } catch {}
+        }
+        try await allocation.permit(ip: "127.0.0.1")
+        try await Task.sleep(nanoseconds: 2_500_000_000) // two refreshes: they would fail if a refused address had been remembered
+        try await allocation.permit(ip: "127.0.0.2")
+    }
+
     func testWrongPasswordIsRefused() async throws {
         do {
             _ = try await TURNAllocation.allocate(server: "127.0.0.1", port: 34780, credentials: .init(username: "scw", password: "wrong"))

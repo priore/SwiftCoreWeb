@@ -14,6 +14,8 @@ import NIOPosix
 struct STUNRequest: Sendable {
     let transactionID: [UInt8]
     let bytes: Data
+    /// When set, a success answer must carry a valid MESSAGE-INTEGRITY made with this key.
+    var integrityKey: [UInt8]? = nil
 }
 
 /// The TCP connection to a TURN server that carries requests and answers, and announces devices that connect to the
@@ -45,13 +47,13 @@ final class TURNControlConnection: Sendable {
         let promise = channel.eventLoop.makePromise(of: STUNMessage.self)
         let router = router
         // Registered on the event loop before the bytes leave, so the answer cannot overtake the registration.
-        try await channel.eventLoop.submit { router.expect(request.transactionID, promise) }.get()
+        try await channel.eventLoop.submit { router.expect(request.transactionID, promise, key: request.integrityKey) }.get()
         let deadline = channel.eventLoop.scheduleTask(in: timeout) { router.fail(request.transactionID, TURNAllocation.Failure.timedOut) }
         defer { deadline.cancel() }
         var buffer = channel.allocator.buffer(capacity: request.bytes.count)
         buffer.writeBytes(request.bytes)
         do { try await channel.writeAndFlush(buffer).get() } catch {
-            router.fail(request.transactionID, error)
+            channel.eventLoop.execute { router.fail(request.transactionID, error) }
             throw error
         }
         return try await promise.futureResult.get()
@@ -63,20 +65,20 @@ final class TURNControlConnection: Sendable {
     private final class Router: ChannelInboundHandler, @unchecked Sendable {
         typealias InboundIn = ByteBuffer
         private var framing = STUNFraming()
-        private var waiting: [[UInt8]: EventLoopPromise<STUNMessage>] = [:]
+        private var waiting: [[UInt8]: (promise: EventLoopPromise<STUNMessage>, key: [UInt8]?)] = [:]
         private let attempts: AsyncStream<TURNAllocation.Attempt>.Continuation
 
         init(attempts: AsyncStream<TURNAllocation.Attempt>.Continuation) { self.attempts = attempts }
 
-        func expect(_ id: [UInt8], _ promise: EventLoopPromise<STUNMessage>) { waiting[id] = promise }
+        func expect(_ id: [UInt8], _ promise: EventLoopPromise<STUNMessage>, key: [UInt8]?) { waiting[id] = (promise, key) }
 
-        func fail(_ id: [UInt8], _ error: Error) { waiting.removeValue(forKey: id)?.fail(error) }
+        func fail(_ id: [UInt8], _ error: Error) { waiting.removeValue(forKey: id)?.promise.fail(error) }
 
         func channelRead(context: ChannelHandlerContext, data: NIOAny) {
             var bytes = unwrapInboundIn(data)
             framing.append(&bytes)
             while let raw = framing.nextMessage() {
-                guard let (message, _) = try? STUNMessage.decode(raw) else { continue }
+                guard let (message, integrityOffset) = try? STUNMessage.decode(raw) else { continue }
                 if message.messageClass == .indication {
                     guard message.method == STUNMessage.Method.connectionAttempt,
                           let id = message.attribute(STUNMessage.AttributeType.connectionID),
@@ -84,7 +86,13 @@ final class TURNControlConnection: Sendable {
                     else { continue }
                     attempts.yield(TURNAllocation.Attempt(connectionID: id, peer: peer))
                 } else {
-                    waiting.removeValue(forKey: message.transactionID)?.succeed(message)
+                    guard let entry = waiting.removeValue(forKey: message.transactionID) else { continue }
+                    if message.messageClass == .success, let key = entry.key,
+                       !(integrityOffset.map { STUNMessage.integrityIsValid(raw, integrityOffset: $0, key: key) } ?? false) {
+                        entry.promise.fail(TURNAllocation.Failure.unexpectedResponse) // not made by whoever holds the credentials
+                    } else {
+                        entry.promise.succeed(message)
+                    }
                 }
             }
         }
@@ -100,7 +108,7 @@ final class TURNControlConnection: Sendable {
             attempts.finish()
             let all = waiting
             waiting = [:]
-            all.values.forEach { $0.fail(error) }
+            all.values.forEach { $0.promise.fail(error) }
         }
     }
 }

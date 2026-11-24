@@ -60,7 +60,9 @@ final class TURNAllocation: Sendable {
     private let control: TURNControlConnection
     private let group: EventLoopGroup
     private let authentication: NIOLockedValueBox<Authentication>
-    private let permitted = NIOLockedValueBox<Set<String>>([])
+    private let permitted = NIOLockedValueBox<[String]>([])
+    private static let maxPermitted = 64
+    private let sessions = NIOLockedValueBox<(closed: Bool, channels: [ObjectIdentifier: Channel])>((false, [:]))
     private let refresher = NIOLockedValueBox<Task<Void, Never>?>(nil)
     private static let requestTimeout: TimeAmount = .seconds(5)
     private static let transport = STUNMessage.Attribute(type: STUNMessage.AttributeType.requestedTransport, value: [6, 0, 0, 0]) // TCP
@@ -123,7 +125,7 @@ final class TURNAllocation: Sendable {
                 authentication: authentication, relayedHost: relayed.host, relayedPort: relayed.port
             )
             let lifetime = response.attribute(STUNMessage.AttributeType.lifetime).map { STUNMessage.readUInt32($0, 0) } ?? 600
-            allocation.startRefreshing(every: min(refreshEvery, .seconds(Int64(lifetime) / 2)), lifetime: lifetime)
+            allocation.startRefreshing(every: min(refreshEvery, .seconds(max(Int64(lifetime) / 2, 5))), lifetime: lifetime)
             return allocation
         } catch {
             await control.close()
@@ -135,8 +137,12 @@ final class TURNAllocation: Sendable {
 
     /// Lets `ip` connect to the relayed address (the server drops everyone else). Renewed automatically.
     func permit(ip: String) async throws {
-        permitted.withLockedValue { _ = $0.insert(ip) }
-        try await createPermissions([ip])
+        try await createPermissions([ip]) // throws for anything but an IPv4 address, which is then not remembered
+        permitted.withLockedValue { list in
+            list.removeAll { $0 == ip }
+            list.append(ip)
+            if list.count > Self.maxPermitted { list.removeFirst(list.count - Self.maxPermitted) }
+        }
     }
 
     /// Opens the data connection for `attempt`, binds it to that device and hands the bound channel to `setUp`, which installs
@@ -158,6 +164,14 @@ final class TURNAllocation: Sendable {
             let response = try await binder.send(request, on: channel, timeout: Self.requestTimeout)
             guard response.messageClass == .success else { throw Failure.refused(code: response.errorCode?.code ?? 0) }
             try await channel.eventLoop.flatSubmit { setUp(channel) }.get() // pipeline changes belong on the channel's own loop
+            let id = ObjectIdentifier(channel)
+            let registered = sessions.withLockedValue { state -> Bool in
+                if state.closed { return false }
+                state.channels[id] = channel
+                return true
+            }
+            guard registered else { throw Failure.closed }
+            channel.closeFuture.whenComplete { [weak self] _ in self?.sessions.withLockedValue { _ = $0.channels.removeValue(forKey: id) } }
             binder.activate(on: channel)
         } catch {
             try? await channel.close()
@@ -167,6 +181,12 @@ final class TURNAllocation: Sendable {
 
     func close() async {
         refresher.withLockedValue { $0.take() }?.cancel()
+        let open = sessions.withLockedValue { state -> [Channel] in
+            state.closed = true
+            defer { state.channels = [:] }
+            return Array(state.channels.values)
+        }
+        for channel in open { try? await channel.close() } // sessions that came over this allocation end with it
         if control.channel.isActive {
             // Lifetime 0 frees the allocation at once; best effort.
             _ = try? await authenticated(method: STUNMessage.Method.refresh, attributes: [.init(type: STUNMessage.AttributeType.lifetime, value: STUNMessage.bytes(of: UInt32(0)))])
@@ -223,13 +243,13 @@ final class TURNAllocation: Sendable {
             .init(type: STUNMessage.AttributeType.realm, value: Array(authentication.realm.utf8)),
             .init(type: STUNMessage.AttributeType.nonce, value: Array(authentication.nonce.utf8)),
         ]
-        return STUNRequest(message: signed, key: authentication.key)
+        return STUNRequest(message: signed, key: authentication.key, verifying: true)
     }
 }
 
 extension STUNRequest {
     /// `key` adds MESSAGE-INTEGRITY (long-term credentials); `nil` sends the message as it is.
-    init(message: STUNMessage, key: [UInt8]?) {
-        self.init(transactionID: message.transactionID, bytes: message.encoded(integrityKey: key))
+    init(message: STUNMessage, key: [UInt8]?, verifying: Bool = false) {
+        self.init(transactionID: message.transactionID, bytes: message.encoded(integrityKey: key), integrityKey: verifying ? key : nil)
     }
 }

@@ -33,11 +33,23 @@ struct RendezvousClient: Sendable {
         _ = try await send("PUT", hostPath(hostFingerprint), envelope: .sign(JSONEncoder().encode(record), with: hostKey))
     }
 
-    /// The devices that knocked since the last call.
-    func collectKnocks(hostKey: Curve25519.Signing.PrivateKey, hostFingerprint: String) async throws -> [RendezvousKnock] {
+    /// A device that knocked, as the host verified it: the signature is the device's own and is for this host.
+    struct Knock: Equatable, Sendable {
+        let address: String
+        let deviceFingerprint: String
+    }
+
+    /// The devices that knocked since the last call. The rendezvous only vouches for the address; who knocked is checked here.
+    func collectKnocks(hostKey: Curve25519.Signing.PrivateKey, hostFingerprint: String) async throws -> [Knock] {
         let poll = RendezvousPoll(hostFingerprint: hostFingerprint, issued: Self.now)
         let data = try await send("POST", hostPath(hostFingerprint) + "/knocks/collect", envelope: .sign(JSONEncoder().encode(poll), with: hostKey))
-        return try JSONDecoder().decode([RendezvousKnock].self, from: data)
+        return try JSONDecoder().decode([RendezvousKnock].self, from: data).compactMap { knock in
+            guard let (payload, signer) = knock.envelope.verified(),
+                  let request = try? JSONDecoder().decode(RendezvousKnockRequest.self, from: payload),
+                  request.type == RendezvousPayloadType.knock, request.hostFingerprint == hostFingerprint,
+                  abs(Self.now - request.issued) <= 300 else { return nil }
+            return Knock(address: knock.address, deviceFingerprint: signer)
+        }
     }
 
     // MARK: - Device

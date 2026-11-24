@@ -59,6 +59,25 @@ final class RendezvousTests: XCTestCase {
         XCTAssertEqual(again, [], "knocks are read once")
     }
 
+    func testKnocksNeedARegisteredHostAndAForgedOneIsDropped() async throws {
+        let rendezvous = try await startRendezvous()
+        let host = identity(), other = identity(), device = identity()
+        do { try await rendezvous.knock(hostFingerprint: host.fingerprint, deviceKey: device.key); XCTFail("host never published") } catch {
+            XCTAssertEqual(error as? RendezvousClient.Failure, .badResponse(status: 404))
+        }
+        try await rendezvous.publish([.init(kind: "relay", host: "198.51.100.7", port: 7)], hostKey: host.key, hostFingerprint: host.fingerprint)
+        // A knock the device signed for another host, posted under this host's id: the host must not believe it.
+        let forged = RendezvousKnockRequest(hostFingerprint: other.fingerprint, issued: Int(Date().timeIntervalSince1970))
+        let envelope = try SignedEnvelope.sign(JSONEncoder().encode(forged), with: device.key)
+        var request = URLRequest(url: rendezvous.baseURL.appendingPathComponent("p2p/v1/hosts/\(RendezvousPath.hostID(host.fingerprint))/knocks"))
+        request.httpMethod = "POST"
+        request.httpBody = try JSONEncoder().encode(envelope)
+        let (_, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 400)
+        let knocks = try await rendezvous.collectKnocks(hostKey: host.key, hostFingerprint: host.fingerprint)
+        XCTAssertEqual(knocks, [])
+    }
+
     func testOnlyTheHostCanPublishOrReadItsKnocks() async throws {
         let rendezvous = try await startRendezvous()
         let host = identity(), impostor = identity()

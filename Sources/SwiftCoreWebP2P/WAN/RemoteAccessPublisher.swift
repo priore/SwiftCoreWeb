@@ -63,10 +63,16 @@ final class RemoteAccessPublisher: Sendable {
     private func serve(_ allocation: TURNAllocation) async {
         let client = RendezvousClient(baseURL: remote.rendezvous)
         let server = server
+        let pending = NIOLockedValueBox(0)
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 for await attempt in allocation.attempts {
-                    Task { try? await allocation.accept(attempt) { server.serve($0) } }
+                    // Each attempt costs a connection to the relay; past the limit, further ones are dropped until some finish.
+                    guard pending.withLockedValue({ count -> Bool in count < 32 ? { count += 1; return true }() : false }) else { continue }
+                    Task {
+                        defer { pending.withLockedValue { $0 -= 1 } }
+                        try? await allocation.accept(attempt) { server.serve($0) }
+                    }
                 }
             }
             group.addTask { [self] in
@@ -83,7 +89,8 @@ final class RemoteAccessPublisher: Sendable {
                     }
                     if let knocks = try? await client.collectKnocks(hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint) {
                         for knock in knocks where pairing.isPaired(deviceID: knock.deviceFingerprint) {
-                            // Only paired devices are let through; the relay itself accepts IPv4 peers only here.
+                            // Only paired devices are let through (the knock is verified against the device's own signature);
+                            // the relay is asked for IPv4 addresses only, anything else is skipped.
                             try? await allocation.permit(ip: knock.address)
                         }
                     }

@@ -20,7 +20,8 @@ import SwiftCoreWeb
 /// that want to reach a host. It never sees a payload of the app, a private key or a token: what it stores is signed by
 /// the host or the device, so a reader can tell whether it was altered, and what it learns about a device is its public
 /// address and key fingerprint. Run it behind TLS; the address it records is the one the connection came from, so behind a
-/// reverse proxy that is the proxy's.
+/// reverse proxy that is the proxy's. It has no per-client limit of its own: put the app's `rateLimit` in front of it to
+/// keep one address from filling `maxHosts` or crowding out the knocks of a host.
 public final class P2PRendezvous: Sendable {
     private struct Stored {
         let envelope: SignedEnvelope
@@ -56,12 +57,13 @@ public final class P2PRendezvous: Sendable {
 
     private func publish(_ ctx: HttpContext) -> HttpResult {
         guard let (id, payload, signer, envelope) = signed(ctx), RendezvousPath.hostID(signer) == id,
-              let record = try? JSONDecoder().decode(RendezvousRecord.self, from: payload), record.fingerprint == signer,
+              let record = try? JSONDecoder().decode(RendezvousRecord.self, from: payload), record.type == RendezvousPayloadType.record, record.fingerprint == signer,
               fresh(record.issued), record.candidates.count <= 8 else {
             return Results.problem(status: .badRequest, detail: "The record must be signed by the host it is for and be recent.")
         }
         let stored = state.withLockedValue { state -> Bool in
             state.records = state.records.filter { $0.value.expires > Date() }
+            state.knocks = state.knocks.filter { state.records[$0.key] != nil } // knocks never outlive their host's record
             if state.records[id] == nil, state.records.count >= maxHosts { return false }
             state.records[id] = Stored(envelope: envelope, expires: Date().addingTimeInterval(recordLifetime))
             return true
@@ -76,24 +78,26 @@ public final class P2PRendezvous: Sendable {
     }
 
     private func knock(_ ctx: HttpContext) -> HttpResult {
-        guard let (id, payload, signer, _) = signed(ctx),
-              let request = try? JSONDecoder().decode(RendezvousKnockRequest.self, from: payload),
+        guard let (id, payload, _, envelope) = signed(ctx),
+              let request = try? JSONDecoder().decode(RendezvousKnockRequest.self, from: payload), request.type == RendezvousPayloadType.knock,
               RendezvousPath.hostID(request.hostFingerprint) == id, fresh(request.issued) else {
             return Results.problem(status: .badRequest, detail: "The knock must be signed, recent and for this host.")
         }
-        let entry = RendezvousKnock(address: ctx.request.remoteAddress ?? "unknown", deviceFingerprint: signer)
-        state.withLockedValue { state in
-            var list = state.knocks[id, default: []].filter { $0.deviceFingerprint != signer }
+        let entry = RendezvousKnock(address: ctx.request.remoteAddress ?? "unknown", envelope: envelope)
+        let accepted = state.withLockedValue { state -> Bool in
+            guard let stored = state.records[id], stored.expires > Date() else { return false } // only hosts that registered can be knocked on
+            var list = state.knocks[id, default: []].filter { $0.envelope.key != envelope.key }
             list.append(entry)
             state.knocks[id] = Array(list.suffix(maxKnocksPerHost))
+            return true
         }
-        return Results.noContent()
+        return accepted ? Results.noContent() : Results.notFound()
     }
 
     private func collect(_ ctx: HttpContext) -> HttpResult {
         guard let (id, payload, signer, _) = signed(ctx), RendezvousPath.hostID(signer) == id,
               let poll = try? JSONDecoder().decode(RendezvousPoll.self, from: payload),
-              poll.hostFingerprint == signer, fresh(poll.issued) else {
+              poll.type == RendezvousPayloadType.poll, poll.hostFingerprint == signer, fresh(poll.issued) else {
             return Results.problem(status: .badRequest, detail: "Only the host can read its knocks, with a signed recent request.")
         }
         let knocks = state.withLockedValue { $0.knocks.removeValue(forKey: id) ?? [] }
