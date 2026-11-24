@@ -45,6 +45,9 @@ final class ServerEngine: @unchecked Sendable {
     /// Random per run; only extensions receive it (through `RequestIngress.peer`).
     private let peerSecret = ServerEngine.makeSecret()
     private let peerPort = NIOLockedValueBox<Int?>(nil)
+    /// Bound once and kept for the engine's whole life: it is loopback, so a network change does not touch it, and the
+    /// extensions hold its port.
+    private let peerChannel = NIOLockedValueBox<Channel?>(nil)
 
     /// Bytes ever appended to an in-memory request-body buffer: stays 0 for spooled routes
     /// (the memory-bound test asserts on it, not on process RSS).
@@ -81,6 +84,12 @@ final class ServerEngine: @unchecked Sendable {
         } catch {
             // Undo what was set up before the bind (keep-awake, event loop group); the caller sees the bind error.
             try? await stop(timeout: 0)
+            throw error
+        }
+        do {
+            try await bindPeerListener()
+        } catch {
+            try? await stop(timeout: 0) // also closes the HTTP listener(s) that were already bound
             throw error
         }
         // Extensions start before the engine registers (`isRunning`), so a `stopAsync()` cannot land mid-start.
@@ -137,6 +146,14 @@ final class ServerEngine: @unchecked Sendable {
 
     // MARK: - Binding
 
+    /// Extensions that forward traffic get a loopback listener that reads the peer's identity (see `PeerPreambleDecoder`).
+    private func bindPeerListener() async throws {
+        guard !app.extensions.isEmpty else { return }
+        let channel = try await makeBootstrap(tls: false, peer: true).bind(host: "127.0.0.1", port: 0).get()
+        peerChannel.withLockedValue { $0 = channel }
+        peerPort.withLockedValue { $0 = channel.localAddress?.port }
+    }
+
     private func bindListeners() async throws {
         var bound: [Channel] = []
 
@@ -150,13 +167,6 @@ final class ServerEngine: @unchecked Sendable {
                 .bind(host: app.serverOptions.host, port: app.serverOptions.port + 1)
                 .get()
             bound.append(tlsChannel)
-        }
-
-        // Extensions that forward traffic get a loopback listener that reads the peer's identity (see `PeerPreambleDecoder`).
-        if !app.extensions.isEmpty {
-            let peerChannel = try await makeBootstrap(tls: false, peer: true).bind(host: "127.0.0.1", port: 0).get()
-            bound.append(peerChannel)
-            peerPort.withLockedValue { $0 = peerChannel.localAddress?.port }
         }
 
         listenerChannels.withLockedValue { $0 = bound }
@@ -226,7 +236,12 @@ final class ServerEngine: @unchecked Sendable {
         // the HTTP handlers are added when the line arrives.
         identity.futureResult.flatMap { [weak self] remoteIP -> EventLoopFuture<Void> in
             guard let self else { return channel.eventLoop.makeFailedFuture(ServerEngineError.stopped) }
-            return self.setUpHTTPPipeline(channel, remoteIP: remoteIP)
+            return self.setUpHTTPPipeline(channel, remoteIP: remoteIP).flatMapError { error in
+                // The identity was fine but serving could not start: give back the slot taken for this connection.
+                self.app.metrics.connectionClosed()
+                Task { await self.connectionGate.release() }
+                return channel.eventLoop.makeFailedFuture(error)
+            }
         }.whenFailure { _ in channel.close(promise: nil) }
         return channel.eventLoop.makeSucceededVoidFuture()
     }
@@ -680,6 +695,8 @@ final class ServerEngine: @unchecked Sendable {
         for channel in channels {
             try? await channel.close()
         }
+        if let peer = peerChannel.withLockedValue({ $0.take() }) { try? await peer.close() }
+        peerPort.withLockedValue { $0 = nil }
 
         #if canImport(UIKit)
         await MainActor.run { keepAwake?.restoreIdleTimer() }
