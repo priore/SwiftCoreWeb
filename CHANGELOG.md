@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`SwiftCoreWebP2P`: SSH tunnel to the local server (first step, LAN).**
+  - New opt-in product built on `swift-nio-ssh`: `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
+  - `SSHTunnelClient` pins the host key; `LoopbackProxy` lets any HTTP client reach the remote app through `http://127.0.0.1:<port>`.
+  - Pairing, Bonjour announcement and the `builder.useP2P()` entry point are not part of this step.
 - **`ServerExtension` and `RequestIngress`: an entry point for transports other than the HTTP listener.**
   - `builder.addExtension(_:)` registers a module that starts once the listeners are bound and stops with the server.
   - It receives a `RequestIngress`: the same dispatcher, connection gate and rate limiter the HTTP engine uses, plus `acceptWebSocket` (route lookup and `auth` enforced) over a `WebSocket.Transport`.
