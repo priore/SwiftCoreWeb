@@ -84,7 +84,7 @@ final class ServerEngine: @unchecked Sendable {
         do {
             let ingress = RequestIngress(
                 dispatcher: dispatcher, rateLimiter: rateLimiter, connectionGate: connectionGate,
-                webSocketRegistry: app.webSocketRegistry, metrics: app.metrics
+                webSocketRegistry: app.webSocketRegistry, metrics: app.metrics, port: app.serverOptions.port
             )
             for serverExtension in app.extensions { try await serverExtension.start(ingress: ingress) }
         } catch {

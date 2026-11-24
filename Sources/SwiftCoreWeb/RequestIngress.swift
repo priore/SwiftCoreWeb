@@ -16,6 +16,8 @@ public struct RequestIngress: Sendable {
     let connectionGate: ConnectionGate
     let webSocketRegistry: WebSocketRegistry
     let metrics: ServerMetrics
+    /// The port of the HTTP listener, for an extension that forwards traffic to it.
+    public let port: Int
 
     /// Reserves a connection slot (`maxConcurrentConnections`). `false` when at capacity: refuse the connection.
     /// Every `true` must be paired with exactly one `closeConnection()`: an unpaired close frees a slot that
