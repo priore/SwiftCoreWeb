@@ -38,10 +38,16 @@ public struct RequestDispatcher: Sendable {
     /// (`ServerEngine` or `SwiftCoreWebTesting.TestHost`), since both route
     /// through here — the single point that sees every request either way.
     public func dispatch(_ request: HttpRequest) async -> HttpResponse {
+        await dispatch(request, hidden: false)
+    }
+
+    /// `hidden`: the route this request would reach is kept from its caller (`PeerAccessRules`), so it is answered exactly
+    /// as a path that matches nothing: same middleware, headers and metrics, and only the global body limit.
+    func dispatch(_ request: HttpRequest, hidden: Bool) async -> HttpResponse {
         // A spooled body lives only as long as the request: a handler that wants it moves it away.
         defer { if let bodyFile = request.bodyFile { try? FileManager.default.removeItem(at: bodyFile) } }
         let startedAt = DispatchTime.now()
-        let response = await dispatchWithoutMetrics(request)
+        let response = await dispatchWithoutMetrics(request, hidden: hidden)
         let elapsedMilliseconds = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000
         metrics.recordRequest(
             method: request.method.rawValue,
@@ -70,21 +76,21 @@ public struct RequestDispatcher: Sendable {
         return (route.maxBodySize ?? maxBodySize, spool)
     }
 
-    private func dispatchWithoutMetrics(_ request: HttpRequest) async -> HttpResponse {
+    private func dispatchWithoutMetrics(_ request: HttpRequest, hidden: Bool) async -> HttpResponse {
         // ponytail: `router.match` runs here and again in `dispatchRouted`; cache the match if route tables get large.
         // Also enforced here (the engine cuts the connection earlier) so `TestHost`,
         // which has no body loop, applies the same limits as a real socket.
         let bodySize = request.bodyFile.map(UploadStorage.size(of:)) ?? request.body.count
-        guard bodySize <= bodyLimit(method: request.method, path: request.path) else {
+        guard bodySize <= (hidden ? maxBodySize : bodyLimit(method: request.method, path: request.path)) else {
             return Results.problem(status: .payloadTooLarge, detail: nil).response
         }
-        return applyByteRange(await dispatchRouted(request), for: request)
+        return applyByteRange(await dispatchRouted(request, hidden: hidden), for: request)
     }
 
-    private func dispatchRouted(_ request: HttpRequest) async -> HttpResponse {
+    private func dispatchRouted(_ request: HttpRequest, hidden: Bool) async -> HttpResponse {
         let ctx = HttpContext(request: request, services: services)
 
-        let match = router.match(method: request.method, path: request.path)
+        let match = hidden ? RouteMatch.notFound : router.match(method: request.method, path: request.path)
         let routeAuth: AuthRequirement
         let terminal: MiddlewareNext
 

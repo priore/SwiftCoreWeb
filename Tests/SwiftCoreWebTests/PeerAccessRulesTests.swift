@@ -52,4 +52,23 @@ final class PeerAccessRulesTests: XCTestCase {
         XCTAssertTrue(app.routeRegistry.peerAccess.allows(path: "/g/inner/x"))
         XCTAssertTrue(app.routeRegistry.peerAccess.allows(path: "/other"))
     }
+
+    func testDotSegmentsCaseAndPercentEncodingCannotSlipPastARule() {
+        let rules = PeerAccessRules()
+        rules.set(prefix: "/private", allowed: false)
+        XCTAssertFalse(rules.allows(path: "/./private/doc.txt"), "static files normalize ./")
+        XCTAssertFalse(rules.allows(path: "/x/../private/doc.txt"))
+        XCTAssertFalse(rules.allows(path: "/PRIVATE/doc.txt"), "a case-insensitive volume serves it")
+        XCTAssertFalse(rules.allows(path: "/%70rivate/doc.txt"), "percent-decoded form is checked too")
+        XCTAssertTrue(rules.allows(path: "/public/doc.txt"))
+    }
+
+    func testEqualLengthRulesLastOneWinsAndRootRuleCoversEverything() {
+        let rules = PeerAccessRules()
+        rules.set(prefix: "/users/me", allowed: true)
+        rules.set(prefix: "/users/{id}", allowed: false)
+        XCTAssertFalse(rules.allows(path: "/users/me"), "same length: the rule set last wins, not the literal")
+        rules.set(prefix: "/", allowed: false)
+        XCTAssertFalse(rules.allows(path: "/anything"))
+    }
 }

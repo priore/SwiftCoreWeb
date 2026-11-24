@@ -77,6 +77,19 @@ final class PeerIdentityTests: XCTestCase {
             XCTAssertEqual(directCode, 200, "/\(path) on the normal listener is never affected")
         }
 
+        // A hidden route answers like a path that matches nothing, whatever the request carries.
+        var post = URLRequest(url: base.appendingPathComponent("admin/secret"))
+        post.httpMethod = "POST"
+        post.httpBody = Data(repeating: 0x61, count: 3_000)
+        let (_, postResponse) = try await URLSession(configuration: .ephemeral).data(for: post)
+        XCTAssertEqual((postResponse as? HTTPURLResponse)?.statusCode, 404)
+        let (hiddenBody, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("admin/secret"))
+        let (missingBody, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("nothing/here"))
+        // Same problem document, apart from the path it echoes back.
+        let hiddenText = String(decoding: hiddenBody, as: UTF8.self).replacingOccurrences(of: "admin/secret", with: "PATH")
+        let missingText = String(decoding: missingBody, as: UTF8.self).replacingOccurrences(of: "nothing/here", with: "PATH")
+        XCTAssertEqual(hiddenText, missingText, "same body as a path that does not exist")
+
         // Deny by default, allow one group.
         fixture.app.useP2P(.disable)
         fixture.app.useP2P("/open", .enable)

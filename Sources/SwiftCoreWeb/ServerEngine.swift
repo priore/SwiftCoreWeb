@@ -325,6 +325,7 @@ final class ServerEngine: @unchecked Sendable {
                 // Every way out of this closure (413, disconnect, shutdown, error) discards a
                 // spool that was not handed to the dispatcher, which deletes the file itself.
                 var spool: BodySpool?
+                var hiddenFromPeer = false
                 defer { spool?.discard() }
 
                 // An early rejection (413, 429) is sent with `Connection: close`, then the rest of the
@@ -354,14 +355,18 @@ final class ServerEngine: @unchecked Sendable {
                         bodyBuffer.clear()
                         spool?.discard()
                         spool = nil
+                        // A path kept from peers is handled as one that matches nothing, body limits included.
+                        hiddenFromPeer = fromPeer && !dispatcher.router.peerAccess.allows(path: splitPathAndQuery(head.uri).path)
                         // A route (or group) may override the global limit and ask for the body on
                         // disk; resolved from the head alone, so an oversized body is cut off
                         // before it is buffered.
-                        let plan = dispatcher.bodyPlan(
-                            method: HttpMethod(rawValue: head.method.rawValue) ?? .get,
-                            path: splitPathAndQuery(head.uri).path,
-                            contentLength: head.headers.first(name: "Content-Length").flatMap { Int($0) }
-                        )
+                        let plan = hiddenFromPeer
+                            ? (limit: app.serverOptions.maxRequestBodySize, spool: false)
+                            : dispatcher.bodyPlan(
+                                method: HttpMethod(rawValue: head.method.rawValue) ?? .get,
+                                path: splitPathAndQuery(head.uri).path,
+                                contentLength: head.headers.first(name: "Content-Length").flatMap { Int($0) }
+                            )
                         maxBodySize = plan.limit
                         if plan.spool {
                             do {
@@ -398,17 +403,7 @@ final class ServerEngine: @unchecked Sendable {
                     case .end:
                         guard let head = requestHead else { continue }
 
-                        // A path the app keeps away from peers does not exist as far as they can tell.
-                        if fromPeer, !dispatcher.router.peerAccess.allows(path: splitPathAndQuery(head.uri).path) {
-                            try await writeSimpleResponse(outbound, status: .notFound)
-                            requestHead = nil
-                            bodyBuffer.clear()
-                            spool?.discard()
-                            spool = nil
-                            continue
-                        }
-
-                        if isWebSocketUpgrade(head) {
+                        if !hiddenFromPeer, isWebSocketUpgrade(head) {
                             try await handleWebSocketUpgrade(head: head, rawChannel: rawChannel, remoteIP: remoteIP, outbound: outbound)
                             return
                         }
@@ -416,7 +411,7 @@ final class ServerEngine: @unchecked Sendable {
                         let bodyFile = spool?.finish()
                         spool = nil // the dispatcher deletes the file once the response is produced
                         let request = makeHttpRequest(head: head, body: bodyBuffer, remoteAddress: remoteIP, bodyFile: bodyFile)
-                        let response = await dispatcher.dispatch(request)
+                        let response = await dispatcher.dispatch(request, hidden: hiddenFromPeer)
                         try await write(response, method: head.method, to: outbound)
                         requestHead = nil
                         bodyBuffer.clear()

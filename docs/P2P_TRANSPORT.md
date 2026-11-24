@@ -72,7 +72,9 @@ app.useP2P("/api/admin", .disable)         // and except one part of it
 app.useP2P("/users/{id}/private", .disable) // a {placeholder} segment matches any value
 ```
 
-A path is matched by whole segments (`/admin` covers `/admin/x`, not `/administrator`). A route a device may not reach answers `404`, as if it did not exist, for plain requests and for WebSocket upgrades. Requests that come in on the normal listener (the app's own port) are never affected. The rules are checked at request time, so they can be changed while the server runs. Not covered: requests an extension dispatches itself through `RequestIngress.dispatch`.
+A path is matched by whole segments (`/admin` covers `/admin/x`, not `/administrator`), without regard to case, and a path with a `.` or `..` segment is never reachable by a device. A `{placeholder}` segment matches any single segment whatever its constraint (`{id:int}` is not checked), and `{id?}` still needs a segment, so cover an optional parameter's bare path with its own rule. The longest matching rule wins; among rules of the same length the one set last wins, whether it is a literal or a placeholder. A rule on `/` is the same as the default. The percent-decoded form of the path is checked as well.
+
+A route a device may not reach is answered exactly like a path that matches nothing (`404`, the same middleware, headers and metrics, the global body limit), for plain requests and for WebSocket upgrades. Requests that come in on the normal listener (the app's own port) are never affected. The rules are checked at request time, so they can be changed while the server runs. Not covered: requests an extension dispatches itself through `RequestIngress.dispatch`.
 
 ## Pair a device
 
