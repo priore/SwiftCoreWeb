@@ -7,6 +7,7 @@
 
 import Crypto
 import Foundation
+import Network
 
 /// Talks to a `P2PRendezvous`. Everything it sends is signed, and what it reads is checked against the key it was told to
 /// trust, so a rendezvous (or whoever sits between) can withhold or delay information but not forge it.
@@ -50,7 +51,10 @@ struct RendezvousClient: Sendable {
                   let request = try? JSONDecoder().decode(RendezvousKnockRequest.self, from: payload),
                   request.type == RendezvousPayloadType.knock, request.hostFingerprint == hostFingerprint,
                   abs(Self.now - request.issued) <= 300 else { return nil }
-            return Knock(address: knock.address, deviceFingerprint: signer, direct: request.candidate.flatMap { $0.kind == "direct" ? $0 : nil })
+            return Knock(address: knock.address, deviceFingerprint: signer, direct: request.candidate.flatMap { candidate in
+                // The host will connect out to this: only the address the rendezvous saw the knock come from, on a real port.
+                candidate.kind == "direct" && candidate.host == knock.address && (1...65_535).contains(candidate.port) && IPv4Address(candidate.host) != nil ? candidate : nil
+            })
         }
     }
 

@@ -78,11 +78,11 @@ public final class PairingManager: Sendable {
     // MARK: - Pairing session
 
     /// Opens a pairing session and returns its token, replacing any session already open.
-    @discardableResult
     ///
     /// With `withCode` the session also accepts a six-digit code (`pairingCode`), for a device without a camera. The QR
     /// token stays long and random; the code shares the session's attempts, so with five guesses a code is guessed with
     /// probability 5 in a million.
+    @discardableResult
     public func openPairing(validFor lifetime: TimeInterval = 120, maxAttempts: Int = 5, withCode: Bool = false) -> String {
         let token = Self.makeToken()
         let session = Session(token: token, code: withCode ? Self.makeCode(digits: 6) : nil, expiresAt: now().addingTimeInterval(lifetime), attemptsLeft: maxAttempts)

@@ -28,6 +28,14 @@ final class ConnectionRegistry: Sendable {
         owners.withLockedValue { $0[ObjectIdentifier(channel)] }
     }
 
+    func closeEverything() {
+        let open = channels.withLockedValue { all -> [Channel] in
+            defer { all = [:] }
+            return all.values.flatMap { $0.values }
+        }
+        for channel in open { channel.close(promise: nil) }
+    }
+
     func closeAll(deviceID: String) {
         let open = channels.withLockedValue { $0.removeValue(forKey: deviceID)?.values.map { $0 } ?? [] }
         for channel in open { channel.close(promise: nil) }

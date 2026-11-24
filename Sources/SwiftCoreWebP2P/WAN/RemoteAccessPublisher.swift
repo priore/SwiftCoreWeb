@@ -23,7 +23,10 @@ final class RemoteAccessPublisher: Sendable {
     private let publishEvery: TimeInterval
     private let pollEvery: TimeInterval
     private let task = NIOLockedValueBox<Task<Void, Never>?>(nil)
-    private let punching = NIOLockedValueBox(0)
+    /// Punches in progress by device, and the knocks already acted on, so a replayed knock or one device cannot hold every slot.
+    private let punching = NIOLockedValueBox<(active: Set<String>, recent: [String: Date])>(([], [:]))
+    private let punchTasks = NIOLockedValueBox<[UUID: Task<Void, Never>]>([:])
+    private let mappedAddress = NIOLockedValueBox<RendezvousRecord.Candidate?>(nil)
 
     init(remote: P2PRemoteAccess, pairing: PairingManager, server: SSHTunnelServer, publishEvery: TimeInterval = 60, pollEvery: TimeInterval = 2) {
         self.remote = remote
@@ -60,15 +63,28 @@ final class RemoteAccessPublisher: Sendable {
         let task = self.task.withLockedValue { $0.take() }
         task?.cancel()
         await task?.value
+        for punch in punchTasks.withLockedValue({ $0.values }) { punch.cancel() }
     }
 
     /// Opens a connection to a paired device from the tunnel's own port while the device connects to this one: through most
     /// NATs the two crossing attempts make a connection, which is then served like any other. Gives up after a few seconds.
-    private func punch(to candidate: RendezvousRecord.Candidate, from localPort: Int) {
-        guard punching.withLockedValue({ count -> Bool in count < 4 ? { count += 1; return true }() : false }) else { return }
-        let server = server, punching = punching
-        Task {
-            defer { punching.withLockedValue { $0 -= 1 } }
+    /// One punch per device at a time, at most four overall, and a knock already acted on is ignored for a minute.
+    private func punch(to candidate: RendezvousRecord.Candidate, from localPort: Int, device: String) {
+        let key = device + "|" + candidate.host + ":" + String(candidate.port)
+        let allowed = punching.withLockedValue { state -> Bool in
+            state.recent = state.recent.filter { $0.value > Date() }
+            guard state.active.count < 4, !state.active.contains(device), state.recent[key] == nil else { return false }
+            state.active.insert(device)
+            state.recent[key] = Date().addingTimeInterval(60)
+            return true
+        }
+        guard allowed else { return }
+        let server = server, punching = punching, tasks = punchTasks, id = UUID()
+        let task = Task {
+            defer {
+                punching.withLockedValue { _ = $0.active.remove(device) }
+                tasks.withLockedValue { _ = $0.removeValue(forKey: id) }
+            }
             let deadline = Date().addingTimeInterval(8)
             while Date() < deadline, !Task.isCancelled {
                 do {
@@ -88,6 +104,7 @@ final class RemoteAccessPublisher: Sendable {
                 }
             }
         }
+        punchTasks.withLockedValue { $0[id] = task }
     }
 
     /// Returns when the allocation is lost (or the task is cancelled).
@@ -106,10 +123,23 @@ final class RemoteAccessPublisher: Sendable {
                     }
                 }
             }
+            // The host's public address as the TURN server sees the tunnel port; asked apart from the loop below because a
+            // server that does not answer STUN over TCP would otherwise delay the knocks.
+            group.addTask { [self] in
+                while !Task.isCancelled {
+                    if let port = server.port,
+                       let mapped = try? await STUNClient.reflexiveAddress(server: remote.relay.host, port: remote.relay.port, localPort: port, timeout: .seconds(3)) {
+                        mappedAddress.withLockedValue { $0 = .init(kind: "direct", host: mapped.host, port: mapped.port) }
+                    }
+                    try? await Task.sleep(nanoseconds: UInt64(publishEvery * 1_000_000_000))
+                }
+            }
             group.addTask { [self] in
                 var untilPublish: TimeInterval = 0
+                var publishedDirect = false
                 while !Task.isCancelled {
-                    if untilPublish <= 0 {
+                    // Publishes on schedule, and again as soon as the public address is known if the last record lacked it.
+                    if untilPublish <= 0 || (!publishedDirect && mappedAddress.withLockedValue({ $0 }) != nil) {
                         do {
                             // The relay; the TURN server's own address, where a device learns its public address (STUN); and
                             // this host's, learned from the tunnel's own port so a device can aim a direct connection at it.
@@ -117,17 +147,15 @@ final class RemoteAccessPublisher: Sendable {
                                 .init(kind: "relay", host: allocation.relayedHost, port: allocation.relayedPort),
                                 .init(kind: "stun", host: remote.relay.host, port: remote.relay.port),
                             ]
-                            if let tunnelPort = server.port,
-                               let mapped = try? await STUNClient.reflexiveAddress(server: remote.relay.host, port: remote.relay.port, localPort: tunnelPort) {
-                                candidates.append(.init(kind: "direct", host: mapped.host, port: mapped.port))
-                            }
+                            if let direct = mappedAddress.withLockedValue({ $0 }) { candidates.append(direct) }
+                            publishedDirect = candidates.contains { $0.kind == "direct" }
                             try await client.publish(candidates, hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint)
                         } catch { remoteLogger.error("Could not publish to the rendezvous: \(String(describing: error), privacy: .public)") }
                         untilPublish = publishEvery
                     }
                     if let knocks = try? await client.collectKnocks(hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint) {
                         for knock in knocks where pairing.isPaired(deviceID: knock.deviceFingerprint) {
-                            if let direct = knock.direct, let tunnelPort = server.port { punch(to: direct, from: tunnelPort) }
+                            if let direct = knock.direct, let tunnelPort = server.port { punch(to: direct, from: tunnelPort, device: knock.deviceFingerprint) }
                             // Only paired devices are let through (the knock is verified against the device's own signature);
                             // the relay is asked for IPv4 addresses only, anything else is skipped.
                             try? await allocation.permit(ip: knock.address)

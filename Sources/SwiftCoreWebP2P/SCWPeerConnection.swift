@@ -262,7 +262,7 @@ public final class SCWPeerConnection: Sendable {
             failure = error
             return nil
         }
-        var directTried = false, relaySeen = false
+        var directTried = false
         for round in 0..<4 {
             // The host reads its knocks every couple of seconds.
             try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -287,7 +287,6 @@ public final class SCWPeerConnection: Sendable {
                 }
             }
             for candidate in candidates ?? [] where candidate.kind == "relay" {
-                relaySeen = true
                 var target = known
                 target.host = candidate.host
                 target.port = candidate.port
@@ -297,7 +296,7 @@ public final class SCWPeerConnection: Sendable {
                 }
             }
         }
-        if directTried, !relaySeen { failure = TunnelError.directConnectionFailed }
+        if directTried { failure = TunnelError.directConnectionFailed } // the direct attempt and then the relay (if any) both failed
         return nil
     }
 

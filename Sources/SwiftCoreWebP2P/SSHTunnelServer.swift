@@ -18,6 +18,7 @@ public final class SSHTunnelServer: Sendable {
     private let pairing: PairingManager
     private let registry = ConnectionRegistry()
     private let boundPort = NIOLockedValueBox<Int?>(nil)
+    private let stopped = NIOLockedValueBox(false)
     /// The port the tunnel listens on, once started.
     var port: Int? { boundPort.withLockedValue { $0 } }
     private let allowList: TunnelAllowList
@@ -47,6 +48,7 @@ public final class SSHTunnelServer: Sendable {
     /// in. Unauthenticated sockets still use connection slots (`maxConnections`) until the handshake deadline closes them.
     @discardableResult
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
+        stopped.withLockedValue { $0 = false }
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             // Outgoing connections made from this same port (hole punching) need it to be shareable.
@@ -67,6 +69,7 @@ public final class SSHTunnelServer: Sendable {
     /// connection cap, the handshake deadline and the pairing authentication, then forwards the allow-listed channels.
     /// Fails, leaving the channel for the caller to close, when the host is at capacity.
     func serve(_ channel: Channel) -> EventLoopFuture<Void> {
+        if stopped.withLockedValue({ $0 }) { return channel.eventLoop.makeFailedFuture(TunnelError.notConnected) }
         let pairing = pairing, registry = registry, allowList = allowList, peer = peer
         let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         // Caps the tunnel's total connections (authenticated ones included): the host's capacity, and a bound on
@@ -98,6 +101,8 @@ public final class SSHTunnelServer: Sendable {
     }
 
     public func stop() async {
+        stopped.withLockedValue { $0 = true }
+        registry.closeEverything() // sessions that came by another way (relay, punched) end with the server
         pairing.setRevocationHandler(nil)
         if let channel = listener.withLockedValue({ $0.take() }) { try? await channel.close() }
         try? await group.shutdownGracefully()
