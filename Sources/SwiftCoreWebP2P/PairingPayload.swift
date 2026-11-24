@@ -49,20 +49,26 @@ public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
     public init?(_ string: String) {
         guard let components = URLComponents(string: string), components.scheme?.lowercased() == Self.scheme,
               var host = components.host, let port = components.port else { return nil }
-        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        if host.hasPrefix("["), host.hasSuffix("]"), host.contains(":") { host = String(host.dropFirst().dropLast()) }
         var items: [String: String] = [:]
         for item in components.queryItems ?? [] {
             guard let value = item.value, items.updateValue(value, forKey: item.name) == nil else { return nil } // no duplicates
         }
         guard let appPort = items["sp"].flatMap(Self.parsePort), let token = items["t"], let fingerprint = items["fp"] else { return nil }
-        self.init(host: host, port: port, appPort: appPort, token: token, hostKeyFingerprint: fingerprint, name: items["n"])
+        self.init(host: host, port: port, appPort: appPort, token: token, hostKeyFingerprint: fingerprint, name: items["n"].flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// Hides the token: a payload must not end up in logs through string interpolation.
     public var description: String { "PairingPayload(host: \(host), port: \(port))" }
 
+    /// A DNS name or IPv4 address (ASCII letters, digits, `.`, `-`, `_`), or an IPv6 address (hex digits, `:` and `.`, at
+    /// least two colons). Non-ASCII names are refused: a link must parse the same on every OS version.
     private static func isValidHost(_ host: String) -> Bool {
-        !host.isEmpty && host.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || ".-_:".unicodeScalars.contains($0) }
+        guard !host.isEmpty, host.allSatisfy(\.isASCII) else { return false }
+        if host.contains(":") {
+            return host.filter { $0 == ":" }.count >= 2 && host.allSatisfy { $0.isHexDigit || $0 == ":" || $0 == "." }
+        }
+        return host.allSatisfy { $0.isLetter || $0.isNumber || ".-_".contains($0) }
     }
 
     private static func parsePort(_ text: String) -> Int? {

@@ -91,6 +91,8 @@ final class PairingManagerTests: XCTestCase {
     }
 
     func testPayloadRefusesBadHostsPortsAndMalformedLinks() throws {
+        XCTAssertNil(PairingPayload(host: "a:b", port: 1, appPort: 2, token: "t", hostKeyFingerprint: "f")) // a colon means IPv6
+        XCTAssertNil(PairingPayload(host: "fe80::1%en0", port: 1, appPort: 2, token: "t", hostKeyFingerprint: "f"))
         XCTAssertNil(PairingPayload(host: "a b", port: 1, appPort: 2, token: "t", hostKeyFingerprint: "f"))
         XCTAssertNil(PairingPayload(host: "", port: 1, appPort: 2, token: "t", hostKeyFingerprint: "f"))
         XCTAssertNil(PairingPayload(host: "h", port: -1, appPort: 2, token: "t", hostKeyFingerprint: "f"))
@@ -98,19 +100,20 @@ final class PairingManagerTests: XCTestCase {
         XCTAssertNotNil(PairingPayload("SCW-P2P://h:1?sp=2&t=a&fp=b")) // the scheme is case-insensitive
         for broken in ["", "http://h:1?sp=1&t=a&fp=b", "scw-p2p://h?sp=1&t=a&fp=b", "scw-p2p://h:1?t=a&fp=b", "scw-p2p://h:1?sp=1&fp=b",
                        "scw-p2p://h:1?sp=1&t=a", "scw-p2p://h:0?sp=1&t=a&fp=b", "scw-p2p://h:1?sp=99999&t=a&fp=b", "scw-p2p://h:1?sp=-5&t=a&fp=b",
-                       "scw-p2p://h:1?sp=+80&t=a&fp=b", "scw-p2p://h:1?sp=1&t=a&t=b&fp=b"] {
+                       "scw-p2p://h:1?sp=+80&t=a&fp=b", "scw-p2p://h:1?sp=1&t=a&t=b&fp=b", "scw-p2p://h:99999?sp=1&t=a&fp=b", "scw-p2p://h:1?sp=٣&t=a&fp=b", "scw-p2p://é.local:1?sp=1&t=a&fp=b"] {
             XCTAssertNil(PairingPayload(broken), broken)
         }
     }
 
-    func testConcurrentValidAttemptsRegisterExactlyOneDevice() throws {
+    func testConcurrentValidAttemptsRegisterExactlyOneDevice() async throws {
         let manager = try PairingManager(storage: InMemoryTunnelStorage())
         let token = manager.openPairing()
-        let wins = NIOLockedValueBox(0)
-        DispatchQueue.concurrentPerform(iterations: 16) { _ in
-            if manager.attemptPairing(device: deviceKey(), token: token) { wins.withLockedValue { $0 += 1 } }
+        let keys = (0..<16).map { _ in deviceKey() }
+        let wins = await withTaskGroup(of: Bool.self) { group in
+            for key in keys { group.addTask { manager.attemptPairing(device: key, token: token) } }
+            return await group.reduce(0) { $0 + ($1 ? 1 : 0) }
         }
-        XCTAssertEqual(wins.withLockedValue { $0 }, 1)
+        XCTAssertEqual(wins, 1)
         XCTAssertEqual(manager.devices.count, 1)
     }
 
@@ -140,6 +143,13 @@ final class PairingManagerTests: XCTestCase {
         XCTAssertThrowsError(try manager.revoke(deviceID: TunnelFingerprint.of(paired))) { XCTAssertEqual($0 as? TunnelError, .storageUnavailable) }
         XCTAssertNil(manager.device(for: paired)) // refused now even though the removal could not be saved
         XCTAssertEqual(revoked.withLockedValue { $0 }, 1) // and its open sessions are dropped
+
+        // Retrying saves the removal once the storage works again, even though the device is already gone from memory.
+        XCTAssertThrowsError(try manager.revoke(deviceID: TunnelFingerprint.of(paired)))
+        storage.failing.withLockedValue { $0 = false }
+        XCTAssertFalse(try manager.revoke(deviceID: TunnelFingerprint.of(paired)))
+        XCTAssertTrue(try PairingManager(storage: storage).devices.isEmpty)
+        XCTAssertEqual(revoked.withLockedValue { $0 }, 1)
     }
 
     func testRepairingKeepsNameAndDateAndCorruptStorageIsNeverOverwritten() throws {
@@ -155,7 +165,6 @@ final class PairingManagerTests: XCTestCase {
         storage.write("not base64 !", forKey: "p2p.host-key")
         XCTAssertThrowsError(try PairingManager(storage: storage)) { XCTAssertEqual($0 as? TunnelError, .corruptedStorage) }
         XCTAssertEqual(storage.read("p2p.host-key"), "not base64 !") // left as it was
-        storage.write("{broken", forKey: "p2p.devices")
         let healthy = InMemoryTunnelStorage()
         healthy.write("{broken", forKey: "p2p.devices")
         XCTAssertThrowsError(try PairingManager(storage: healthy)) { XCTAssertEqual($0 as? TunnelError, .corruptedStorage) }
