@@ -25,7 +25,8 @@ import Foundation
 /// Rules a receiver enforces, and a sender must follow:
 /// - every fragment except the last carries exactly 32768 payload bytes; the last carries 0 ... 32768;
 /// - a message is at most 1 MiB, so at most 32 full fragments plus the last;
-/// - fragments of one message arrive in order; frames of different messages may interleave;
+/// - fragments of one message arrive in order; frames of different messages may interleave at this layer (the
+///   secure channel over it requires one message at a time, see P2PSecureChannel);
 /// - a message id may be reused once its last fragment has been sent;
 /// - a receiver keeps at most 8 unfinished messages and 4 MiB of unfinished payload per connection (single-frame
 ///   messages are not counted): a sender interleaves at most that much;

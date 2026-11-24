@@ -10,8 +10,12 @@ public enum P2PCryptoError: Error, Sendable, Equatable {
     case malformedSealedPayload
     /// Authentication failed: the data, its type or id, or the key is not what the sender sealed.
     case authenticationFailed
-    /// The counter is not greater than the last accepted one: a replayed or reordered message.
-    case replayedOrReordered
+    /// The counter is not the next expected one: a replayed, reordered or dropped message.
+    case unexpectedCounter
+    /// The handshake salt was empty: it must bind the handshake.
+    case emptySalt
+    /// Both sides presented the same public key (a reflected key), so their roles cannot be told apart.
+    case identicalPublicKeys
     /// The send counter is exhausted; the connection must be re-established with fresh keys.
     case counterExhausted
     /// The plaintext plus `P2PSecureChannel.overhead` would exceed `P2PFraming.maxMessageSize`.
