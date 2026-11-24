@@ -20,7 +20,7 @@ public enum WebSocketMessage: Sendable {
 /// (the realtime and OpenAPI contract design). Wraps the NIO WebSocket frame machinery so handler code is plain
 /// `async`/`await` with no NIO types in the public surface.
 public final class WebSocket: Sendable {
-    /// What a transport provides to back a `WebSocket`: the NIO upgrade path (`init(channel:)`) and
+    /// What a transport provides to back a `WebSocket`: the NIO upgrade path (`WebSocketBridge`) and
     /// any other carrier (an opt-in module, a test double) supply the same three operations.
     public struct Transport: Sendable {
         /// Incoming messages; completes when the peer or the socket closes. Called once per `messages()`;
@@ -49,30 +49,6 @@ public final class WebSocket: Sendable {
         self.transport = transport
     }
 
-    convenience init(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
-        self.init(transport: Transport(
-            messages: { Self.messages(of: channel) },
-            send: { message in
-                switch message {
-                case .text(let text):
-                    var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
-                    buffer.writeString(text)
-                    try await channel.outbound.write(WebSocketFrame(fin: true, opcode: .text, data: buffer))
-                case .binary(let data):
-                    var buffer = ByteBufferAllocator().buffer(capacity: data.count)
-                    buffer.writeBytes(data)
-                    try await channel.outbound.write(WebSocketFrame(fin: true, opcode: .binary, data: buffer))
-                }
-            },
-            close: { code in
-                var buffer = ByteBufferAllocator().buffer(capacity: 2)
-                buffer.write(webSocketErrorCode: code)
-                try? await channel.outbound.write(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer))
-                try? await channel.channel.close()
-            }
-        ))
-    }
-
     /// An async sequence of incoming messages. Completes when the peer
     /// closes the connection or the socket is closed locally.
     public func messages() -> AsyncThrowingStream<WebSocketMessage, Error> {
@@ -98,38 +74,6 @@ public final class WebSocket: Sendable {
         }
         guard !alreadyClosed else { return }
         await transport.close(code)
-    }
-
-    private static func messages(of channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) -> AsyncThrowingStream<WebSocketMessage, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    for try await frame in channel.inbound {
-                        switch frame.opcode {
-                        case .text:
-                            var buffer = frame.unmaskedData
-                            let text = buffer.readString(length: buffer.readableBytes) ?? ""
-                            continuation.yield(.text(text))
-                        case .binary:
-                            var buffer = frame.unmaskedData
-                            let bytes = buffer.readBytes(length: buffer.readableBytes) ?? []
-                            continuation.yield(.binary(Data(bytes)))
-                        case .connectionClose:
-                            continuation.finish()
-                            return
-                        case .ping, .pong, .continuation:
-                            continue
-                        default:
-                            continue
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
     }
 }
 

@@ -33,6 +33,15 @@ final class ServerEngine: @unchecked Sendable {
     private let connectionGate: ConnectionGate
     private var watchdog: NetworkWatchdog?
     private let listenerChannels = NIOLockedValueBox<[Channel]>([])
+    private struct Lifecycle {
+        var rebinding = false
+        var rebindRequested = false
+        var stopping = false
+        var finished = false
+    }
+    private let lifecycle = NIOLockedValueBox(Lifecycle())
+    /// Completed when the engine has ended (by `stop` or because its listeners went away): what `run()` waits on.
+    private let finished: EventLoopPromise<Void>
     private var bonjourListener: NWListener?
     #if canImport(UIKit)
     // ponytail: KeepAwakeController is @MainActor (touches UIApplication);
@@ -61,6 +70,7 @@ final class ServerEngine: @unchecked Sendable {
         self.rateLimiter = app.rateLimitOptions.map(RateLimiter.init)
         self.connectionGate = ConnectionGate(maxConcurrent: app.serverOptions.maxConcurrentConnections)
         self.group = NIOTSEventLoopGroup()
+        self.finished = group.next().makePromise(of: Void.self)
     }
 
     /// Builds, binds, and runs the engine for `app`, suspending until
@@ -133,15 +143,24 @@ final class ServerEngine: @unchecked Sendable {
         let listeningURLs = app.urls.joined(separator: ", ")
         serverLogger.info("SwiftCoreWeb listening on \(listeningURLs, privacy: .public)")
 
-        // Suspend until every listener channel closes (i.e. until `stop()`
-        // closes them), rather than blocking the calling thread.
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for channel in listenerChannelsSnapshot() {
-                group.addTask { try await channel.closeFuture.get() }
-            }
-            try await group.next()
-            group.cancelAll()
+        // Suspend until the engine ends: `stop()`, or the OS closing a listener (a network rebind does not count).
+        try await finished.futureResult.get()
+        // Listeners that went away without `stop()`: release what the engine and its extensions still hold.
+        try? await stop(timeout: 0)
+    }
+
+    private func finish() {
+        let first = lifecycle.withLockedValue { state -> Bool in
+            let already = state.finished
+            state.finished = true
+            return !already
         }
+        if first { finished.succeed(()) }
+    }
+
+    private func listenerClosed() {
+        let unexpected = lifecycle.withLockedValue { !$0.stopping && !$0.rebinding }
+        if unexpected { finish() }
     }
 
     // MARK: - Binding
@@ -170,6 +189,9 @@ final class ServerEngine: @unchecked Sendable {
         }
 
         listenerChannels.withLockedValue { $0 = bound }
+        for channel in bound {
+            channel.closeFuture.whenComplete { [weak self] _ in self?.listenerClosed() }
+        }
     }
 
     private func makeBootstrap(tls: Bool, tlsOptions: TlsOptions? = nil, peer: Bool = false) -> NIOTSListenerBootstrap {
@@ -577,41 +599,13 @@ final class ServerEngine: @unchecked Sendable {
 
         let upgradeResponse = HTTPResponseHead(version: .http1_1, status: .switchingProtocols, headers: responseHeaders)
 
-        // Write the raw 101 response, then strip every HTTP1 handler from the
-        // pipeline (in the order they were added) before installing the
-        // WebSocket frame codec — from this point the connection speaks the
-        // WebSocket framing only, not HTTP/1.1.
-        try await writeUpgradeResponse(upgradeResponse, on: rawChannel)
-        try await removeHTTPHandlers(from: rawChannel)
-
-        try await rawChannel.eventLoop.submit {
-            try rawChannel.pipeline.syncOperations.addHandler(WebSocketFrameEncoder())
-            try rawChannel.pipeline.syncOperations.addHandler(ByteToMessageHandler(WebSocketFrameDecoder()))
-        }.get()
-
-        let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(wrappingChannelSynchronously: rawChannel)
-        let socket = WebSocket(channel: asyncChannel)
+        // The 101 goes through the HTTP encoder; the connection then speaks WebSocket frames only, through `WebSocketBridge`.
+        let socket = try await WebSocketBridge.upgrade(
+            rawChannel, response: upgradeResponse, removing: [Self.httpEncoderName, Self.httpDecoderName]
+        )
         app.metrics.webSocketOpened()
         defer { app.metrics.webSocketClosed() }
         try? await route.handler(socket)
-    }
-
-    // MARK: - WebSocket upgrade wire helpers
-
-    private func writeUpgradeResponse(_ head: HTTPResponseHead, on channel: Channel) async throws {
-        var buffer = channel.allocator.buffer(capacity: 256)
-        buffer.writeString("HTTP/1.1 101 Switching Protocols\r\n")
-        for (name, value) in head.headers {
-            buffer.writeString("\(name): \(value)\r\n")
-        }
-        buffer.writeString("\r\n")
-        try await channel.writeAndFlush(buffer).get()
-    }
-
-    private func removeHTTPHandlers(from channel: Channel) async throws {
-        for name in [Self.httpEncoderName, Self.httpDecoderName] {
-            try? await channel.pipeline.removeHandler(name: name).get()
-        }
     }
 
     private static let httpEncoderName = "SwiftCoreWeb.HTTPResponseEncoder"
@@ -643,20 +637,40 @@ final class ServerEngine: @unchecked Sendable {
 
     // MARK: - Network watchdog rebind
 
-    private func rebindOnNetworkChange() async {
-        app.metrics.recordRebind()
-        serverLogger.info("Rebinding listeners after network change")
-        for channel in listenerChannelsSnapshot() {
-            try? await channel.close()
+    func rebindOnNetworkChange() async {
+        // One rebind at a time; a change that arrives meanwhile is applied right after, not lost.
+        let mayStart = lifecycle.withLockedValue { state -> Bool in
+            if state.stopping { return false }
+            if state.rebinding { state.rebindRequested = true; return false }
+            state.rebinding = true
+            return true
         }
-        do {
-            try await bindListeners()
-            app.urls = reachableURLs()
-            let listeningURLs = app.urls.joined(separator: ", ")
-            serverLogger.info("Rebound; now listening on \(listeningURLs, privacy: .public)")
-        } catch {
-            serverLogger.error("Failed to rebind listeners: \(String(describing: error), privacy: .public)")
-        }
+        guard mayStart else { return }
+        repeat {
+            app.metrics.recordRebind()
+            serverLogger.info("Rebinding listeners after network change")
+            for channel in listenerChannelsSnapshot() {
+                try? await channel.close()
+            }
+            do {
+                try await bindListeners()
+                app.urls = reachableURLs()
+                let listeningURLs = app.urls.joined(separator: ", ")
+                serverLogger.info("Rebound; now listening on \(listeningURLs, privacy: .public)")
+            } catch {
+                // Not listening for now; the next network change tries again.
+                listenerChannels.withLockedValue { $0 = [] }
+                app.urls = []
+                serverLogger.error("Failed to rebind listeners: \(String(describing: error), privacy: .public)")
+            }
+        } while lifecycle.withLockedValue({ state -> Bool in
+            if state.rebindRequested && !state.stopping {
+                state.rebindRequested = false
+                return true
+            }
+            state.rebinding = false
+            return false
+        })
     }
 
     private func listenerChannelsSnapshot() -> [Channel] {
@@ -687,6 +701,13 @@ final class ServerEngine: @unchecked Sendable {
     // MARK: - Shutdown
 
     func stop(timeout: Double) async throws {
+        let first = lifecycle.withLockedValue { state -> Bool in
+            let already = state.stopping
+            state.stopping = true
+            return !already
+        }
+        guard first else { return }
+        defer { finish() }
         for serverExtension in app.extensions { await serverExtension.stop() }
         watchdog?.stop()
         bonjourListener?.cancel()

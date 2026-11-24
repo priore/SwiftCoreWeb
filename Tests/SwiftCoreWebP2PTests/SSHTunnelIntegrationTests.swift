@@ -31,6 +31,11 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         builder.usePort(appPort)
         let app = builder.build()
         app.mapGet("/ping") { _ in "pong" }
+        app.mapWebSocket("/ws-echo") { socket in
+            for try await message in socket.messages() {
+                if case .text(let text) = message { try await socket.send("echo: " + text) }
+            }
+        }
         app.mapPost("/echo") { ctx in String(decoding: ctx.request.body, as: UTF8.self) }
         Task { try await app.runAsync() }
         for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
@@ -88,6 +93,19 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         post.httpBody = Data(repeating: 0x61, count: 200_000) // larger than one SSH packet
         let (echo, _) = try await URLSession(configuration: .ephemeral).data(for: post)
         XCTAssertEqual(echo.count, 200_000)
+        await peer.stop()
+    }
+
+    func testWebSocketWorksThroughTheTunnel() async throws {
+        let fixture = try await makeFixture()
+        let peer = try await pairedPeer(fixture)
+        let base = try await peer.start()
+        let task = URLSession(configuration: .ephemeral).webSocketTask(with: URL(string: "ws://127.0.0.1:\(base.port ?? 0)/ws-echo")!)
+        task.resume()
+        try await task.send(.string("hi"))
+        guard case .string(let reply) = try await task.receive() else { return XCTFail("expected text") }
+        XCTAssertEqual(reply, "echo: hi")
+        task.cancel(with: .normalClosure, reason: nil)
         await peer.stop()
     }
 

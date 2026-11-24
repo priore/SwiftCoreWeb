@@ -24,6 +24,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Handlers and the HTTP upgrade path are unchanged.
 
 ### Fixed
+- **WebSocket upgrade no longer crashes the engine.** The 101 now goes through the HTTP encoder, and the frame codec plus a bridge handler are installed in the same event-loop turn as the HTTP handlers' removal (a client's first frame can no longer arrive in between). Pings are answered and a close frame is echoed.
+- **A network change no longer ends `runAsync()`.** Rebinding the listeners used to make the server's wait return, leaving extensions, Bonjour and the watchdog running with no way to stop them; it now waits for `stop()` or for a listener the OS closed on its own, rebinds one at a time, and keeps the server alive (retrying on the next change) when a rebind fails. The watchdog's first reading is a baseline, not a change, so a server on a non-loopback host no longer rebinds right after starting.
 - **A server-initiated close could drop the tail of a response in the tunnel.** The relay now sends what was already written before closing or half-closing a side.
 - **`mapWebSocket(_:auth:_:)` ignored its `auth` requirement.**
   - The route's `AuthRequirement` was stored but never checked, so any client could open a protected WebSocket.

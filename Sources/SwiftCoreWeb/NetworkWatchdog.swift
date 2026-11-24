@@ -18,6 +18,8 @@ final class NetworkWatchdog: @unchecked Sendable {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "SwiftCoreWeb.NetworkWatchdog")
     private var lastInterfaceNames: Set<String> = []
+    /// The first path `NWPathMonitor` reports is the current state, not a change: it only sets the baseline.
+    private var hasBaseline = false
     private let onChange: @Sendable () async -> Void
 
     init(onChange: @escaping @Sendable () async -> Void) {
@@ -28,6 +30,11 @@ final class NetworkWatchdog: @unchecked Sendable {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
             let names = Set(path.availableInterfaces.map(\.name))
+            guard self.hasBaseline else {
+                self.hasBaseline = true
+                self.lastInterfaceNames = names
+                return
+            }
             guard names != self.lastInterfaceNames else { return }
             self.lastInterfaceNames = names
             watchdogLogger.info("Network path changed (interfaces: \(names.sorted().joined(separator: ", "), privacy: .public)) — rebinding listeners")

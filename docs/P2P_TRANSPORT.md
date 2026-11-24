@@ -136,7 +136,5 @@ device uses one token.
   host's key fingerprint in clear, so anyone on the network can recognise the host; it grants no access. The announcement is only a hint: the connection still pins the
   host key. Not covered by a test on a real device, and an address that changes while connected is not noticed until the
   next `start()`.
-- **WebSocket routes (`mapWebSocket`) do not work**, with or without the tunnel: the engine's upgrade crashes. This is a
-  bug in the core, tracked separately.
 - `exemptLoopback` does not apply to the public listener on NIO Transport Services (its client address is `unknown`).
 - tvOS is not supported yet.
