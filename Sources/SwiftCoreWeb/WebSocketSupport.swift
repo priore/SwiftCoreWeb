@@ -19,11 +19,12 @@ public enum WebSocketMessage: Sendable {
 /// A single WebSocket connection, handed to `app.mapWebSocket(_:_:)` handlers
 /// (the realtime and OpenAPI contract design). Wraps the NIO WebSocket frame machinery so handler code is plain
 /// `async`/`await` with no NIO types in the public surface.
-public final class WebSocket: @unchecked Sendable {
+public final class WebSocket: Sendable {
     /// What a transport provides to back a `WebSocket`: the NIO upgrade path (`init(channel:)`) and
     /// any other carrier (an opt-in module, a test double) supply the same three operations.
     public struct Transport: Sendable {
-        /// Incoming messages; completes when the peer or the socket closes. Called once per `messages()`.
+        /// Incoming messages; completes when the peer or the socket closes. Called once per `messages()`;
+        /// a transport may support a single consumer only (the NIO one does), so handlers iterate it once.
         public let messages: @Sendable () -> AsyncThrowingStream<WebSocketMessage, Error>
         /// Delivers one message to the peer.
         public let send: @Sendable (WebSocketMessage) async throws -> Void

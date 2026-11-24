@@ -6,17 +6,18 @@
 //
 
 import XCTest
+import NIOWebSocket
 import NIOConcurrencyHelpers
 @testable import SwiftCoreWeb
 
 final class WebSocketTransportTests: XCTestCase {
     func testCustomTransportCarriesMessagesAndClosesOnce() async throws {
         let sent = NIOLockedValueBox<[WebSocketMessage]>([])
-        let closes = NIOLockedValueBox(0)
+        let closes = NIOLockedValueBox<[WebSocketErrorCode]>([])
         let socket = WebSocket(transport: .init(
             messages: { AsyncThrowingStream { $0.yield(.text("hi")); $0.finish() } },
             send: { message in sent.withLockedValue { $0.append(message) } },
-            close: { _ in closes.withLockedValue { $0 += 1 } }
+            close: { code in closes.withLockedValue { $0.append(code) } }
         ))
 
         var received: [String] = []
@@ -29,7 +30,11 @@ final class WebSocketTransportTests: XCTestCase {
         try await socket.close()
 
         XCTAssertEqual(received, ["hi"])
-        XCTAssertEqual(sent.withLockedValue { $0.count }, 2)
-        XCTAssertEqual(closes.withLockedValue { $0 }, 1)
+        let messages = sent.withLockedValue { $0 }
+        guard messages.count == 2, case .text("echo") = messages[0], case .binary(let data) = messages[1] else {
+            return XCTFail("unexpected messages: \(messages)")
+        }
+        XCTAssertEqual(data, Data([1, 2]))
+        XCTAssertEqual(closes.withLockedValue { $0 }, [.normalClosure])
     }
 }
