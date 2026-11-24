@@ -29,10 +29,15 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
 
     private let continuation: AsyncThrowingStream<WebSocketMessage, Error>.Continuation
     private let stream: AsyncThrowingStream<WebSocketMessage, Error>
-    /// Frames that arrive before a handler asks for `messages()` are dropped: a handler that never reads (a broadcaster)
-    /// must not make the connection pile them up. Touched on the event loop and by the handler's task, hence the lock.
+    /// A client may send right after the 101, before the handler has asked for `messages()`: those frames are kept, up to
+    /// `maxEarlyBytes` / `maxQueuedMessages`, and dropped beyond that, so a handler that never reads (a broadcaster) does
+    /// not make the connection pile them up. Touched on the event loop and by the handler's task, hence the lock.
+    static let maxEarlyBytes = 1 << 20
     private let hasConsumer = NIOLockedValueBox(false)
     // Event loop only.
+    private var earlyMessages = 0
+    private var earlyBytes = 0
+    private var closing = false
     private var fragments: ByteBuffer?
     private var fragmentIsText = false
 
@@ -88,6 +93,7 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = unwrapInboundIn(data)
+        guard !closing else { return } // nothing is answered after a close frame (§5.5.1)
         // RFC 6455 §5.1: a client must mask every frame.
         guard frame.maskKey != nil else { return fail(context, .protocolError) }
         switch frame.opcode {
@@ -102,7 +108,8 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
         case .continuation:
             guard var pending = fragments else { return fail(context, .protocolError) }
             var more = frame.unmaskedData
-            guard pending.readableBytes + more.readableBytes <= Self.maxMessageSize else { return fail(context, .messageTooLarge) }
+            let limit = hasConsumer.withLockedValue({ $0 }) ? Self.maxMessageSize : Self.maxEarlyBytes
+            guard pending.readableBytes + more.readableBytes <= limit else { return fail(context, .messageTooLarge) }
             pending.writeBuffer(&more)
             if frame.fin {
                 fragments = nil
@@ -115,6 +122,8 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
             guard context.channel.isWritable else { return }
             context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .pong, data: frame.unmaskedData)), promise: nil)
         case .connectionClose:
+            guard frame.unmaskedData.readableBytes != 1 else { return fail(context, .protocolError) } // §5.5.1: empty, or a code
+            closing = true
             continuation.finish()
             context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .connectionClose, data: frame.unmaskedData)))
                 .whenComplete { _ in context.close(promise: nil) }
@@ -136,17 +145,28 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
         } else {
             message = .binary(bytes)
         }
-        guard hasConsumer.withLockedValue({ $0 }) else { return }
-        if case .dropped = continuation.yield(message) { fail(context, .policyViolation) }
+        if hasConsumer.withLockedValue({ $0 }) {
+            if case .dropped = continuation.yield(message) { fail(context, .policyViolation) }
+        } else if earlyMessages < Self.maxQueuedMessages, earlyBytes + bytes.count <= Self.maxEarlyBytes {
+            earlyMessages += 1
+            earlyBytes += bytes.count
+            continuation.yield(message)
+        }
     }
 
     /// Closes with `code` after telling the peer why (RFC 6455 §7.4).
     private func fail(_ context: ChannelHandlerContext, _ code: WebSocketErrorCode) {
+        closing = true
         continuation.finish()
         var buffer = context.channel.allocator.buffer(capacity: 2)
         buffer.write(webSocketErrorCode: code)
         context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer)))
             .whenComplete { _ in context.close(promise: nil) }
+    }
+
+    func handlerAdded(context: ChannelHandlerContext) {
+        // Reads must not depend on the HTTP-side async handler further down the pipeline: ask for them from here.
+        context.read()
     }
 
     func channelInactive(context: ChannelHandlerContext) {
@@ -156,8 +176,9 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {
         continuation.finish(throwing: error)
-        if error is NIOWebSocketError {
-            fail(context, .messageTooLarge) // the decoder refuses oversized or malformed lengths
+        if let error = error as? NIOWebSocketError {
+            // Only a length the decoder refuses is "too large"; a fragmented or oversized control frame is a protocol error.
+            if case .invalidFrameLength = error { fail(context, .messageTooLarge) } else { fail(context, .protocolError) }
         } else {
             context.close(promise: nil)
         }

@@ -42,6 +42,8 @@ final class ServerEngine: @unchecked Sendable {
     private let lifecycle = NIOLockedValueBox(Lifecycle())
     /// Completed when the engine has ended (by `stop` or because its listeners went away): what `run()` waits on.
     private let finished: EventLoopPromise<Void>
+    /// Completed when the first `stop()` has fully finished (listeners closed, group shut down).
+    private let stopped: EventLoopPromise<Void>
     private var bonjourListener: NWListener?
     #if canImport(UIKit)
     // ponytail: KeepAwakeController is @MainActor (touches UIApplication);
@@ -71,6 +73,7 @@ final class ServerEngine: @unchecked Sendable {
         self.connectionGate = ConnectionGate(maxConcurrent: app.serverOptions.maxConcurrentConnections)
         self.group = NIOTSEventLoopGroup()
         self.finished = group.next().makePromise(of: Void.self)
+        self.stopped = group.next().makePromise(of: Void.self)
     }
 
     /// Builds, binds, and runs the engine for `app`, suspending until
@@ -659,7 +662,15 @@ final class ServerEngine: @unchecked Sendable {
                 try? await channel.close()
             }
             do {
-                try await bindListeners()
+                // The port of a listener that was just closed can take a moment to be free again.
+                var attempt = 0
+                while true {
+                    do { try await bindListeners(); break } catch {
+                        attempt += 1
+                        guard attempt < 5, !lifecycle.withLockedValue({ $0.stopping }) else { throw error }
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    }
+                }
                 if lifecycle.withLockedValue({ $0.stopping }) { break }
                 app.urls = reachableURLs()
                 let listeningURLs = app.urls.joined(separator: ", ")
@@ -715,10 +726,13 @@ final class ServerEngine: @unchecked Sendable {
         }
         guard first else {
             // Someone else is already stopping: return when that has finished, so the port is really free.
-            try? await finished.futureResult.get()
+            try? await stopped.futureResult.get()
             return
         }
-        defer { finish() }
+        defer {
+            finish()
+            stopped.succeed(())
+        }
         for serverExtension in app.extensions { await serverExtension.stop() }
         watchdog?.stop()
         bonjourListener?.cancel()
