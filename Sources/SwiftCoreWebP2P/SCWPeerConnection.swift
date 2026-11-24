@@ -253,10 +253,12 @@ public final class SCWPeerConnection: Sendable {
         // Where this device looks from the outside, from a port it will also connect from.
         var punch: (port: Int, mine: RendezvousRecord.Candidate)?
         if !skippedRoutes.withLockedValue({ $0.contains(.direct) }),
-           let stun = (try? await rendezvous.candidates(hostFingerprint: hostFingerprint))?.first(where: { $0.kind == "stun" }),
-           let port = await Self.freePort(group: group),
-           let mapped = try? await STUNClient.reflexiveAddress(server: stun.host, port: stun.port, localPort: port, group: group) {
-            punch = (port, .init(kind: "direct", host: mapped.host, port: mapped.port))
+           let stuns = (try? await rendezvous.candidates(hostFingerprint: hostFingerprint))?.filter({ $0.kind == "stun" }), !stuns.isEmpty,
+           let port = await Self.freePort(group: group) {
+            switch await NATProbe.mapping(servers: stuns.map { ($0.host, $0.port) }, localPort: port, group: group) {
+            case .stable(let host, let mapped), .unknown(let host, let mapped): punch = (port, .init(kind: "direct", host: host, port: mapped))
+            case .symmetric, .unreachable: break // a direct connection cannot work: straight to the relay
+            }
         }
         do { try await rendezvous.knock(hostFingerprint: hostFingerprint, deviceKey: deviceKey, candidate: punch?.mine) } catch {
             failure = error

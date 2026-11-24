@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **NAT mapping check** (`P2PRemoteAccess(stunServers:)`): with a second STUN server a device detects a symmetric NAT and skips the direct attempt.
 - **Direct connection across networks (TCP hole punching)** tried before the relay: the host and device learn their public addresses from the TURN server's STUN service and connect to each other at the same time; `PeerRoute.direct`, `TunnelError.directConnectionFailed`. Verified on the loopback only; falls back to the relay.
 - **Pairing without a camera**: `SCWPeerConnection.discoverHosts()` and `pair(code:with:confirm:)` (six-digit code shown by the host, host key confirmed by the user), `P2PHost.openPairing(shortCode:)`; `P2PPairingView` shows the code.
 - **OpenSSH interoperability check** (`scripts/p2p-openssh-interop.sh`): the machine's `ssh` forwards a request through the tunnel with a paired key.

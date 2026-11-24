@@ -69,7 +69,7 @@ final class RemoteAccessPublisher: Sendable {
     /// Opens a connection to a paired device from the tunnel's own port while the device connects to this one: through most
     /// NATs the two crossing attempts make a connection, which is then served like any other. Gives up after a few seconds.
     /// One punch per device at a time, at most four overall, and a knock already acted on is ignored for a minute.
-    private func punch(to candidate: RendezvousRecord.Candidate, from localPort: Int, device: String) {
+    func punch(to candidate: RendezvousRecord.Candidate, from localPort: Int, device: String) {
         let key = device + "|" + candidate.host + ":" + String(candidate.port)
         let allowed = punching.withLockedValue { state -> Bool in
             state.recent = state.recent.filter { $0.value > Date() }
@@ -146,7 +146,7 @@ final class RemoteAccessPublisher: Sendable {
                             var candidates: [RendezvousRecord.Candidate] = [
                                 .init(kind: "relay", host: allocation.relayedHost, port: allocation.relayedPort),
                                 .init(kind: "stun", host: remote.relay.host, port: remote.relay.port),
-                            ]
+                            ] + remote.stunServers.map { .init(kind: "stun", host: $0.host, port: $0.port) }
                             if let direct = mappedAddress.withLockedValue({ $0 }) { candidates.append(direct) }
                             publishedDirect = candidates.contains { $0.kind == "direct" }
                             try await client.publish(candidates, hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint)

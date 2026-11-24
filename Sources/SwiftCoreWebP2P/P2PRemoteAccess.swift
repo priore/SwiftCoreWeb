@@ -66,11 +66,26 @@ public struct P2PRemoteAccess: Sendable {
     }
 
     /// The base URL of an app that mounted `P2PRendezvous`.
+    /// A server that answers STUN over TCP (RFC 8489 Binding), used to learn a public address.
+    public struct STUNServer: Sendable, Equatable {
+        public let host: String
+        public let port: Int
+        public init(host: String, port: Int = 3478) {
+            self.host = host
+            self.port = port
+        }
+    }
+
     public let rendezvous: URL
     public let relay: Relay
+    /// Further STUN servers (at most two are used), besides the relay's own. With a second server a device can tell whether
+    /// its NAT gives the same public address towards different servers: if not (a symmetric NAT) a direct connection cannot
+    /// work and it goes straight to the relay instead of waiting for the attempt to time out.
+    public let stunServers: [STUNServer]
 
-    public init(rendezvous: URL, relay: Relay) {
+    public init(rendezvous: URL, relay: Relay, stunServers: [STUNServer] = []) {
         self.rendezvous = rendezvous
         self.relay = relay
+        self.stunServers = Array(stunServers.prefix(2))
     }
 }
