@@ -18,6 +18,8 @@ final class HostPunchTests: XCTestCase {
         typealias InboundIn = ByteBuffer
         let banner = NIOLockedValueBox("")
         let source = NIOLockedValueBox<Int?>(nil)
+        let closed = NIOLockedValueBox(false)
+        func channelInactive(context: ChannelHandlerContext) { closed.withLockedValue { $0 = true } }
         func channelActive(context: ChannelHandlerContext) { source.withLockedValue { $0 = context.remoteAddress?.port } }
         func channelRead(context: ChannelHandlerContext, data: NIOAny) {
             var bytes = unwrapInboundIn(data)
@@ -49,7 +51,11 @@ final class HostPunchTests: XCTestCase {
         XCTAssertTrue(peer.banner.withLockedValue { $0 }.hasPrefix("SSH-2.0"), "the host speaks SSH as the server on the connection it opened")
         XCTAssertEqual(peer.source.withLockedValue { $0 }, tunnelPort, "it left from the tunnel's own port")
 
+        // Stopping the server ends the sessions it did not accept itself, such as this one.
         await publisher.stop()
+        await server.stop()
+        for _ in 0..<40 where !peer.closed.withLockedValue({ $0 }) { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(peer.closed.withLockedValue { $0 }, "the punched connection is closed with the server")
         try await listener.close()
     }
 }

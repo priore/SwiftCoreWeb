@@ -19,6 +19,8 @@ public final class SSHTunnelServer: Sendable {
     private let registry = ConnectionRegistry()
     private let boundPort = NIOLockedValueBox<Int?>(nil)
     private let stopped = NIOLockedValueBox(false)
+    /// Every connection being served, authenticated or not, so `stop()` can end the ones that are not on this server's own group.
+    private let serving = NIOLockedValueBox<[ObjectIdentifier: Channel]>([:])
     /// The port the tunnel listens on, once started.
     var port: Int? { boundPort.withLockedValue { $0 } }
     private let allowList: TunnelAllowList
@@ -70,7 +72,7 @@ public final class SSHTunnelServer: Sendable {
     /// Fails, leaving the channel for the caller to close, when the host is at capacity.
     func serve(_ channel: Channel) -> EventLoopFuture<Void> {
         if stopped.withLockedValue({ $0 }) { return channel.eventLoop.makeFailedFuture(TunnelError.notConnected) }
-        let pairing = pairing, registry = registry, allowList = allowList, peer = peer
+        let pairing = pairing, registry = registry, allowList = allowList, peer = peer, stopped = stopped
         let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         // Caps the tunnel's total connections (authenticated ones included): the host's capacity, and a bound on
         // what unauthenticated sockets can occupy.
@@ -80,7 +82,12 @@ public final class SSHTunnelServer: Sendable {
             return true
         }
         guard admitted else { return channel.eventLoop.makeFailedFuture(TunnelError.tooManyConnections) }
-        channel.closeFuture.whenComplete { _ in openConnections.withLockedValue { $0 -= 1 } }
+        let serving = serving, key = ObjectIdentifier(channel)
+        serving.withLockedValue { $0[key] = channel }
+        channel.closeFuture.whenComplete { _ in
+            openConnections.withLockedValue { $0 -= 1 }
+            serving.withLockedValue { _ = $0.removeValue(forKey: key) }
+        }
         return channel.eventLoop.makeCompletedFuture {
             let deadline = HandshakeDeadline(channel: channel, timeout: handshakeTimeout)
             let configuration = SSHServerConfiguration(
@@ -88,6 +95,8 @@ public final class SSHTunnelServer: Sendable {
                 userAuthDelegate: PairingAuthDelegate(pairing: pairing, onAuthenticated: { deviceID in
                     deadline.cancel()
                     registry.add(channel, deviceID: deviceID)
+                    // Stopped while this connection was still in its handshake (a relayed or punched one is not on this server's group).
+                    if stopped.withLockedValue({ $0 }) { channel.close(promise: nil) }
                     // Revoked between the check and the registration: closeAll would have missed this connection.
                     if !pairing.isPaired(deviceID: deviceID) { channel.close(promise: nil) }
                 })
@@ -102,7 +111,8 @@ public final class SSHTunnelServer: Sendable {
 
     public func stop() async {
         stopped.withLockedValue { $0 = true }
-        registry.closeEverything() // sessions that came by another way (relay, punched) end with the server
+        registry.closeEverything()
+        for channel in serving.withLockedValue({ Array($0.values) }) { channel.close(promise: nil) } // relayed and punched ones too
         pairing.setRevocationHandler(nil)
         if let channel = listener.withLockedValue({ $0.take() }) { try? await channel.close() }
         try? await group.shutdownGracefully()

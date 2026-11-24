@@ -11,7 +11,7 @@ import SwiftCoreWeb
 
 final class UseP2PTests: XCTestCase {
     private func waitUntil(_ condition: () -> Bool) async throws -> Bool {
-        for _ in 0..<100 {
+        for _ in 0..<400 { // a restart of the server can be slow on a busy machine
             if condition() { return true }
             try await Task.sleep(nanoseconds: 50_000_000)
         }

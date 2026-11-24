@@ -65,7 +65,6 @@ public struct P2PRemoteAccess: Sendable {
         }
     }
 
-    /// The base URL of an app that mounted `P2PRendezvous`.
     /// A server that answers STUN over TCP (RFC 8489 Binding), used to learn a public address.
     public struct STUNServer: Sendable, Equatable {
         public let host: String
@@ -76,6 +75,7 @@ public struct P2PRemoteAccess: Sendable {
         }
     }
 
+    /// The base URL of an app that mounted `P2PRendezvous`.
     public let rendezvous: URL
     public let relay: Relay
     /// Further STUN servers (at most two are used), besides the relay's own. With a second server a device can tell whether

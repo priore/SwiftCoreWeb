@@ -127,19 +127,21 @@ final class RemoteAccessPublisher: Sendable {
             // server that does not answer STUN over TCP would otherwise delay the knocks.
             group.addTask { [self] in
                 while !Task.isCancelled {
+                    var found: RendezvousRecord.Candidate?
                     if let port = server.port,
                        let mapped = try? await STUNClient.reflexiveAddress(server: remote.relay.host, port: remote.relay.port, localPort: port, timeout: .seconds(3)) {
-                        mappedAddress.withLockedValue { $0 = .init(kind: "direct", host: mapped.host, port: mapped.port) }
+                        found = .init(kind: "direct", host: mapped.host, port: mapped.port)
                     }
+                    mappedAddress.withLockedValue { $0 = found } // a lookup that fails withdraws the address instead of keeping a stale one
                     try? await Task.sleep(nanoseconds: UInt64(publishEvery * 1_000_000_000))
                 }
             }
             group.addTask { [self] in
                 var untilPublish: TimeInterval = 0
-                var publishedDirect = false
+                var publishedMapping: RendezvousRecord.Candidate?
                 while !Task.isCancelled {
-                    // Publishes on schedule, and again as soon as the public address is known if the last record lacked it.
-                    if untilPublish <= 0 || (!publishedDirect && mappedAddress.withLockedValue({ $0 }) != nil) {
+                    // Publishes on schedule, and again as soon as the public address becomes known or changes.
+                    if untilPublish <= 0 || mappedAddress.withLockedValue({ $0 }) != publishedMapping {
                         do {
                             // The relay; the TURN server's own address, where a device learns its public address (STUN); and
                             // this host's, learned from the tunnel's own port so a device can aim a direct connection at it.
@@ -148,7 +150,7 @@ final class RemoteAccessPublisher: Sendable {
                                 .init(kind: "stun", host: remote.relay.host, port: remote.relay.port),
                             ] + remote.stunServers.map { .init(kind: "stun", host: $0.host, port: $0.port) }
                             if let direct = mappedAddress.withLockedValue({ $0 }) { candidates.append(direct) }
-                            publishedDirect = candidates.contains { $0.kind == "direct" }
+                            publishedMapping = mappedAddress.withLockedValue { $0 }
                             try await client.publish(candidates, hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint)
                         } catch { remoteLogger.error("Could not publish to the rendezvous: \(String(describing: error), privacy: .public)") }
                         untilPublish = publishEvery
