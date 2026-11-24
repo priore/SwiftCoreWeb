@@ -29,8 +29,8 @@ public struct P2PReassembler: Sendable {
     }
 
     /// Feeds one complete frame. Returns the message when this frame finished it, `nil` when more are needed.
-    /// A throw means the peer broke the protocol: close the connection. (Errors found after the header was
-    /// read also discard that message's partial state; header errors leave state as it was.)
+    /// A throw means the peer broke the protocol: close the connection. (An error after the header was
+    /// read also discards that message's partial state; header errors leave state as it was.)
     public mutating func accept(_ rawFrame: Data) throws -> P2PMessage? {
         let frame = Data(rawFrame) // zero-based indices
         guard frame.count >= P2PFraming.headerSize else { throw P2PFramingError.truncatedFrame }
@@ -48,40 +48,29 @@ public struct P2PReassembler: Sendable {
         // A short non-final fragment would let a peer send unlimited empty frames that never grow the buffer.
         guard isLast || length == P2PFraming.maxFragmentPayload else { throw P2PFramingError.lengthMismatch }
 
+        // Taken out of the dictionary while it is worked on: no copy-on-write of the buffer, and every
+        // error below leaves the message discarded with its bytes already released.
         var partial: Partial
-        if let existing = partials[id] {
+        if let existing = partials.removeValue(forKey: id) {
+            bufferedBytes -= existing.payload.count
             partial = existing
         } else {
-            guard partials.count < maxPartialMessages else { throw P2PFramingError.tooManyPartialMessages }
+            // A single-frame message is never stored, so it needs no free slot.
+            guard isLast || partials.count < maxPartialMessages else { throw P2PFramingError.tooManyPartialMessages }
             partial = Partial(type: type)
         }
-        guard index == partial.nextIndex, type == partial.type else {
-            discard(id)
-            throw P2PFramingError.unexpectedFragment
-        }
-        guard partial.payload.count + length <= P2PFraming.maxMessageSize else {
-            discard(id)
-            throw P2PFramingError.messageTooLarge
-        }
+        guard index == partial.nextIndex, type == partial.type else { throw P2PFramingError.unexpectedFragment }
+        guard partial.payload.count + length <= P2PFraming.maxMessageSize else { throw P2PFramingError.messageTooLarge }
 
         if isLast {
-            partials[id] = nil
-            bufferedBytes -= partial.payload.count
             partial.payload.append(frame[P2PFraming.headerSize...])
             return P2PMessage(type: type, id: id, payload: partial.payload)
         }
-        guard bufferedBytes + length <= maxBufferedBytes else {
-            discard(id)
-            throw P2PFramingError.bufferBudgetExceeded
-        }
+        guard bufferedBytes + partial.payload.count + length <= maxBufferedBytes else { throw P2PFramingError.bufferBudgetExceeded }
         partial.payload.append(frame[P2PFraming.headerSize...])
         partial.nextIndex += 1
-        bufferedBytes += length
+        bufferedBytes += partial.payload.count
         partials[id] = partial
         return nil
-    }
-
-    private mutating func discard(_ id: UInt64) {
-        if let removed = partials.removeValue(forKey: id) { bufferedBytes -= removed.payload.count }
     }
 }

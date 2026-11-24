@@ -27,6 +27,8 @@ import Foundation
 /// - a message is at most 1 MiB, so at most 32 full fragments plus the last;
 /// - fragments of one message arrive in order; frames of different messages may interleave;
 /// - a message id may be reused once its last fragment has been sent;
+/// - a receiver keeps at most 8 unfinished messages and 4 MiB of unfinished payload per connection (single-frame
+///   messages are not counted): a sender interleaves at most that much;
 /// - an unknown version or message type is fatal for the connection (a new type needs a new version).
 public enum P2PFraming {
     public static let version: UInt8 = 1

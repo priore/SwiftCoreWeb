@@ -136,4 +136,32 @@ final class P2PFramingTests: XCTestCase {
         let wire = Data([0xAA, 0xBB]) + frame(last: true, index: 0, payload: Data("ok".utf8))
         XCTAssertEqual(try reassembler.accept(wire.dropFirst(2)), P2PMessage(type: .response, id: 1, payload: Data("ok".utf8)))
     }
+
+    func testSingleFrameMessageIsAcceptedWhenAllPartialSlotsAreTaken() throws {
+        let full = Data(count: P2PFraming.maxFragmentPayload)
+        var reassembler = P2PReassembler(maxPartialMessages: 2)
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 1, index: 0, payload: full)))
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 2, index: 0, payload: full)))
+        XCTAssertEqual(try reassembler.accept(frame(last: true, id: 3, index: 0, payload: Data("x".utf8))),
+                       P2PMessage(type: .response, id: 3, payload: Data("x".utf8)))
+    }
+
+    func testFinalFragmentPastMaxSizeAndBudgetErrorOnExistingIdFreeTheirBytes() throws {
+        let full = Data(count: P2PFraming.maxFragmentPayload)
+        var reassembler = P2PReassembler(maxPartialMessages: 8, maxBufferedBytes: 2 * P2PFraming.maxFragmentPayload)
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 1, index: 0, payload: full)))
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 1, index: 1, payload: full)))
+        XCTAssertThrowsError(try reassembler.accept(frame(last: false, id: 1, index: 2, payload: full))) {
+            XCTAssertEqual($0 as? P2PFramingError, .bufferBudgetExceeded)
+        }
+        // Message 1 is gone and its 64 KiB released: two new partials fit again.
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 2, index: 0, payload: full)))
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 3, index: 0, payload: full)))
+
+        var big = P2PReassembler(maxPartialMessages: 8, maxBufferedBytes: 8 * P2PFraming.maxMessageSize)
+        for index in 0..<32 { XCTAssertNil(try big.accept(frame(last: false, index: UInt32(index), payload: full))) }
+        XCTAssertThrowsError(try big.accept(frame(last: true, index: 32, payload: Data([1])))) {
+            XCTAssertEqual($0 as? P2PFramingError, .messageTooLarge)
+        }
+    }
 }
