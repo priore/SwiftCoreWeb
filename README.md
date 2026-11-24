@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![Swift](https://img.shields.io/badge/swift-6-orange?logo=swift)](https://swift.org)
-[![Platform](https://img.shields.io/badge/platform-iOS%2015%2B-lightgrey)](README.md#requirements)
+[![Platform](https://img.shields.io/badge/platform-iOS%2015%2B%20%7C%20macOS%2011%2B%20%7C%20tvOS%2015%2B-lightgrey)](README.md#requirements)
 [![SwiftNIO](https://img.shields.io/badge/SwiftNIO-2.65-blue)](https://github.com/apple/swift-nio)
 [![Vue](https://img.shields.io/badge/Vue-3-brightgreen?logo=vuedotjs)](https://vuejs.org)
 [![SQLite](https://img.shields.io/badge/SQLite-3-lightblue?logo=sqlite)](https://sqlite.org)
@@ -15,6 +15,35 @@
 [![Star History](https://img.shields.io/badge/⭐-Star%20History-blue)](https://star-history.com/#priore/SwiftCoreWeb&Date)
 
 Your iPhone can run a real web server. SwiftCoreWeb turns any iOS 15+ app into a full HTTP/HTTPS/WebSocket backend, no separate server needed. Same fluent, Minimal-API feel .NET developers already love, done in idiomatic Swift, with **zero runtime reflection**.
+
+---
+
+## Features
+
+**Server**
+- HTTP/1.1 and HTTPS (TLS from a PKCS#12 identity whose password lives in the Keychain), built on SwiftNIO; secure by default (loopback only until you opt in to the LAN).
+- WebSocket and Server-Sent Events routes, with limits on frame and message size, backpressure and a clean close handshake.
+- Static files, single-page-app hosting, byte ranges, file upload and download (including one-time download links).
+- A router that mixes Minimal API closures and macro-based `@Controller`s, with route templates, parameter binding from route, query and body, and per-route body limits.
+- A middleware pipeline: authentication, CORS, security headers, logging, exception handling, rate limiting and cookie sessions.
+- Dependency injection, `ProblemDetails` error bodies, and generated OpenAPI documentation.
+- Lifecycle for iOS apps: keep-awake, scene-phase binding, restart after backgrounding, network-change handling, Bonjour announcement.
+
+**Authentication** — JWT bearer and custom API-key schemes, authorization policies, and signing keys and TLS passwords kept in the Keychain (`SecretStore`). See [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md).
+
+**Front end** — plain HTML, server-rendered templates, zero-build Vue, a full Vite workflow with dev-deploy and live reload, and [Live Pages](docs/web/LIVE_PAGES_GUIDE.md): Vue components wired to Swift event handlers, so a click in the browser runs Swift on the server.
+
+**Peer-to-peer access** (`SwiftCoreWebP2P`, optional) — reach the app from a paired iPhone, iPad, Mac or Apple TV with no open port and no server in between. See [docs/P2P_TRANSPORT.md](docs/P2P_TRANSPORT.md).
+- Standard SSH (Ed25519 keys, `direct-tcpip` forwarding): an ordinary HTTP client works through a loopback URL, and so does OpenSSH.
+- Pairing by QR code, or by a six-digit code with the host key confirmed by eye on devices without a camera; per-device identity, revocation, and per-route control of what a paired device can reach.
+- Found again on the local network by Bonjour; from another network through a direct connection (TCP hole punching) or a TURN relay, with a small rendezvous service you can host on a plain SwiftCoreWeb app. The connection follows network changes and reconnects by itself.
+- Verified on the simulator and the loopback; not yet on real devices or across real NATs.
+
+**Testing** — `TestHost` runs the real production pipeline in memory, with no sockets (`SwiftCoreWebTesting`).
+
+**Optional libraries** — `SwiftCoreWebDashboard` turns the device's screen into a live console for the server; `SwiftCoreWebKit` makes blob and attachment downloads work inside a `WKWebView`; `SwiftCoreWebP2P` as above.
+
+**Platforms** — iOS 15+, macOS 11+, tvOS 15+ (on tvOS there is no screen dimming, battery metrics, pasteboard or WebKit helper).
 
 ---
 
