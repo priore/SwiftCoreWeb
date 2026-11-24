@@ -23,10 +23,10 @@ enum NATProbe {
     }
 
     /// Asks each server from the same local `port` and compares what they report.
-    static func mapping(servers: [(host: String, port: Int)], localPort: Int, group: EventLoopGroup) async -> Mapping {
+    static func mapping(servers: [(host: String, port: Int)], localPort: Int, group: EventLoopGroup, timeout: TimeAmount = .seconds(3)) async -> Mapping {
         var seen: [(host: String, port: Int)] = []
         for server in servers.prefix(3) {
-            if let mapped = try? await STUNClient.reflexiveAddress(server: server.host, port: server.port, localPort: localPort, timeout: .seconds(3), group: group) {
+            if let mapped = try? await STUNClient.reflexiveAddress(server: server.host, port: server.port, localPort: localPort, timeout: timeout, connectTimeout: timeout, group: group) {
                 seen.append(mapped)
             }
         }

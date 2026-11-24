@@ -59,18 +59,19 @@ final class TURNAllocation: Sendable {
     private let credentials: Credentials
     private let control: TURNControlConnection
     private let group: EventLoopGroup
+    private let requestTimeout: TimeAmount
     private let authentication: NIOLockedValueBox<Authentication>
     private let permitted = NIOLockedValueBox<[String]>([])
     private static let maxPermitted = 64
     private let sessions = NIOLockedValueBox<(closed: Bool, channels: [ObjectIdentifier: Channel])>((false, [:]))
     private let refresher = NIOLockedValueBox<Task<Void, Never>?>(nil)
-    private static let requestTimeout: TimeAmount = .seconds(5)
     private static let transport = STUNMessage.Attribute(type: STUNMessage.AttributeType.requestedTransport, value: [6, 0, 0, 0]) // TCP
 
     private init(
         serverHost: String, serverPort: Int, credentials: Credentials, control: TURNControlConnection, group: EventLoopGroup,
-        authentication: Authentication, relayedHost: String, relayedPort: Int
+        authentication: Authentication, relayedHost: String, relayedPort: Int, requestTimeout: TimeAmount
     ) {
+        self.requestTimeout = requestTimeout
         self.serverHost = serverHost
         self.serverPort = serverPort
         self.credentials = credentials
@@ -88,6 +89,7 @@ final class TURNAllocation: Sendable {
     static func allocate(
         server host: String, port: Int, credentials: Credentials,
         refreshEvery: TimeAmount = .seconds(120),
+        requestTimeout: TimeAmount = .seconds(5),
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton
     ) async throws -> TURNAllocation {
         let control = try await TURNControlConnection.connect(host: host, port: port, group: group)
@@ -122,7 +124,7 @@ final class TURNAllocation: Sendable {
 
             let allocation = TURNAllocation(
                 serverHost: host, serverPort: port, credentials: credentials, control: control, group: group,
-                authentication: authentication, relayedHost: relayed.host, relayedPort: relayed.port
+                authentication: authentication, relayedHost: relayed.host, relayedPort: relayed.port, requestTimeout: requestTimeout
             )
             let lifetime = response.attribute(STUNMessage.AttributeType.lifetime).map { STUNMessage.readUInt32($0, 0) } ?? 600
             allocation.startRefreshing(every: min(refreshEvery, .seconds(max(Int64(lifetime) / 2, 5))), lifetime: lifetime)
@@ -161,7 +163,7 @@ final class TURNAllocation: Sendable {
                 ]),
                 credentials, authentication.withLockedValue { $0 }
             )
-            let response = try await binder.send(request, on: channel, timeout: Self.requestTimeout)
+            let response = try await binder.send(request, on: channel, timeout: requestTimeout)
             guard response.messageClass == .success else { throw Failure.refused(code: response.errorCode?.code ?? 0) }
             try await channel.eventLoop.flatSubmit { setUp(channel) }.get() // pipeline changes belong on the channel's own loop
             let id = ObjectIdentifier(channel)
@@ -225,7 +227,7 @@ final class TURNAllocation: Sendable {
     private func authenticated(method: UInt16, attributes: [STUNMessage.Attribute], transactionID: [UInt8]? = nil) async throws -> STUNMessage {
         for attempt in 0..<2 {
             let message = STUNMessage(method: method, messageClass: .request, transactionID: attempt == 0 ? transactionID : nil, attributes: attributes)
-            let response = try await control.send(Self.signed(message, credentials, authentication.withLockedValue { $0 }), timeout: Self.requestTimeout)
+            let response = try await control.send(Self.signed(message, credentials, authentication.withLockedValue { $0 }), timeout: requestTimeout)
             if response.messageClass == .success { return response }
             if attempt == 0, response.errorCode?.code == 438, let nonce = response.attribute(STUNMessage.AttributeType.nonce) {
                 authentication.withLockedValue { $0.nonce = String(decoding: nonce, as: UTF8.self) }

@@ -31,14 +31,23 @@ public final class SCWPeerConnection: Sendable {
         let proxy: LoopbackProxy
         let group: MultiThreadedEventLoopGroup
         var supervisor: Task<Void, Never>?
+        var pathWatcher: Task<Void, Never>?
     }
 
     private let running = NIOLockedValueBox<Running?>(nil)
     private let route = NIOLockedValueBox<PeerRoute?>(nil)
+    /// How long each connection step waits; see `P2PTimeouts`.
+    public let timeouts: P2PTimeouts
+    /// Where network changes come from (replaced in tests).
+    let pathSource = NIOLockedValueBox<any NetworkPathSource>(SystemPathSource())
+    /// Whether there is a network at all, and a counter that moves whenever that changes or the network is replaced, so a
+    /// reconnection that is waiting can start at once.
+    private let network = NIOLockedValueBox<(online: Bool, epoch: Int)>((true, 0))
     /// Routes `start()` must not try (tests that need to prove a specific one).
     let skippedRoutes = NIOLockedValueBox<Set<PeerRoute>>([])
 
-    private init(hostFingerprint: String, record: PeerRecord, deviceKey: Curve25519.Signing.PrivateKey, storage: TunnelSecretStorage) {
+    private init(hostFingerprint: String, record: PeerRecord, deviceKey: Curve25519.Signing.PrivateKey, storage: TunnelSecretStorage, timeouts: P2PTimeouts = .default) {
+        self.timeouts = timeouts
         self.hostFingerprint = hostFingerprint
         self.record = NIOLockedValueBox(record)
         self.storage = storage
@@ -125,12 +134,12 @@ public final class SCWPeerConnection: Sendable {
     }
 
     /// Opens a connection to a host paired earlier. Throws `TunnelError.pairingFailed` if `hostFingerprint` is unknown.
-    public convenience init(hostFingerprint: String, storage: TunnelSecretStorage = KeychainTunnelStorage()) throws {
+    public convenience init(hostFingerprint: String, storage: TunnelSecretStorage = KeychainTunnelStorage(), timeouts: P2PTimeouts = .default) throws {
         guard let text = storage.read(Self.recordName(hostFingerprint)), let data = text.data(using: .utf8),
               let record = try? JSONDecoder().decode(PeerRecord.self, from: data) else { throw TunnelError.pairingFailed }
         // A paired host implies a stored device key: without it the host would refuse this device, so fail here.
         guard storage.read(Self.deviceKeyName) != nil else { throw TunnelError.pairingFailed }
-        self.init(hostFingerprint: hostFingerprint, record: record, deviceKey: try Self.loadOrCreateDeviceKey(storage), storage: storage)
+        self.init(hostFingerprint: hostFingerprint, record: record, deviceKey: try Self.loadOrCreateDeviceKey(storage), storage: storage, timeouts: timeouts)
     }
 
     /// Connects to the host and starts the loopback listener; returns its base URL. A new call restarts the connection.
@@ -164,7 +173,11 @@ public final class SCWPeerConnection: Sendable {
             guard let self else { return }
             await self.keepConnected(proxy: proxy, group: group)
         }
-        running.withLockedValue { $0?.supervisor = supervisor }
+        let watcher = Task { [weak self] in
+            guard let self else { return }
+            await self.watchNetwork()
+        }
+        running.withLockedValue { $0?.supervisor = supervisor; $0?.pathWatcher = watcher }
         return url
     }
 
@@ -190,16 +203,18 @@ public final class SCWPeerConnection: Sendable {
         throw failure
     }
 
-    /// Re-establishes the connection whenever it ends, until `stop()` or until the host refuses this device.
+    /// Re-establishes the connection whenever it ends, until `stop()` or until the host refuses this device. Waits while there
+    /// is no network, and starts again at once when the network comes back or changes.
     private func keepConnected(proxy: LoopbackProxy, group: MultiThreadedEventLoopGroup) async {
-        var delay: UInt64 = 1_000_000_000
+        var delay: TimeInterval = 1
         while !Task.isCancelled {
             guard let current = running.withLockedValue({ $0?.client }) else { return }
             await current.waitUntilClosed()
             guard !Task.isCancelled else { return }
             await current.close()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: delay)
+                if await pause(for: delay) { delay = 1 } // the network changed while waiting: no reason to keep backing off
+                while !network.withLockedValue({ $0.online }), !Task.isCancelled { try? await Task.sleep(nanoseconds: 250_000_000) }
                 guard !Task.isCancelled else { return }
                 do {
                     let (client, via) = try await establish(group: group)
@@ -209,12 +224,43 @@ public final class SCWPeerConnection: Sendable {
                     }
                     proxy.replace(client: client)
                     route.withLockedValue { $0 = via }
-                    delay = 1_000_000_000
+                    delay = 1
                     break
                 } catch {
                     if error as? TunnelError == .authenticationRefused { return } // revoked or wrong key: waiting will not help
-                    delay = min(delay * 2, 30_000_000_000)
+                    delay = min(delay * 2, 30)
                 }
+            }
+        }
+    }
+
+    /// Sleeps for `seconds`, or until the network changes; `true` when it was cut short by a change.
+    private func pause(for seconds: TimeInterval) async -> Bool {
+        let start = network.withLockedValue { $0.epoch }
+        var waited: TimeInterval = 0
+        while waited < seconds, !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            waited += 0.1
+            if network.withLockedValue({ $0.epoch }) != start { return true }
+        }
+        return false
+    }
+
+    /// Follows the network: no attempts while it is gone, an immediate one when it is back, and a reconnection when packets
+    /// now leave through another kind of interface (Wi-Fi to cellular), without waiting for the keepalive to notice.
+    private func watchNetwork() async {
+        var tracker = NetworkPathTracker()
+        for await path in pathSource.withLockedValue({ $0 }).updates() {
+            guard !Task.isCancelled else { return }
+            switch tracker.observe(path) {
+            case .none: break
+            case .lost:
+                network.withLockedValue { $0.online = false }
+            case .restored:
+                network.withLockedValue { state in state.online = true; state.epoch += 1 }
+            case .rerouted:
+                network.withLockedValue { $0.epoch += 1 }
+                await running.withLockedValue { $0?.client }?.close() // the supervisor reconnects
             }
         }
     }
@@ -255,7 +301,7 @@ public final class SCWPeerConnection: Sendable {
         if !skippedRoutes.withLockedValue({ $0.contains(.direct) }),
            let stuns = (try? await rendezvous.candidates(hostFingerprint: hostFingerprint))?.filter({ $0.kind == "stun" }), !stuns.isEmpty,
            let port = await Self.freePort(group: group) {
-            switch await NATProbe.mapping(servers: stuns.map { ($0.host, $0.port) }, localPort: port, group: group) {
+            switch await NATProbe.mapping(servers: stuns.map { ($0.host, $0.port) }, localPort: port, group: group, timeout: timeouts.stunAmount) {
             case .stable(let host, let mapped), .unknown(let host, let mapped): punch = (port, .init(kind: "direct", host: host, port: mapped))
             case .symmetric, .unreachable: break // a direct connection cannot work: straight to the relay
             }
@@ -279,9 +325,9 @@ public final class SCWPeerConnection: Sendable {
                 var target = known
                 target.host = direct.host
                 target.port = direct.port
-                let deadline = Date().addingTimeInterval(6)
+                let deadline = Date().addingTimeInterval(timeouts.directWindow)
                 while Date() < deadline, !Task.isCancelled {
-                    do { return (try await connect(to: target, group: group, localPort: punch.port, connectTimeout: .seconds(2)), .direct) } catch {
+                    do { return (try await connect(to: target, group: group, localPort: punch.port, wideArea: true, connectTimeout: .seconds(2)), .direct) } catch {
                         failure = error
                         if error as? TunnelError == .authenticationRefused { return nil }
                         try? await Task.sleep(nanoseconds: 300_000_000)
@@ -292,7 +338,7 @@ public final class SCWPeerConnection: Sendable {
                 var target = known
                 target.host = candidate.host
                 target.port = candidate.port
-                do { return (try await connect(to: target, group: group), .relay) } catch {
+                do { return (try await connect(to: target, group: group, wideArea: true), .relay) } catch {
                     failure = error
                     if error as? TunnelError == .authenticationRefused { return nil } // refused (revoked, wrong key): retrying cannot change it
                 }
@@ -313,11 +359,13 @@ public final class SCWPeerConnection: Sendable {
         return port
     }
 
-    private func connect(to target: PeerRecord, group: MultiThreadedEventLoopGroup, localPort: Int? = nil, connectTimeout: TimeAmount = .seconds(4)) async throws -> SSHTunnelClient {
+    private func connect(to target: PeerRecord, group: MultiThreadedEventLoopGroup, localPort: Int? = nil, wideArea: Bool = false, connectTimeout: TimeAmount? = nil) async throws -> SSHTunnelClient {
         let pinned = try NIOSSHPublicKey(openSSHPublicKey: target.hostKey)
         let client = SSHTunnelClient(group: group)
         do {
-            try await client.connect(host: target.host, port: target.port, key: deviceKey, credential: .key, localPort: localPort, connectTimeout: connectTimeout) { $0 == pinned }
+            try await client.connect(host: target.host, port: target.port, key: deviceKey, credential: .key, localPort: localPort,
+                                 connectTimeout: connectTimeout ?? (wideArea ? timeouts.wideAreaConnectAmount : timeouts.localConnectAmount),
+                                 handshakeTimeout: .milliseconds(Int64((wideArea ? timeouts.wideAreaHandshake : timeouts.localHandshake) * 1000))) { $0 == pinned }
             return client
         } catch {
             await client.close()
@@ -334,8 +382,10 @@ public final class SCWPeerConnection: Sendable {
         route.withLockedValue { $0 = nil }
         guard let current = running.withLockedValue({ $0.take() }) else { return }
         current.supervisor?.cancel()
+        current.pathWatcher?.cancel()
         await current.client.close() // also wakes the supervisor, which waits for this connection to end
         await current.supervisor?.value
+        await current.pathWatcher?.value
         await current.proxy.stop()
         try? await current.group.shutdownGracefully()
     }

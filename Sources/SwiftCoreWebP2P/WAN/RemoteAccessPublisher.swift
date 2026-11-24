@@ -43,7 +43,8 @@ final class RemoteAccessPublisher: Sendable {
                 do {
                     let issued = remote.relay.credentials()
                     let allocation = try await TURNAllocation.allocate(
-                        server: remote.relay.host, port: remote.relay.port, credentials: .init(username: issued.username, password: issued.password)
+                        server: remote.relay.host, port: remote.relay.port, credentials: .init(username: issued.username, password: issued.password),
+                        requestTimeout: remote.timeouts.turnAmount
                     )
                     retry = 2
                     await serve(allocation)
@@ -129,7 +130,7 @@ final class RemoteAccessPublisher: Sendable {
                 while !Task.isCancelled {
                     var found: RendezvousRecord.Candidate?
                     if let port = server.port,
-                       let mapped = try? await STUNClient.reflexiveAddress(server: remote.relay.host, port: remote.relay.port, localPort: port, timeout: .seconds(3)) {
+                       let mapped = try? await STUNClient.reflexiveAddress(server: remote.relay.host, port: remote.relay.port, localPort: port, timeout: remote.timeouts.stunAmount, connectTimeout: remote.timeouts.stunAmount) {
                         found = .init(kind: "direct", host: mapped.host, port: mapped.port)
                     }
                     mappedAddress.withLockedValue { $0 = found } // a lookup that fails withdraws the address instead of keeping a stale one

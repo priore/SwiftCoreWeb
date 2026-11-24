@@ -82,10 +82,13 @@ public struct P2PRemoteAccess: Sendable {
     /// its NAT gives the same public address towards different servers: if not (a symmetric NAT) a direct connection cannot
     /// work and it goes straight to the relay instead of waiting for the attempt to time out.
     public let stunServers: [STUNServer]
+    /// How long the host waits for the TURN and STUN servers.
+    public let timeouts: P2PTimeouts
 
-    public init(rendezvous: URL, relay: Relay, stunServers: [STUNServer] = []) {
+    public init(rendezvous: URL, relay: Relay, stunServers: [STUNServer] = [], timeouts: P2PTimeouts = .default) {
         self.rendezvous = rendezvous
         self.relay = relay
         self.stunServers = Array(stunServers.prefix(2))
+        self.timeouts = timeouts
     }
 }

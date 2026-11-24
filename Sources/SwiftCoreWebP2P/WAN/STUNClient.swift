@@ -28,13 +28,14 @@ enum STUNClient {
         port: Int,
         localPort: Int? = nil,
         timeout: TimeAmount = .seconds(5),
+        connectTimeout: TimeAmount = .seconds(3),
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton
     ) async throws -> (host: String, port: Int) {
         let request = STUNMessage(method: STUNMessage.Method.binding, messageClass: .request)
         let loop = group.next()
         let answer = loop.makePromise(of: STUNMessage.self)
 
-        var bootstrap = ClientBootstrap(group: loop).connectTimeout(.seconds(3)).channelInitializer { channel in
+        var bootstrap = ClientBootstrap(group: loop).connectTimeout(connectTimeout).channelInitializer { channel in
             channel.eventLoop.makeCompletedFuture {
                 try channel.pipeline.syncOperations.addHandler(STUNResponseHandler(promise: answer, transactionID: request.transactionID))
             }

@@ -36,12 +36,13 @@ final class SSHTunnelClient: Sendable {
         credential: TunnelCredential,
         localPort: Int? = nil,
         connectTimeout: TimeAmount = .seconds(4),
+        handshakeTimeout: TimeAmount = .seconds(15),
         trustedHostKey: @escaping @Sendable (NIOSSHPublicKey) async -> Bool
     ) async throws {
         let privateKey = NIOSSHPrivateKey(ed25519Key: key)
         let authenticated = eventLoop.makePromise(of: Void.self)
         // Never wait forever for a host that accepts the socket but does not finish the handshake.
-        let deadline = eventLoop.scheduleTask(in: .seconds(15)) { authenticated.fail(TunnelError.notConnected) }
+        let deadline = eventLoop.scheduleTask(in: handshakeTimeout) { authenticated.fail(TunnelError.notConnected) }
         defer { deadline.cancel() }
         var bootstrap = ClientBootstrap(group: eventLoop)
             // An address that does not answer must not hold up the next way of reaching the host.

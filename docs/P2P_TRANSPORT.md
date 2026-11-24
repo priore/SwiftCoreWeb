@@ -187,11 +187,21 @@ device uses one token.
 - On iOS the Keychain items are written with the default accessibility (readable while unlocked). A host that must
   start while the device is locked needs a different accessibility class, which `SecretStore` does not set yet.
 
+## When the network is not steady
+
+`SCWPeerConnection` watches the system's network path (`NWPathMonitor`). When the device moves from Wi-Fi to cellular (or the other way) it drops the connection in use and reconnects at once, without waiting for TCP keepalive to notice. With no network it stops trying and resumes the moment the network is back, with the backoff reset.
+
+How long each step waits is `P2PTimeouts`: short on the local network (4 s to connect, 15 s for the SSH handshake), wider across the internet (10 s and 30 s), 6 s for a direct attempt, 5 s for a STUN lookup, 8 s per TURN request. Pass your own to `SCWPeerConnection(hostFingerprint:storage:timeouts:)` and, on the host, to `P2PRemoteAccess(timeouts:)`.
+
+Retries are made only where repeating cannot do harm: publishing the host record, reading it and knocking (up to three attempts, 0.5 s and 1 s apart, on network errors, `429` and `5xx`). Never retried: pairing (the token is one-time and each try uses one of its five attempts), collecting knocks (it empties them), and the HTTP requests your app sends through the tunnel (a repeated `POST` could repeat its effect: that is for the app to decide).
+
 ## Standard SSH
 
 The tunnel is plain SSH, so a standard client works once a device is paired: with that device's key and the host key pinned in `known_hosts`, `ssh -p <tunnel port> -W 127.0.0.1:<app port> user@host` forwards to the app, and any other destination is refused. `scripts/p2p-openssh-interop.sh` checks this against the OpenSSH `ssh` of the machine (it pairs a device in a test, writes its key, and runs `ssh`).
 
 ## Limits
+
+- The network observer tells interface *kinds* apart (Wi-Fi, cellular, wired). A change of access point on the same Wi-Fi interface is not seen by it; the connection then ends by TCP keepalive or when its socket closes. Not tried on a real radio.
 
 - Liveness of a connection is checked with TCP keepalive (a vanished peer is noticed in about a minute), not with an SSH-level keepalive: `swift-nio-ssh` offers no keepalive request, and the TCP one covers a peer that disappeared; an intermediary that keeps the TCP connection open but forwards nothing is not detected.
 
