@@ -68,9 +68,15 @@ final class CredentialAuthDelegate: NIOSSHClientUserAuthenticationDelegate {
 
 /// Client side: trusts only the host key the peer was paired with (pinning).
 struct PinnedHostKeyDelegate: NIOSSHClientServerAuthenticationDelegate {
-    let isTrusted: @Sendable (NIOSSHPublicKey) -> Bool
+    /// May wait for the user (a fingerprint confirmation) before answering.
+    let isTrusted: @Sendable (NIOSSHPublicKey) async -> Bool
 
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
-        isTrusted(hostKey) ? validationCompletePromise.succeed(()) : validationCompletePromise.fail(TunnelError.untrustedHostKey)
+        let isTrusted = isTrusted
+        let promiseBox = UncheckedSendableBox(validationCompletePromise)
+        let keyBox = UncheckedSendableBox(hostKey)
+        Task {
+            if await isTrusted(keyBox.value) { promiseBox.value.succeed(()) } else { promiseBox.value.fail(TunnelError.untrustedHostKey) }
+        }
     }
 }

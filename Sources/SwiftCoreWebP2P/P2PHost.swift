@@ -28,11 +28,12 @@ public final class P2PHost: Sendable {
 
     /// Opens a pairing session and returns what to show as a QR code. `host` is the address the other device will connect
     /// to: an address from `LocalAddresses.ipv4()`, or the machine's Bonjour name. `nil` (and no session opened) when the
-    /// server is not running, peer-to-peer is disabled, or `host` is not a valid address.
-    public func openPairing(host: String, name: String? = nil, validFor lifetime: TimeInterval = 120) -> PairingPayload? {
+    /// server is not running, peer-to-peer is disabled, or `host` is not a valid address. With `shortCode` the token is a
+    /// six-digit code that a device without a camera can type (`SCWPeerConnection.pair(code:with:confirm:)`).
+    public func openPairing(host: String, name: String? = nil, validFor lifetime: TimeInterval = 120, shortCode: Bool = false) -> PairingPayload? {
         guard let pairing, let port = tunnel?.tunnelPort, let appPort = tunnel?.appPort,
               PairingPayload(host: host, port: port, appPort: appPort, token: "-", hostKeyFingerprint: "-") != nil else { return nil }
-        pairing.openPairing(validFor: lifetime)
+        pairing.openPairing(validFor: lifetime, codeDigits: shortCode ? 6 : nil)
         return pairing.payload(host: host, port: port, appPort: appPort, name: name, rendezvous: tunnel?.remote?.rendezvous)
     }
 }

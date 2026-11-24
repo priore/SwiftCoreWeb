@@ -75,6 +75,42 @@ public final class SCWPeerConnection: Sendable {
         return SCWPeerConnection(hostFingerprint: expected, record: record, deviceKey: deviceKey, storage: storage)
     }
 
+    /// The hosts announcing themselves on the local network, for a device that pairs by typing a code (no camera).
+    public static func discoverHosts(timeout: TimeInterval = 3) async -> [DiscoveredHost] {
+        await PeerDiscovery.browse(timeout: timeout)
+    }
+
+    /// Pairs with `host` using the six-digit code its screen shows, without a scanned QR code. The host key does not arrive
+    /// out of band here, so before anything secret is sent `confirm` receives the short fingerprint of the key the host
+    /// really presents: show it and let the user compare it with the one on the host's screen. Only if `confirm` returns
+    /// `true` is the code sent. Fails with `TunnelError.untrustedHostKey` when it returns `false`.
+    public static func pair(
+        code: String, with host: DiscoveredHost, rendezvous: URL? = nil, storage: TunnelSecretStorage = KeychainTunnelStorage(),
+        confirm: @escaping @Sendable (_ shortFingerprint: String) async -> Bool
+    ) async throws -> SCWPeerConnection {
+        let deviceKey = try loadOrCreateDeviceKey(storage)
+        let seenHostKey = NIOLockedValueBox<NIOSSHPublicKey?>(nil)
+        let client = SSHTunnelClient()
+        do {
+            try await client.connect(host: host.host, port: host.port, key: deviceKey, credential: .pairing(token: code)) { key in
+                guard await confirm(TunnelFingerprint.short(TunnelFingerprint.of(key))) else { return false }
+                seenHostKey.withLockedValue { $0 = key }
+                return true
+            }
+        } catch {
+            await client.close()
+            throw error
+        }
+        await client.close()
+        guard let hostKey = seenHostKey.withLockedValue({ $0 }) else { throw TunnelError.untrustedHostKey }
+        let fingerprint = TunnelFingerprint.of(hostKey)
+        let record = PeerRecord(host: host.host, port: host.port, appPort: host.appPort, hostKey: String(openSSHPublicKey: hostKey), name: host.name, rendezvous: rendezvous?.absoluteString)
+        guard let text = try String(data: JSONEncoder().encode(record), encoding: .utf8), storage.write(text, forKey: recordName(fingerprint)) else {
+            throw TunnelError.storageUnavailable
+        }
+        return SCWPeerConnection(hostFingerprint: fingerprint, record: record, deviceKey: deviceKey, storage: storage)
+    }
+
     /// Opens a connection to a host paired earlier. Throws `TunnelError.pairingFailed` if `hostFingerprint` is unknown.
     public convenience init(hostFingerprint: String, storage: TunnelSecretStorage = KeychainTunnelStorage()) throws {
         guard let text = storage.read(Self.recordName(hostFingerprint)), let data = text.data(using: .utf8),

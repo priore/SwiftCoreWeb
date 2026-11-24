@@ -70,7 +70,7 @@ final class P2PTunnelExtension: ServerExtension {
         if remembered != port { storage.write(String(port), forKey: Self.portKey) }
         servedAppPort.withLockedValue { $0 = ingress.port }
         servedPeer.withLockedValue { $0 = peer }
-        let advertiser = BonjourAdvertiser(name: name, type: Self.bonjourType, port: port, txt: [PeerDiscovery.fingerprintKey: pairing.hostFingerprint])
+        let advertiser = BonjourAdvertiser(name: name, type: Self.bonjourType, port: port, txt: [PeerDiscovery.fingerprintKey: pairing.hostFingerprint, PeerDiscovery.appPortKey: String(ingress.port)])
         if advertiser == nil { p2pLogger.error("Bonjour announcement could not start") }
         let publisher = remote.map { RemoteAccessPublisher(remote: $0, pairing: pairing, server: server) }
         publisher?.start()

@@ -77,8 +77,11 @@ public final class PairingManager: Sendable {
 
     /// Opens a pairing session and returns its token, replacing any session already open.
     @discardableResult
-    public func openPairing(validFor lifetime: TimeInterval = 120, maxAttempts: Int = 5) -> String {
-        let token = Self.makeToken()
+    ///
+    /// `codeDigits` makes the token a number of that many digits (a code to type on a device without a camera) instead of a
+    /// long random string; with `maxAttempts` guesses per session a six-digit code is guessed with probability 5 in a million.
+    public func openPairing(validFor lifetime: TimeInterval = 120, maxAttempts: Int = 5, codeDigits: Int? = nil) -> String {
+        let token = codeDigits.map { Self.makeCode(digits: $0) } ?? Self.makeToken()
         let session = Session(token: token, expiresAt: now().addingTimeInterval(lifetime), attemptsLeft: maxAttempts)
         state.withLockedValue { $0.session = session }
         return token
@@ -205,6 +208,14 @@ public final class PairingManager: Sendable {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
+
+    private static func makeCode(digits: Int) -> String {
+        let count = min(max(digits, 4), 9)
+        let limit = (0..<count).reduce(1) { value, _ in value * 10 }
+        var generator = SystemRandomNumberGenerator()
+        let number = Int.random(in: 0..<limit, using: &generator)
+        return String(repeating: "0", count: count - String(number).count) + String(number)
+    }
 
     private static func makeToken() -> String {
         var generator = SystemRandomNumberGenerator()

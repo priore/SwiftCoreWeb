@@ -34,7 +34,7 @@ final class SSHTunnelClient: Sendable {
         port: Int,
         key: Curve25519.Signing.PrivateKey,
         credential: TunnelCredential,
-        trustedHostKey: @escaping @Sendable (NIOSSHPublicKey) -> Bool
+        trustedHostKey: @escaping @Sendable (NIOSSHPublicKey) async -> Bool
     ) async throws {
         let privateKey = NIOSSHPrivateKey(ed25519Key: key)
         let authenticated = eventLoop.makePromise(of: Void.self)

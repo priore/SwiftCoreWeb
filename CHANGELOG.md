@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Pairing without a camera**: `SCWPeerConnection.discoverHosts()` and `pair(code:with:confirm:)` (six-digit code shown by the host, host key confirmed by the user), `P2PHost.openPairing(shortCode:)`; `P2PPairingView` shows the code.
+- **OpenSSH interoperability check** (`scripts/p2p-openssh-interop.sh`): the machine's `ssh` forwards a request through the tunnel with a paired key.
 - **`SCWPeerConnection` reconnects by itself** on the same loopback URL when the SSH connection drops, and TCP keepalive notices a vanished peer in about a minute.
 - **`P2PPairingView`**: a SwiftUI pairing screen for the host (QR code, countdown, host key fingerprint, paired devices with revoke) that works on iOS, macOS and tvOS.
 - **tvOS 15+ support** for `SwiftCoreWeb`, `SwiftCoreWebDashboard` and `SwiftCoreWebP2P` (no screen dimming, battery metrics, pasteboard or `Process`-based zip deploy on tvOS; `SwiftCoreWebKit` is empty there). CI builds for tvOS.

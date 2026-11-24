@@ -49,6 +49,10 @@ public struct P2PPairingView: View {
                     .background(Color.white) // a QR code needs a light margin to scan, also in dark mode
                 Text("Scan with the other device. Valid for \(max(0, Int(expires.timeIntervalSince(now)))) s.")
                     .font(.headline)
+                Text(Self.spaced(payload.token))
+                    .font(.system(size: 44, weight: .semibold, design: .monospaced))
+                Text("or type this code on a device without a camera")
+                    .foregroundStyle(.secondary)
                 Text("Host key  \(Self.shortFingerprint(payload.hostKeyFingerprint))")
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -84,7 +88,7 @@ public struct P2PPairingView: View {
 
     private func open() {
         let target = address ?? LocalAddresses.ipv4().first ?? "127.0.0.1"
-        payload = host.openPairing(host: target, name: name, validFor: lifetime)
+        payload = host.openPairing(host: target, name: name, validFor: lifetime, shortCode: true)
         expires = Date().addingTimeInterval(lifetime)
         now = Date()
     }
@@ -95,9 +99,13 @@ public struct P2PPairingView: View {
     }
 
     /// `SHA256:AbCd…` as its first 12 characters after the prefix, for a comparison by eye.
-    static func shortFingerprint(_ fingerprint: String) -> String {
-        String(fingerprint.replacingOccurrences(of: "SHA256:", with: "").prefix(12))
+    /// `123456` as `123 456`.
+    static func spaced(_ code: String) -> String {
+        guard code.count == 6, code.allSatisfy(\.isNumber) else { return code }
+        return code.prefix(3) + " " + code.suffix(3)
     }
+
+    static func shortFingerprint(_ fingerprint: String) -> String { TunnelFingerprint.short(fingerprint) }
 
     private static let context = CIContext()
 

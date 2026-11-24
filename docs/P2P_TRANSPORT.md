@@ -136,6 +136,20 @@ What protects pairing:
 - The token is random (128 bit), **single use**, expires (120 s by default) and allows a few wrong tries.
 - A pairing session exists only while the user has opened one. Outside it, only already paired keys can connect.
 
+## Pair without a camera (Apple TV as a client)
+
+A device that cannot scan a QR code lists the hosts announcing themselves, takes the six-digit code from the host's screen and confirms the host key by eye:
+
+```swift
+let hosts = await SCWPeerConnection.discoverHosts()          // [DiscoveredHost]: name, address, key fingerprint (a hint)
+let peer = try await SCWPeerConnection.pair(code: typedCode, with: hosts[0]) { shortFingerprint in
+    // Show `shortFingerprint` and ask: "does the host's screen show the same?"
+    await userConfirmed()
+}
+```
+
+On the host, `P2PPairingView` shows the code under the QR code (or `openPairing(host:shortCode: true)`). The QR code carries the host key out of band; here there is no such channel, so the confirmation is what stops an impostor: the code is sent only after `confirm` returns `true`, and the connection is then to the key the user compared. The code is valid for 120 seconds and five guesses. Pairing this way does not carry the rendezvous address, so remote access needs `rendezvous:` passed to `pair` or a QR pairing.
+
 ## Manage devices
 
 ```swift
@@ -185,4 +199,4 @@ The tunnel is plain SSH, so a standard client works once a device is paired: wit
   needs the same `NSBonjourServices` and `NSLocalNetworkUsageDescription` entries as the host. The announcement carries the
   host's key fingerprint in clear, so anyone on the network can recognise the host; it grants no access. The announcement is only a hint: the connection still pins the
   host key. Not covered by a test on a real device, A dropped connection (network change, host restart) is noticed within about a minute (TCP keepalive) or at once when the socket closes, and `SCWPeerConnection` reconnects on the same loopback URL, trying the same routes as `start()`; requests made in between fail.
-- tvOS: the core, the dashboard and `SwiftCoreWebP2P` build for tvOS 15+ and the P2P and core tests pass on the Apple TV simulator. On tvOS there is no screen dimming, battery, pasteboard or WebKit helper (those parts are no-ops or absent). Not tried on a real Apple TV, and a tvOS device acting as the *client* cannot scan a QR (no camera) and typing a code is not built: use the Apple TV as the host (`P2PPairingView`) and scan from the phone.
+- tvOS: the core, the dashboard and `SwiftCoreWebP2P` build for tvOS 15+ and the P2P and core tests pass on the Apple TV simulator. On tvOS there is no screen dimming, battery, pasteboard or WebKit helper (those parts are no-ops or absent). Not tried on a real Apple TV, an Apple TV as a client pairs with the six-digit code (see above).
