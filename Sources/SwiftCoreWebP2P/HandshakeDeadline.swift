@@ -10,7 +10,7 @@ import NIOCore
 
 /// Closes `channel` if it has not authenticated within `timeout`, so a socket that never speaks (or never proves a key)
 /// cannot hold a slot forever. The server does not receive an authentication event in its pipeline, so the auth delegate
-/// calls `cancel()` when it accepts the peer.
+/// reports acceptance (`onAuthenticated`), which cancels the deadline.
 final class HandshakeDeadline: Sendable {
     private let scheduled: NIOLockedValueBox<Scheduled<Void>?>
 

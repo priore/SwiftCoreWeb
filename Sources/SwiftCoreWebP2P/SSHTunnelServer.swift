@@ -47,6 +47,8 @@ public final class SSHTunnelServer: Sendable {
         let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            // A peer that vanishes without a FIN (a phone changing network) is eventually detected and frees its slot.
+            .childChannelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
             .childChannelInitializer { channel in
                 // Caps the tunnel's total connections (authenticated ones included): the host's capacity, and a bound on
                 // what unauthenticated sockets can occupy.
