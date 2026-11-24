@@ -12,12 +12,12 @@ import NIOPosix
 import NIOSSH
 
 /// One authenticated SSH connection to a host, over which forwarded channels are opened.
-public final class SSHTunnelClient: Sendable {
+final class SSHTunnelClient: Sendable {
     let group: EventLoopGroup
     let eventLoop: EventLoop
     private let connection = NIOLockedValueBox<Channel?>(nil)
 
-    public init() {
+    init() {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         self.group = group
         self.eventLoop = group.next()
@@ -25,11 +25,11 @@ public final class SSHTunnelClient: Sendable {
 
     /// Connects and waits for authentication to finish. Fails when the host key is not `trustedHostKey` or the server
     /// refuses `key`.
-    public func connect(
+    func connect(
         host: String,
         port: Int,
-        username: String,
         key: Curve25519.Signing.PrivateKey,
+        credential: TunnelCredential,
         trustedHostKey: @escaping @Sendable (NIOSSHPublicKey) -> Bool
     ) async throws {
         let privateKey = NIOSSHPrivateKey(ed25519Key: key)
@@ -41,7 +41,7 @@ public final class SSHTunnelClient: Sendable {
             .channelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let configuration = SSHClientConfiguration(
-                        userAuthDelegate: PrivateKeyAuthDelegate(username: username, key: privateKey),
+                        userAuthDelegate: CredentialAuthDelegate(key: privateKey, credential: credential),
                         serverAuthDelegate: PinnedHostKeyDelegate(isTrusted: trustedHostKey)
                     )
                     try channel.pipeline.syncOperations.addHandler(NIOSSHHandler(role: .client(configuration), allocator: channel.allocator, inboundChildChannelInitializer: nil))
@@ -87,7 +87,7 @@ public final class SSHTunnelClient: Sendable {
         return try await promise.futureResult.get()
     }
 
-    public func close() async {
+    func close() async {
         if let channel = connection.withLockedValue({ $0.take() }) { try? await channel.close() }
         try? await (group as? MultiThreadedEventLoopGroup)?.shutdownGracefully()
     }

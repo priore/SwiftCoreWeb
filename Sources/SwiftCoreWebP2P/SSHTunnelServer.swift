@@ -14,9 +14,9 @@ import NIOSSH
 /// Accepts SSH connections from authorized peers and forwards each `direct-tcpip` channel to the allow-listed
 /// destination (the local SCW listener). Nothing else is served: no shell, no exec, no other destinations.
 public final class SSHTunnelServer: Sendable {
-    private let hostKey: NIOSSHPrivateKey
+    private let pairing: PairingManager
+    private let registry = ConnectionRegistry()
     private let allowList: TunnelAllowList
-    private let isAuthorized: @Sendable (NIOSSHPublicKey) -> Bool
     private let handshakeTimeout: TimeAmount
     private let maxConnections: Int
     private let openConnections = NIOLockedValueBox(0)
@@ -24,26 +24,21 @@ public final class SSHTunnelServer: Sendable {
     private let listener = NIOLockedValueBox<Channel?>(nil)
 
     public init(
-        hostKey: Curve25519.Signing.PrivateKey,
+        pairing: PairingManager,
         allowList: TunnelAllowList,
         handshakeTimeout: TimeAmount = .seconds(10),
-        maxConnections: Int = 64,
-        isAuthorized: @escaping @Sendable (NIOSSHPublicKey) -> Bool
+        maxConnections: Int = 64
     ) {
         self.handshakeTimeout = handshakeTimeout
         self.maxConnections = maxConnections
-        self.hostKey = NIOSSHPrivateKey(ed25519Key: hostKey)
+        self.pairing = pairing
         self.allowList = allowList
-        self.isAuthorized = isAuthorized
     }
-
-    /// The public key a client pins when pairing.
-    public var hostPublicKey: NIOSSHPublicKey { hostKey.publicKey }
 
     /// Starts listening and returns the bound port (`port: 0` picks a free one).
     @discardableResult
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
-        let hostKey = hostKey, allowList = allowList, isAuthorized = isAuthorized
+        let pairing = pairing, registry = registry, allowList = allowList
         let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -62,8 +57,11 @@ public final class SSHTunnelServer: Sendable {
                 return channel.eventLoop.makeCompletedFuture {
                     let deadline = HandshakeDeadline(channel: channel, timeout: handshakeTimeout)
                     let configuration = SSHServerConfiguration(
-                        hostKeys: [hostKey],
-                        userAuthDelegate: PublicKeyAuthDelegate(isAuthorized: isAuthorized, onAuthenticated: { deadline.cancel() })
+                        hostKeys: [pairing.hostPrivateKey],
+                        userAuthDelegate: PairingAuthDelegate(pairing: pairing, onAuthenticated: { deviceID in
+                            deadline.cancel()
+                            registry.add(channel, deviceID: deviceID)
+                        })
                     )
                     try channel.pipeline.syncOperations.addHandler(
                         NIOSSHHandler(role: .server(configuration), allocator: channel.allocator) { child, channelType in
@@ -73,12 +71,14 @@ public final class SSHTunnelServer: Sendable {
                 }
             }
         let channel = try await bootstrap.bind(host: host, port: port).get()
+        pairing.setRevocationHandler { [registry] deviceID in registry.closeAll(deviceID: deviceID) }
         listener.withLockedValue { $0 = channel }
         guard let bound = channel.localAddress?.port else { throw TunnelError.notConnected }
         return bound
     }
 
     public func stop() async {
+        pairing.setRevocationHandler(nil)
         if let channel = listener.withLockedValue({ $0.take() }) { try? await channel.close() }
         try? await group.shutdownGracefully()
     }

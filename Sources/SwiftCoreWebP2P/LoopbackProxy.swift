@@ -11,19 +11,19 @@ import NIOPosix
 
 /// Listens on `127.0.0.1` and forwards every accepted connection through the tunnel to `destination`, so any HTTP
 /// client can talk to the remote SCW by pointing at `http://127.0.0.1:<port>`.
-public final class LoopbackProxy: Sendable {
+final class LoopbackProxy: Sendable {
     private let client: SSHTunnelClient
     private let destination: TunnelAllowList
     private let listener = NIOLockedValueBox<Channel?>(nil)
 
-    public init(client: SSHTunnelClient, destination: TunnelAllowList) {
+    init(client: SSHTunnelClient, destination: TunnelAllowList) {
         self.client = client
         self.destination = destination
     }
 
     /// Starts listening and returns the loopback port (`port: 0` picks a free one).
     @discardableResult
-    public func start(port: Int = 0) async throws -> Int {
+    func start(port: Int = 0) async throws -> Int {
         let client = client, destination = destination
         let bootstrap = ServerBootstrap(group: client.eventLoop)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -54,7 +54,7 @@ public final class LoopbackProxy: Sendable {
         return bound
     }
 
-    public func stop() async {
+    func stop() async {
         if let channel = listener.withLockedValue({ $0.take() }) { try? await channel.close() }
     }
 }

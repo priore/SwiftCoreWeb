@@ -14,18 +14,18 @@ import NIOSSH
 import SwiftCoreWeb
 @testable import SwiftCoreWebP2P
 
-/// A real SCW app on the loopback, an SSH tunnel server in front of it, a client and a loopback proxy: a plain
-/// `URLSession` talks to the app through the tunnel.
+/// A real SCW app on the loopback, an SSH tunnel server in front of it, and paired clients: a plain `URLSession`
+/// talks to the app through the tunnel.
 final class SSHTunnelIntegrationTests: XCTestCase {
     private struct Fixture {
         let app: WebApplication
         let appPort: Int
+        let pairing: PairingManager
         let server: SSHTunnelServer
         let serverPort: Int
-        let clientKey: Curve25519.Signing.PrivateKey
     }
 
-    private func makeFixture(authorize: Bool = true, handshakeTimeout: TimeAmount = .seconds(10), maxConnections: Int = 64) async throws -> Fixture {
+    private func makeFixture(handshakeTimeout: TimeAmount = .seconds(10), maxConnections: Int = 64) async throws -> Fixture {
         let appPort = Int.random(in: 30_000..<60_000)
         let builder = WebApplication.createBuilder()
         builder.usePort(appPort)
@@ -35,25 +35,11 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         Task { try await app.runAsync() }
         for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
 
-        let clientKey = Curve25519.Signing.PrivateKey()
-        let authorizedKey = NIOSSHPrivateKey(ed25519Key: clientKey).publicKey
-        let server = SSHTunnelServer(
-            hostKey: Curve25519.Signing.PrivateKey(),
-            allowList: TunnelAllowList(port: appPort),
-            handshakeTimeout: handshakeTimeout,
-            maxConnections: maxConnections,
-            isAuthorized: { authorize && $0 == authorizedKey }
-        )
-        let fixture = Fixture(app: app, appPort: appPort, server: server, serverPort: try await server.start(host: "127.0.0.1"), clientKey: clientKey)
+        let pairing = try PairingManager(storage: InMemoryTunnelStorage())
+        let server = SSHTunnelServer(pairing: pairing, allowList: TunnelAllowList(port: appPort), handshakeTimeout: handshakeTimeout, maxConnections: maxConnections)
+        let fixture = Fixture(app: app, appPort: appPort, pairing: pairing, server: server, serverPort: try await server.start(host: "127.0.0.1"))
         addTeardownBlock { await Self.stop(fixture) } // also runs when a step in between throws
         return fixture
-    }
-
-    private func connectedClient(_ fixture: Fixture) async throws -> SSHTunnelClient {
-        let client = SSHTunnelClient()
-        let hostKey = fixture.server.hostPublicKey
-        try await client.connect(host: "127.0.0.1", port: fixture.serverPort, username: "device", key: fixture.clientKey, trustedHostKey: { $0 == hostKey })
-        return client
     }
 
     private static func stop(_ fixture: Fixture) async {
@@ -61,31 +47,54 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         try? await fixture.app.stopAsync()
     }
 
-    func testGetAndPostThroughTheTunnelWithAPlainURLSession() async throws {
-        let fixture = try await makeFixture()
-        let client = try await connectedClient(fixture)
-        let proxy = LoopbackProxy(client: client, destination: TunnelAllowList(port: fixture.appPort))
-        let proxyPort = try await proxy.start()
+    /// Opens a pairing session and returns the payload a device would scan.
+    private func payload(_ fixture: Fixture) throws -> PairingPayload {
+        fixture.pairing.openPairing()
+        return try XCTUnwrap(fixture.pairing.payload(host: "127.0.0.1", port: fixture.serverPort, appPort: fixture.appPort, name: "Test host"))
+    }
 
-        let session = URLSession(configuration: .ephemeral)
-        let (pong, response) = try await session.data(from: URL(string: "http://127.0.0.1:\(proxyPort)/ping")!)
+    private func pairedPeer(_ fixture: Fixture, storage: TunnelSecretStorage = InMemoryTunnelStorage()) async throws -> SCWPeerConnection {
+        try await SCWPeerConnection.pair(try payload(fixture), storage: storage)
+    }
+
+    /// A raw client of a device registered directly, for tests below the `SCWPeerConnection` API.
+    private func pairedRawClient(_ fixture: Fixture) async throws -> (client: SSHTunnelClient, key: Curve25519.Signing.PrivateKey) {
+        let key = Curve25519.Signing.PrivateKey()
+        XCTAssertTrue(fixture.pairing.attemptPairing(device: NIOSSHPrivateKey(ed25519Key: key).publicKey, token: fixture.pairing.openPairing()))
+        let client = SSHTunnelClient()
+        let hostKey = fixture.pairing.hostPublicKey
+        try await client.connect(host: "127.0.0.1", port: fixture.serverPort, key: key, credential: .key) { $0 == hostKey }
+        return (client, key)
+    }
+
+    private func get(_ url: URL) async throws -> String {
+        let (data, response) = try await URLSession(configuration: .ephemeral).data(from: url)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        XCTAssertEqual(String(decoding: pong, as: UTF8.self), "pong")
+        return String(decoding: data, as: UTF8.self)
+    }
 
-        var post = URLRequest(url: URL(string: "http://127.0.0.1:\(proxyPort)/echo")!)
+    // MARK: - Tunnel
+
+    func testGetAndPostThroughThePairedPeerWithAPlainURLSession() async throws {
+        let fixture = try await makeFixture()
+        let peer = try await pairedPeer(fixture)
+        let base = try await peer.start()
+
+        let pong = try await get(base.appendingPathComponent("ping"))
+        XCTAssertEqual(pong, "pong")
+
+        var post = URLRequest(url: base.appendingPathComponent("echo"))
         post.httpMethod = "POST"
         post.httpBody = Data(repeating: 0x61, count: 200_000) // larger than one SSH packet
-        let (echo, _) = try await session.data(for: post)
+        let (echo, _) = try await URLSession(configuration: .ephemeral).data(for: post)
         XCTAssertEqual(echo.count, 200_000)
-
-        await proxy.stop(); await client.close(); await Self.stop(fixture)
+        await peer.stop()
     }
 
     func testHundredConcurrentRequestsAllSucceed() async throws {
         let fixture = try await makeFixture()
-        let client = try await connectedClient(fixture)
-        let proxy = LoopbackProxy(client: client, destination: TunnelAllowList(port: fixture.appPort))
-        let url = URL(string: "http://127.0.0.1:\(try await proxy.start())/ping")!
+        let peer = try await pairedPeer(fixture)
+        let url = try await peer.start().appendingPathComponent("ping")
         let session = URLSession(configuration: .ephemeral)
 
         let successes = await withTaskGroup(of: Bool.self) { group in
@@ -98,14 +107,13 @@ final class SSHTunnelIntegrationTests: XCTestCase {
             return await group.reduce(0) { $0 + ($1 ? 1 : 0) }
         }
         XCTAssertEqual(successes, 100)
-
-        await proxy.stop(); await client.close(); await Self.stop(fixture)
+        await peer.stop()
     }
 
     /// A real listener on the forbidden port: if the tunnel connected there, `accepted` would not stay zero.
     func testDestinationOutsideTheAllowListIsRefusedAndNeverContacted() async throws {
         let fixture = try await makeFixture()
-        let client = try await connectedClient(fixture)
+        let (client, _) = try await pairedRawClient(fixture)
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         defer { Task { try? await group.shutdownGracefully() } }
         let accepted = NIOLockedValueBox(0)
@@ -129,39 +137,18 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         await client.close()
     }
 
-    func testUnauthorizedKeyAndUntrustedHostKeyAreRefused() async throws {
-        let fixture = try await makeFixture(authorize: false)
-        let hostKey = fixture.server.hostPublicKey
-
-        let refusedKey = SSHTunnelClient()
-        do {
-            try await refusedKey.connect(host: "127.0.0.1", port: fixture.serverPort, username: "device", key: fixture.clientKey, trustedHostKey: { $0 == hostKey })
-            XCTFail("an unauthorized key must not connect")
-        } catch {}
-        await refusedKey.close()
-
-        let wrongHost = SSHTunnelClient()
-        do {
-            try await wrongHost.connect(host: "127.0.0.1", port: fixture.serverPort, username: "device", key: fixture.clientKey, trustedHostKey: { _ in false })
-            XCTFail("an untrusted host key must not connect")
-        } catch {}
-        await wrongHost.close()
-
-        await Self.stop(fixture)
-    }
-
     func testOfflineHostAndDroppedTunnelFailWithoutCrashing() async throws {
-        let client = SSHTunnelClient()
+        let offline = SSHTunnelClient()
         do {
-            try await client.connect(host: "127.0.0.1", port: 1, username: "device", key: Curve25519.Signing.PrivateKey(), trustedHostKey: { _ in true })
+            try await offline.connect(host: "127.0.0.1", port: 1, key: Curve25519.Signing.PrivateKey(), credential: .key) { _ in true }
             XCTFail("nothing listens on port 1")
         } catch {
             XCTAssertNotNil(error)
         }
-        await client.close()
+        await offline.close()
 
         let fixture = try await makeFixture()
-        let connected = try await connectedClient(fixture)
+        let (connected, _) = try await pairedRawClient(fixture)
         await fixture.server.stop()
         try await Task.sleep(nanoseconds: 300_000_000)
         let origin = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
@@ -190,14 +177,97 @@ final class SSHTunnelIntegrationTests: XCTestCase {
     /// The handshake deadline must stop applying once the peer has authenticated.
     func testAuthenticatedConnectionOutlivesTheHandshakeTimeout() async throws {
         let fixture = try await makeFixture(handshakeTimeout: .milliseconds(800))
-        let client = try await connectedClient(fixture)
-        let proxy = LoopbackProxy(client: client, destination: TunnelAllowList(port: fixture.appPort))
-        let url = URL(string: "http://127.0.0.1:\(try await proxy.start())/ping")!
+        let peer = try await pairedPeer(fixture)
+        let base = try await peer.start()
 
         try await Task.sleep(nanoseconds: 2_000_000_000)
-        let (data, _) = try await URLSession(configuration: .ephemeral).data(from: url)
-        XCTAssertEqual(String(decoding: data, as: UTF8.self), "pong")
+        let pong = try await get(base.appendingPathComponent("ping"))
+        XCTAssertEqual(pong, "pong")
+        await peer.stop()
+    }
 
-        await proxy.stop(); await client.close()
+    // MARK: - Pairing and revocation
+
+    func testPairedDeviceReconnectsAfterAnAppRelaunch() async throws {
+        let fixture = try await makeFixture()
+        let clientStorage = InMemoryTunnelStorage()
+        let peer = try await pairedPeer(fixture, storage: clientStorage)
+        XCTAssertEqual(peer.name, "Test host")
+
+        // A new object built from what the device stored (an app relaunch) still connects, with the key alone.
+        let relaunched = try SCWPeerConnection(hostFingerprint: peer.hostFingerprint, storage: clientStorage)
+        let pong = try await get(try await relaunched.start().appendingPathComponent("ping"))
+        XCTAssertEqual(pong, "pong")
+        await relaunched.stop()
+
+        XCTAssertEqual(fixture.pairing.devices.count, 1)
+        XCTAssertFalse(fixture.pairing.isPairingOpen) // no session stays open after a pairing
+    }
+
+    func testWrongReusedAndClosedTokensAndWrongHostFingerprintAreRefused() async throws {
+        let fixture = try await makeFixture()
+        let good = try payload(fixture)
+
+        let wrongToken = try XCTUnwrap(PairingPayload(host: good.host, port: good.port, appPort: good.appPort, token: "wrong", hostKeyFingerprint: good.hostKeyFingerprint))
+        await assertPairingFails(wrongToken, .authenticationRefused)
+
+        let wrongHost = try XCTUnwrap(PairingPayload(host: good.host, port: good.port, appPort: good.appPort, token: good.token, hostKeyFingerprint: "SHA256:AAAA"))
+        await assertPairingFails(wrongHost, .untrustedHostKey)
+        XCTAssertTrue(fixture.pairing.devices.isEmpty)
+
+        _ = try await SCWPeerConnection.pair(good, storage: InMemoryTunnelStorage()) // the real token still works once...
+        await assertPairingFails(good, .authenticationRefused) // ...and is then dead, with the session closed
+        XCTAssertEqual(fixture.pairing.devices.count, 1)
+    }
+
+    private func assertPairingFails(_ payload: PairingPayload, _ expected: TunnelError, line: UInt = #line) async {
+        do {
+            _ = try await SCWPeerConnection.pair(payload, storage: InMemoryTunnelStorage())
+            XCTFail("pairing must fail", line: line)
+        } catch {
+            XCTAssertEqual(error as? TunnelError, expected, line: line)
+        }
+    }
+
+    func testUnpairedKeyIsRefusedEvenWhilePairingIsOpen() async throws {
+        let fixture = try await makeFixture()
+        fixture.pairing.openPairing()
+        let stranger = SSHTunnelClient()
+        let hostKey = fixture.pairing.hostPublicKey
+        do {
+            try await stranger.connect(host: "127.0.0.1", port: fixture.serverPort, key: Curve25519.Signing.PrivateKey(), credential: .key) { $0 == hostKey }
+            XCTFail("a key that was never paired must not connect")
+        } catch {
+            XCTAssertEqual(error as? TunnelError, .authenticationRefused)
+        }
+        await stranger.close()
+    }
+
+    func testRevokingADeviceClosesItsLiveConnectionAndBlocksReconnecting() async throws {
+        let fixture = try await makeFixture()
+        let peer = try await pairedPeer(fixture)
+        let base = try await peer.start()
+        let pong = try await get(base.appendingPathComponent("ping"))
+        XCTAssertEqual(pong, "pong")
+
+        let device = try XCTUnwrap(fixture.pairing.devices.first)
+        XCTAssertTrue(try fixture.pairing.revoke(deviceID: device.id))
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // The open tunnel is gone: a request through the old loopback endpoint fails.
+        do {
+            _ = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("ping"))
+            XCTFail("the revoked device's connection must be closed")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+        // And it cannot come back.
+        do {
+            _ = try await peer.start()
+            XCTFail("a revoked device must not reconnect")
+        } catch {
+            XCTAssertEqual(error as? TunnelError, .authenticationRefused)
+        }
+        await peer.stop()
     }
 }
