@@ -16,6 +16,8 @@ public enum TunnelError: Error, Sendable, Equatable {
     case tooManyConnections
     /// The secret storage refused to keep a key: pairing cannot be made durable.
     case storageUnavailable
+    /// Stored pairing data exists but cannot be read; it is not replaced, so the host's identity is not lost.
+    case corruptedStorage
     /// The pairing link is not a complete payload, or the pairing token was not accepted.
     case pairingFailed
     /// The tunnel is not connected (or the connection was lost).

@@ -40,16 +40,24 @@ public final class PairingManager: Sendable {
     public init(storage: TunnelSecretStorage = KeychainTunnelStorage(), now: @escaping @Sendable () -> Date = { Date() }) throws {
         self.storage = storage
         self.now = now
-        if let stored = storage.read(Self.hostKeyName), let raw = Data(base64Encoded: stored),
-           let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) {
+        if let stored = storage.read(Self.hostKeyName) {
+            // A stored but unreadable key is never replaced silently: the host's identity would change under every paired device.
+            guard let raw = Data(base64Encoded: stored), let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
+                throw TunnelError.corruptedStorage
+            }
             hostKey = NIOSSHPrivateKey(ed25519Key: key)
         } else {
             let key = Curve25519.Signing.PrivateKey()
             guard storage.write(key.rawRepresentation.base64EncodedString(), forKey: Self.hostKeyName) else { throw TunnelError.storageUnavailable }
             hostKey = NIOSSHPrivateKey(ed25519Key: key)
         }
-        let devices = storage.read(Self.devicesName).flatMap { $0.data(using: .utf8) }
-            .flatMap { try? Self.decoder.decode([PairedDevice].self, from: $0) } ?? []
+        var devices: [PairedDevice] = []
+        if let stored = storage.read(Self.devicesName) {
+            guard let data = stored.data(using: .utf8), let decoded = try? Self.decoder.decode([PairedDevice].self, from: data) else {
+                throw TunnelError.corruptedStorage // not an empty list: the next save would erase every pairing
+            }
+            devices = decoded
+        }
         state = NIOLockedValueBox(State(session: nil, devices: devices, onRevoke: nil))
     }
 
@@ -103,11 +111,16 @@ public final class PairingManager: Sendable {
         }
         guard accepted else { return false }
         let id = TunnelFingerprint.of(device)
-        let paired = PairedDevice(id: id, name: "Device " + id.dropFirst(7).prefix(6), publicKey: String(openSSHPublicKey: device), pairedAt: current)
         return state.withLockedValue { state in
-            state.devices.removeAll { $0.id == id }
-            state.devices.append(paired)
-            return persist(state.devices)
+            // A device already paired keeps its name and date. The new list is saved first: a pairing that could not be
+            // made durable is not granted.
+            var devices = state.devices
+            if !devices.contains(where: { $0.id == id }) {
+                devices.append(PairedDevice(id: id, name: "Device " + id.dropFirst(7).prefix(6), publicKey: String(openSSHPublicKey: device), pairedAt: current))
+            }
+            guard persist(devices) else { return false }
+            state.devices = devices
+            return true
         }
     }
 
@@ -121,25 +134,32 @@ public final class PairingManager: Sendable {
         return state.withLockedValue { $0.devices.first { $0.id == id } }
     }
 
-    public func rename(deviceID: String, to name: String) {
+    /// Returns \`false\` when the device is unknown or the change could not be saved (then nothing changed).
+    @discardableResult
+    public func rename(deviceID: String, to name: String) -> Bool {
         state.withLockedValue { state in
-            guard let index = state.devices.firstIndex(where: { $0.id == deviceID }) else { return }
-            state.devices[index].name = name
-            _ = persist(state.devices)
+            guard let index = state.devices.firstIndex(where: { $0.id == deviceID }) else { return false }
+            var devices = state.devices
+            devices[index].name = name
+            guard persist(devices) else { return false }
+            state.devices = devices
+            return true
         }
     }
 
-    /// Removes a device: it can no longer connect, and `onRevoke` lets the server drop its open sessions.
+    /// Removes a device: it can no longer connect now, and `onRevoke` lets the server drop its open sessions. Returns
+    /// whether the device was known. Throws `TunnelError.storageUnavailable` when the removal could not be saved: the
+    /// device is already refused in this run, but would be paired again after a restart, so the caller must retry.
     @discardableResult
-    public func revoke(deviceID: String) -> Bool {
-        let (removed, handler) = state.withLockedValue { state -> (Bool, (@Sendable (String) -> Void)?) in
+    public func revoke(deviceID: String) throws -> Bool {
+        let (removed, saved, handler) = state.withLockedValue { state -> (Bool, Bool, (@Sendable (String) -> Void)?) in
             let before = state.devices.count
             state.devices.removeAll { $0.id == deviceID }
             let removed = state.devices.count < before
-            if removed { _ = persist(state.devices) }
-            return (removed, state.onRevoke)
+            return (removed, removed ? persist(state.devices) : true, state.onRevoke)
         }
         if removed { handler?(deviceID) }
+        if !saved { throw TunnelError.storageUnavailable }
         return removed
     }
 

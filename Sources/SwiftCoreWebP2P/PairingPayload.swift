@@ -9,20 +9,26 @@ import Foundation
 
 /// What the host shows (as a QR code or a link) for a device to pair: where to connect, the one-time token, and the
 /// fingerprint of the host key so the device recognises the right host even on a hostile network.
-public struct PairingPayload: Sendable, Equatable {
+///
+/// Built only through validating initialisers, so `link` can always be produced.
+public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
     public static let scheme = "scw-p2p"
 
-    public var host: String
+    public let host: String
     /// The tunnel's port.
-    public var port: Int
+    public let port: Int
     /// The port of the SCW listener on the host: the only destination the tunnel forwards to.
-    public var appPort: Int
-    public var token: String
-    public var hostKeyFingerprint: String
+    public let appPort: Int
+    public let token: String
+    public let hostKeyFingerprint: String
     /// A label for the host, shown to the user.
-    public var name: String?
+    public let name: String?
 
-    public init(host: String, port: Int, appPort: Int, token: String, hostKeyFingerprint: String, name: String? = nil) {
+    /// `nil` when `host` is empty or has characters a host cannot have, or a port is outside 1...65535. An IPv6
+    /// address is given without brackets.
+    public init?(host: String, port: Int, appPort: Int, token: String, hostKeyFingerprint: String, name: String? = nil) {
+        guard Self.isValidHost(host), (1...65_535).contains(port), (1...65_535).contains(appPort),
+              !token.isEmpty, !hostKeyFingerprint.isEmpty else { return nil }
         self.host = host
         self.port = port
         self.appPort = appPort
@@ -31,26 +37,40 @@ public struct PairingPayload: Sendable, Equatable {
         self.name = name
     }
 
-    /// `scw-p2p://host:port?sp=<app port>&t=<token>&fp=<fingerprint>&n=<name>`
-    public var url: URL {
-        var components = URLComponents()
-        components.scheme = Self.scheme
-        components.host = host
-        components.port = port
-        components.queryItems = [
-            URLQueryItem(name: "sp", value: String(appPort)),
-            URLQueryItem(name: "t", value: token),
-            URLQueryItem(name: "fp", value: hostKeyFingerprint)
-        ] + (name.map { [URLQueryItem(name: "n", value: $0)] } ?? [])
-        return components.url!
+    /// `scw-p2p://host:port?sp=<app port>&t=<token>&fp=<fingerprint>&n=<name>` (an IPv6 host in brackets).
+    public var link: String {
+        let authority = host.contains(":") ? "[\(host)]" : host
+        var query = "sp=\(appPort)&t=\(Self.encode(token))&fp=\(Self.encode(hostKeyFingerprint))"
+        if let name { query += "&n=\(Self.encode(name))" }
+        return "\(Self.scheme)://\(authority):\(port)?\(query)"
     }
 
-    /// Parses a scanned or pasted link; `nil` when it is not a complete pairing payload.
+    /// Parses a scanned or pasted link; `nil` when it is not a complete, well-formed pairing payload.
     public init?(_ string: String) {
-        guard let components = URLComponents(string: string), components.scheme == Self.scheme,
-              let host = components.host, !host.isEmpty, let port = components.port else { return nil }
-        let items = Dictionary((components.queryItems ?? []).compactMap { item in item.value.map { (item.name, $0) } }, uniquingKeysWith: { first, _ in first })
-        guard let appPort = items["sp"].flatMap(Int.init), let token = items["t"], !token.isEmpty, let fingerprint = items["fp"], !fingerprint.isEmpty else { return nil }
+        guard let components = URLComponents(string: string), components.scheme?.lowercased() == Self.scheme,
+              var host = components.host, let port = components.port else { return nil }
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        var items: [String: String] = [:]
+        for item in components.queryItems ?? [] {
+            guard let value = item.value, items.updateValue(value, forKey: item.name) == nil else { return nil } // no duplicates
+        }
+        guard let appPort = items["sp"].flatMap(Self.parsePort), let token = items["t"], let fingerprint = items["fp"] else { return nil }
         self.init(host: host, port: port, appPort: appPort, token: token, hostKeyFingerprint: fingerprint, name: items["n"])
+    }
+
+    /// Hides the token: a payload must not end up in logs through string interpolation.
+    public var description: String { "PairingPayload(host: \(host), port: \(port))" }
+
+    private static func isValidHost(_ host: String) -> Bool {
+        !host.isEmpty && host.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || ".-_:".unicodeScalars.contains($0) }
+    }
+
+    private static func parsePort(_ text: String) -> Int? {
+        text.allSatisfy(\.isASCII) && text.allSatisfy(\.isNumber) ? Int(text) : nil
+    }
+
+    /// Percent-encodes everything but unreserved characters, so `+`, `&` and `=` survive any query parser.
+    private static func encode(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")) ?? ""
     }
 }
