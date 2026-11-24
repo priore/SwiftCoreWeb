@@ -82,6 +82,17 @@ final class ServerEngine: @unchecked Sendable {
         }
         app.engineBox.engine = self
 
+        do {
+            let ingress = RequestIngress(
+                dispatcher: dispatcher, rateLimiter: rateLimiter, connectionGate: connectionGate,
+                webSocketRegistry: app.webSocketRegistry, metrics: app.metrics
+            )
+            for serverExtension in app.extensions { try await serverExtension.start(ingress: ingress) }
+        } catch {
+            try? await stop(timeout: 0)
+            throw error
+        }
+
         if let bonjourName = app.bonjourName {
             startBonjour(name: bonjourName)
         }
@@ -625,6 +636,7 @@ final class ServerEngine: @unchecked Sendable {
     // MARK: - Shutdown
 
     func stop(timeout: Double) async throws {
+        for serverExtension in app.extensions { await serverExtension.stop() }
         watchdog?.stop()
         bonjourListener?.cancel()
 

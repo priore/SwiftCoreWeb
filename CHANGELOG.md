@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`ServerExtension` and `RequestIngress`: an entry point for transports other than the HTTP listener.**
+  - `builder.addExtension(_:)` registers a module that starts once the listeners are bound and stops with the server.
+  - It receives a `RequestIngress`: the same dispatcher, connection gate and rate limiter the HTTP engine uses, plus `acceptWebSocket` (route lookup and `auth` enforced) over a `WebSocket.Transport`.
+  - Nothing runs unless an extension is registered.
 - **`WebSocket.Transport` and `WebSocket(transport:)`.**
   - A `WebSocket` is no longer tied to a NIO channel: any carrier that supplies `messages`, `send` and `close` can back one, which lets an opt-in module hand `mapWebSocket` handlers sockets that do not come from the HTTP upgrade.
   - Handlers and the HTTP upgrade path are unchanged.

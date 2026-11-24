@@ -58,6 +58,7 @@ public final class WebApplicationBuilder: @unchecked Sendable {
     private(set) var listenOnAllInterfacesFlag = false
     private(set) var bonjourName: String?
     private(set) var keepDeviceAwakeFlag = true
+    var extensions: [any ServerExtension] = []
 
     init() {
         loadAppSettingsIfPresent()
@@ -219,6 +220,7 @@ public final class WebApplication: @unchecked Sendable {
     let tlsOptions: TlsOptions?
     let bonjourName: String?
     let keepDeviceAwakeFlag: Bool
+    let extensions: [any ServerExtension]
 
     /// The reachable base URLs the server is listening on, populated once
     /// `runAsync()` has bound its listener(s).
@@ -262,6 +264,7 @@ public final class WebApplication: @unchecked Sendable {
         self.tlsOptions = builder.tlsOptions
         self.bonjourName = builder.bonjourName
         self.keepDeviceAwakeFlag = builder.keepDeviceAwakeFlag
+        self.extensions = builder.extensions
     }
 
     /// Creates a new `WebApplicationBuilder`.
