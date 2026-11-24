@@ -6,6 +6,8 @@
 //
 
 import XCTest
+import NIOCore
+import NIOWebSocket
 import NIOConcurrencyHelpers
 @testable import SwiftCoreWeb
 
@@ -77,6 +79,39 @@ final class WebSocketUpgradeTests: XCTestCase {
         // The handler returned: the server says goodbye with a close frame, the client sees a clean close.
         do { _ = try await task.receive(); XCTFail("the connection should be closed") } catch {}
         XCTAssertEqual(task.closeCode, .normalClosure)
+    }
+
+    func testHandlerThatFallsBehindGetsSlowConsumerAndTheConnectionCloses() async throws {
+        let port = Int.random(in: 30_000..<60_000)
+        let builder = WebApplication.createBuilder()
+        builder.usePort(port)
+        let app = builder.build()
+        let outcome = NIOLockedValueBox<String?>(nil)
+        app.mapWebSocket("/slow") { socket in
+            let stream = socket.messages()
+            try await Task.sleep(nanoseconds: 1_500_000_000) // reads nothing while the client floods
+            do { for try await _ in stream {}; outcome.withLockedValue { $0 = "clean" } } catch WebSocketError.slowConsumer { outcome.withLockedValue { $0 = "slow" } }
+        }
+        Task { try? await app.runAsync() }
+        for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
+        addTeardownBlock { try? await app.stopAsync() }
+
+        let task = URLSession(configuration: .ephemeral).webSocketTask(with: URL(string: "ws://127.0.0.1:\(port)/slow")!)
+        task.resume()
+        for _ in 0..<600 { try? await task.send(.string("x")) }
+        for _ in 0..<60 where outcome.withLockedValue({ $0 }) == nil { try await Task.sleep(nanoseconds: 100_000_000) }
+        XCTAssertEqual(outcome.withLockedValue { $0 }, "slow")
+    }
+
+    func testCloseFramePayloadValidation() {
+        func payload(_ bytes: [UInt8]) -> ByteBuffer { ByteBuffer(bytes: bytes) }
+        XCTAssertNil(WebSocketBridge.closeRejection(payload([])))
+        XCTAssertNil(WebSocketBridge.closeRejection(payload([0x03, 0xE8]))) // 1000
+        XCTAssertNil(WebSocketBridge.closeRejection(payload([0x03, 0xE8, 0x62, 0x79, 0x65]))) // 1000 "bye"
+        XCTAssertNotNil(WebSocketBridge.closeRejection(payload([0x03]))) // one byte
+        XCTAssertNotNil(WebSocketBridge.closeRejection(payload([0x03, 0xED]))) // 1005 must not be sent
+        XCTAssertNotNil(WebSocketBridge.closeRejection(payload([0x00, 0x00]))) // 0
+        XCTAssertNotNil(WebSocketBridge.closeRejection(payload([0x03, 0xE8, 0xFF]))) // reason is not UTF-8
     }
 
     func testUnknownWebSocketPathIsRefusedWithoutHarmingTheServer() async throws {

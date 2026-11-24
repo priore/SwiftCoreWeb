@@ -38,6 +38,9 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
     private var earlyMessages = 0
     private var earlyBytes = 0
     private var closing = false
+    /// Set (on the event loop) once this side has sent its own close frame: the peer's reply then ends the connection.
+    private var sentClose = false
+    let closeReplyTimeout: TimeAmount = .seconds(5)
     private var fragments: ByteBuffer?
     private var fragmentIsText = false
 
@@ -83,9 +86,20 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
                 try await channel.writeAndFlush(frame).get()
             },
             close: { code in
-                var buffer = channel.allocator.buffer(capacity: 2)
-                buffer.write(webSocketErrorCode: code)
-                try? await channel.writeAndFlush(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer)).get()
+                var closeBuffer = channel.allocator.buffer(capacity: 2)
+                closeBuffer.write(webSocketErrorCode: code)
+                let buffer = closeBuffer
+                // Say goodbye, then give the peer a moment to answer with its own close frame before dropping the TCP
+                // connection: closing at once can reset a peer that is still sending.
+                let sent = try? await channel.eventLoop.submit {
+                    bridge.markCloseSent()
+                    return channel.writeAndFlush(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer))
+                }.flatMap { $0 }.get()
+                if sent != nil {
+                    let timeout = channel.eventLoop.scheduleTask(in: bridge.closeReplyTimeout) { channel.close(promise: nil) }
+                    try? await channel.closeFuture.get()
+                    timeout.cancel()
+                }
                 try? await channel.close()
             }
         ))
@@ -93,7 +107,12 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = unwrapInboundIn(data)
-        guard !closing else { return } // nothing is answered after a close frame (§5.5.1)
+        if closing {
+            // Nothing is answered after a close frame (§5.5.1); the peer's reply to ours completes the handshake (§7.1.2).
+            if sentClose, frame.opcode == .connectionClose { context.close(promise: nil) }
+            return
+        }
+        guard !frame.rsv1, !frame.rsv2, !frame.rsv3 else { return fail(context, .protocolError) } // no extension negotiated
         // RFC 6455 §5.1: a client must mask every frame.
         guard frame.maskKey != nil else { return fail(context, .protocolError) }
         switch frame.opcode {
@@ -122,7 +141,7 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
             guard context.channel.isWritable else { return }
             context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .pong, data: frame.unmaskedData)), promise: nil)
         case .connectionClose:
-            guard frame.unmaskedData.readableBytes != 1 else { return fail(context, .protocolError) } // §5.5.1: empty, or a code
+            if let rejection = Self.closeRejection(frame.unmaskedData) { return fail(context, rejection) }
             closing = true
             continuation.finish()
             context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .connectionClose, data: frame.unmaskedData)))
@@ -146,7 +165,7 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
             message = .binary(bytes)
         }
         if hasConsumer.withLockedValue({ $0 }) {
-            if case .dropped = continuation.yield(message) { fail(context, .policyViolation) }
+            if case .dropped = continuation.yield(message) { fail(context, .policyViolation, throwing: WebSocketError.slowConsumer) }
         } else if earlyMessages < Self.maxQueuedMessages, earlyBytes + bytes.count <= Self.maxEarlyBytes {
             earlyMessages += 1
             earlyBytes += bytes.count
@@ -154,10 +173,30 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
         }
     }
 
-    /// Closes with `code` after telling the peer why (RFC 6455 §7.4).
-    private func fail(_ context: ChannelHandlerContext, _ code: WebSocketErrorCode) {
+    /// RFC 6455 §5.5.1 / §7.4: a close payload is empty, or a valid status code followed by UTF-8 text.
+    static func closeRejection(_ payload: ByteBuffer) -> WebSocketErrorCode? {
+        var buffer = payload
+        if buffer.readableBytes == 0 { return nil }
+        guard buffer.readableBytes >= 2, let code = buffer.readInteger(as: UInt16.self) else { return .protocolError }
+        switch code {
+        case 1000...1003, 1007...1011, 3000...4999: break
+        default: return .protocolError
+        }
+        let reason = Data(buffer.readBytes(length: buffer.readableBytes) ?? [])
+        return String(data: reason, encoding: .utf8) == nil ? .dataInconsistentWithMessage : nil
+    }
+
+    /// Called from the event loop when this side sends its own close frame.
+    func markCloseSent() {
         closing = true
+        sentClose = true
         continuation.finish()
+    }
+
+    /// Closes with `code` after telling the peer why (RFC 6455 §7.4).
+    private func fail(_ context: ChannelHandlerContext, _ code: WebSocketErrorCode, throwing error: Error? = nil) {
+        closing = true
+        continuation.finish(throwing: error)
         var buffer = context.channel.allocator.buffer(capacity: 2)
         buffer.write(webSocketErrorCode: code)
         context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer)))
