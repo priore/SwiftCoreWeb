@@ -13,10 +13,11 @@ import Foundation
 /// nonce) nor shareable without an owner: wrap it in an actor.
 ///
 /// Keys: X25519 agreement, then HKDF-SHA256 into one 32-byte key per direction. Pass the *ephemeral* private key
-/// generated for this connection and `salt` binding the whole handshake (both public keys and anything else the
-/// peers agreed on): keys must never be reused across connections, because the counters restart at zero.
+/// generated for this connection and `salt` binding the whole handshake (both public keys, the smaller one first by the
+/// comparison below, and anything else the peers agreed on): keys must never be reused across connections, because the counters restart at zero.
 /// Which side sends with which key is decided by the public keys alone (the side with the lexicographically smaller
-/// raw public key is the "initiator"), so two peers can never both pick the same direction, even on a
+/// raw public key is the "initiator"; the 32 raw bytes of RFC 7748 are compared as unsigned bytes from index 0, the first
+/// difference decides), so two peers can never both pick the same direction, even on a
 /// simultaneous open.
 ///
 /// A sealed payload is `counter (8 bytes, big-endian) || ChaCha20-Poly1305 ciphertext || tag (16 bytes)`:
@@ -37,6 +38,7 @@ public struct P2PSecureChannel: ~Copyable, Sendable {
     private var sendCounter: UInt64
     private var expectedReceiveCounter: UInt64 = 0
 
+    /// Throws `P2PCryptoError` for an empty salt or identical keys, and a CryptoKit error for an invalid peer key.
     public init(
         privateKey: Curve25519.KeyAgreement.PrivateKey,
         peerPublicKey: Curve25519.KeyAgreement.PublicKey,

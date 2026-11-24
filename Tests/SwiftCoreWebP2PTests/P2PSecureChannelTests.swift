@@ -113,6 +113,9 @@ final class P2PSecureChannelTests: XCTestCase {
         let key = SymmetricKey(data: Data(repeating: 9, count: 32))
         var exhausted = P2PSecureChannel(sendKey: key, receiveKey: key, sendCounter: .max)
         XCTAssertThrowsError(try exhausted.seal(request)) { XCTAssertEqual($0 as? P2PCryptoError, .counterExhausted) }
+        var lastUsable = P2PSecureChannel(sendKey: key, receiveKey: key, sendCounter: .max - 1)
+        XCTAssertNoThrow(try lastUsable.seal(request))
+        XCTAssertThrowsError(try lastUsable.seal(request)) { XCTAssertEqual($0 as? P2PCryptoError, .counterExhausted) }
 
         var initiator = try initiatorSide()
         let limit = P2PFraming.maxMessageSize - P2PSecureChannel.overhead
