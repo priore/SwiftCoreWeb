@@ -9,6 +9,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **`SwiftCoreWebP2P`: SSH tunnel to the local server (first step, LAN).**
   - New opt-in product built on `swift-nio-ssh`: `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
+  - `SCWPeerConnection.start()` looks the host up again over Bonjour (by the fingerprint in the TXT record) when the stored address no longer answers, and remembers the new one.
   - `SSHTunnelClient` pins the host key; `LoopbackProxy` lets any HTTP client reach the remote app through `http://127.0.0.1:<port>`.
   - Pairing: the host opens a session on request and shows a payload (`scw-p2p://…`, with the host key fingerprint and a one-time token); `SCWPeerConnection.pair(_:)` registers the device, which then reconnects with its key alone. Keys and the device list live in the Keychain (`TunnelSecretStorage`), and `PairingManager.revoke(deviceID:)` also closes the device's open connections.
   - `builder.useP2P()` starts the tunnel with the server and announces it on the local network as `_scw-p2p._tcp` (the hosting app declares that service and a local network usage description). It returns a `P2PHost` to open pairing sessions; `LocalAddresses.ipv4()` lists the addresses to put in the payload.

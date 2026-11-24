@@ -51,4 +51,36 @@ final class BonjourTests: XCTestCase {
             XCTAssertTrue(String(describing: error).lowercased().contains("refused"), "\(error)")
         }
     }
+
+    func testAClientFindsTheHostAgainWhenItsStoredAddressIsStale() async throws {
+        let appPort = Int.random(in: 30_000..<60_000)
+        let builder = WebApplication.createBuilder()
+        builder.usePort(appPort)
+        let host = try builder.useP2P(name: "scw-find-\(UUID().uuidString.prefix(8))", storage: InMemoryTunnelStorage())
+        let app = builder.build()
+        app.mapGet("/ping") { _ in "pong" }
+        addTeardownBlock { try? await app.stopAsync() }
+        Task { try? await app.runAsync() }
+        for _ in 0..<100 where host.tunnelPort == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        let tunnelPort = try XCTUnwrap(host.tunnelPort)
+
+        let clientStorage = InMemoryTunnelStorage()
+        let session = try XCTUnwrap(host.openPairing(host: "127.0.0.1"))
+        let paired = try await SCWPeerConnection.pair(session, storage: clientStorage)
+
+        // The host "moved": the remembered address answers nothing.
+        let key = "p2p.host.\(paired.hostFingerprint)"
+        var record = try JSONDecoder().decode(PeerRecord.self, from: Data(try XCTUnwrap(clientStorage.read(key)).utf8))
+        record.port = 1
+        clientStorage.write(String(decoding: try JSONEncoder().encode(record), as: UTF8.self), forKey: key)
+
+        let peer = try SCWPeerConnection(hostFingerprint: paired.hostFingerprint, storage: clientStorage)
+        let base = try await peer.start()
+        let (data, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("ping"))
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "pong")
+        await peer.stop()
+
+        let saved = try JSONDecoder().decode(PeerRecord.self, from: Data(try XCTUnwrap(clientStorage.read(key)).utf8))
+        XCTAssertEqual(saved.port, tunnelPort, "the rediscovered address is remembered")
+    }
 }

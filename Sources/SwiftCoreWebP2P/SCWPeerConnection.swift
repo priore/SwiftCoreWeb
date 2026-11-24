@@ -21,18 +21,20 @@ public final class SCWPeerConnection: Sendable {
     private static let deviceKeyName = "p2p.device-key"
 
     public let hostFingerprint: String
-    private let record: PeerRecord
+    private let record: NIOLockedValueBox<PeerRecord>
+    private let storage: TunnelSecretStorage
     private let deviceKey: Curve25519.Signing.PrivateKey
     private let running = NIOLockedValueBox<(client: SSHTunnelClient, proxy: LoopbackProxy)?>(nil)
 
-    private init(hostFingerprint: String, record: PeerRecord, deviceKey: Curve25519.Signing.PrivateKey) {
+    private init(hostFingerprint: String, record: PeerRecord, deviceKey: Curve25519.Signing.PrivateKey, storage: TunnelSecretStorage) {
         self.hostFingerprint = hostFingerprint
-        self.record = record
+        self.record = NIOLockedValueBox(record)
+        self.storage = storage
         self.deviceKey = deviceKey
     }
 
     /// The label the host gave itself in the pairing payload.
-    public var name: String? { record.name }
+    public var name: String? { record.withLockedValue { $0.name } }
 
     /// Pairs this device with the host in `payload`, remembering it in `storage`, and returns the connection.
     /// Fails with `TunnelError.untrustedHostKey` when the host's key is not the one in the payload, and with
@@ -59,7 +61,7 @@ public final class SCWPeerConnection: Sendable {
         guard let text = try String(data: JSONEncoder().encode(record), encoding: .utf8), storage.write(text, forKey: recordName(expected)) else {
             throw TunnelError.storageUnavailable
         }
-        return SCWPeerConnection(hostFingerprint: expected, record: record, deviceKey: deviceKey)
+        return SCWPeerConnection(hostFingerprint: expected, record: record, deviceKey: deviceKey, storage: storage)
     }
 
     /// Opens a connection to a host paired earlier. Throws `TunnelError.pairingFailed` if `hostFingerprint` is unknown.
@@ -68,19 +70,41 @@ public final class SCWPeerConnection: Sendable {
               let record = try? JSONDecoder().decode(PeerRecord.self, from: data) else { throw TunnelError.pairingFailed }
         // A paired host implies a stored device key: without it the host would refuse this device, so fail here.
         guard storage.read(Self.deviceKeyName) != nil else { throw TunnelError.pairingFailed }
-        self.init(hostFingerprint: hostFingerprint, record: record, deviceKey: try Self.loadOrCreateDeviceKey(storage))
+        self.init(hostFingerprint: hostFingerprint, record: record, deviceKey: try Self.loadOrCreateDeviceKey(storage), storage: storage)
     }
 
     /// Connects to the host and starts the loopback listener; returns its base URL. A new call restarts the connection.
-    /// The listener is on `127.0.0.1` and is not authenticated: any local process that knows the port can use this
-    /// device's tunnel, so keep the URL inside the app.
+    /// When the stored address no longer answers, the host is looked up on the local network by its announced fingerprint
+    /// and the new address is remembered. The listener is on `127.0.0.1` and is not authenticated: any local process that
+    /// knows the port can use this device's tunnel, so keep the URL inside the app.
     public func start() async throws -> URL {
         await stop()
-        let pinned = try NIOSSHPublicKey(openSSHPublicKey: record.hostKey)
+        let known = record.withLockedValue { $0 }
+        do {
+            return try await connect(to: known)
+        } catch TunnelError.untrustedHostKey {
+            throw TunnelError.untrustedHostKey
+        } catch {
+            guard let found = await PeerDiscovery.find(fingerprint: hostFingerprint),
+                  found.host != known.host || found.port != known.port else { throw error }
+            var moved = known
+            moved.host = found.host
+            moved.port = found.port
+            let url = try await connect(to: moved)
+            record.withLockedValue { $0 = moved }
+            if let text = try? JSONEncoder().encode(moved), let string = String(data: text, encoding: .utf8) {
+                storage.write(string, forKey: Self.recordName(hostFingerprint))
+            }
+            return url
+        }
+    }
+
+    private func connect(to target: PeerRecord) async throws -> URL {
+        let pinned = try NIOSSHPublicKey(openSSHPublicKey: target.hostKey)
         let client = SSHTunnelClient()
         do {
-            try await client.connect(host: record.host, port: record.port, key: deviceKey, credential: .key) { $0 == pinned }
-            let proxy = LoopbackProxy(client: client, destination: TunnelAllowList(port: record.appPort))
+            try await client.connect(host: target.host, port: target.port, key: deviceKey, credential: .key) { $0 == pinned }
+            let proxy = LoopbackProxy(client: client, destination: TunnelAllowList(port: target.appPort))
             let port = try await proxy.start()
             running.withLockedValue { $0 = (client, proxy) }
             guard let url = URL(string: "http://127.0.0.1:\(port)") else { throw TunnelError.notConnected }
