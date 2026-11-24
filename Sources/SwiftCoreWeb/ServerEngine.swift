@@ -224,7 +224,6 @@ final class ServerEngine: @unchecked Sendable {
     }
 
     private func configureChildChannel(_ channel: Channel, peer: Bool = false) -> EventLoopFuture<Void> {
-        let remoteIP = channel.remoteAddress?.ipAddress ?? "unknown"
         let promise = channel.eventLoop.makePromise(of: Void.self)
 
         // Hop to the `ConnectionGate` actor to reserve a slot, then continue
@@ -240,7 +239,38 @@ final class ServerEngine: @unchecked Sendable {
             }
             self.app.metrics.connectionOpened()
             channel.eventLoop.execute {
-                (peer ? self.setUpPeerPipeline(channel) : self.setUpHTTPPipeline(channel, remoteIP: remoteIP, fromPeer: false)).cascade(to: promise)
+                // The remote address is read once the channel is active: on NIO Transport Services it does not exist before,
+                // and every client would count as "unknown" (one rate-limit bucket, no loopback exemption).
+                let setUp: @Sendable (String) -> EventLoopFuture<Void> = { remoteIP in
+                    peer ? self.setUpPeerPipeline(channel) : self.setUpHTTPPipeline(channel, remoteIP: remoteIP, fromPeer: false)
+                }
+                if channel.isActive {
+                    setUp(channel.remoteAddress?.ipAddress ?? "unknown").cascade(to: promise)
+                    return
+                }
+                let activated = NIOLockedValueBox(false)
+                do {
+                    try channel.pipeline.syncOperations.addHandler(ChannelActivationHandler { address in
+                        activated.withLockedValue { $0 = true }
+                        setUp(address ?? "unknown").whenFailure { error in
+                            serverLogger.debug("Connection setup failed: \(String(describing: error), privacy: .public)")
+                            self.app.metrics.connectionClosed()
+                            Task { await self.connectionGate.release() }
+                            channel.close(promise: nil)
+                        }
+                    })
+                    // A connection that closes before it ever became active gives its slot back here.
+                    channel.closeFuture.whenComplete { _ in
+                        guard !activated.withLockedValue({ $0 }) else { return }
+                        self.app.metrics.connectionClosed()
+                        Task { await self.connectionGate.release() }
+                    }
+                    promise.succeed(())
+                } catch {
+                    self.app.metrics.connectionClosed()
+                    Task { await self.connectionGate.release() }
+                    promise.fail(error)
+                }
             }
         }
 

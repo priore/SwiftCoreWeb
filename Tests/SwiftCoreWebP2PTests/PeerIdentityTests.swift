@@ -13,6 +13,16 @@ import SwiftCoreWeb
 @testable import SwiftCoreWebP2P
 
 /// The app must see each paired device as its own client, not as `127.0.0.1`, and long-lived routes must work through the tunnel.
+/// A JSON scalar, for comparing two documents without caring about key order.
+private enum JSONValue: Decodable {
+    case text(String)
+    var text: String { if case .text(let value) = self { return value } else { return "" } }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) { self = .text(value) } else { self = .text(String(try container.decode(Int.self))) }
+    }
+}
+
 final class PeerIdentityTests: XCTestCase {
     private struct Fixture {
         let app: WebApplication
@@ -85,10 +95,11 @@ final class PeerIdentityTests: XCTestCase {
         XCTAssertEqual((postResponse as? HTTPURLResponse)?.statusCode, 404)
         let (hiddenBody, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("admin/secret"))
         let (missingBody, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("nothing/here"))
-        // Same problem document, apart from the path it echoes back.
-        let hiddenText = String(decoding: hiddenBody, as: UTF8.self).replacingOccurrences(of: "admin/secret", with: "PATH")
-        let missingText = String(decoding: missingBody, as: UTF8.self).replacingOccurrences(of: "nothing/here", with: "PATH")
-        XCTAssertEqual(hiddenText, missingText, "same body as a path that does not exist")
+        // Same problem document (key order aside).
+        func problem(_ data: Data) throws -> [String: String] {
+            try JSONDecoder().decode([String: JSONValue].self, from: data).mapValues { $0.text }
+        }
+        XCTAssertEqual(try problem(hiddenBody), try problem(missingBody), "same body as a path that does not exist")
 
         // Deny by default, allow one group.
         fixture.app.useP2P(.disable)

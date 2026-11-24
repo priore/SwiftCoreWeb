@@ -37,6 +37,8 @@ public final class PairingManager: Sendable {
     private let storage: TunnelSecretStorage
     private let now: @Sendable () -> Date
     private let hostKey: NIOSSHPrivateKey
+    /// The same key, for signing what the host publishes (the rendezvous record).
+    let hostSigningKey: Curve25519.Signing.PrivateKey
     private let state: NIOLockedValueBox<State>
 
     public init(storage: TunnelSecretStorage = KeychainTunnelStorage(), now: @escaping @Sendable () -> Date = { Date() }) throws {
@@ -48,10 +50,12 @@ public final class PairingManager: Sendable {
                 throw TunnelError.corruptedStorage
             }
             hostKey = NIOSSHPrivateKey(ed25519Key: key)
+            hostSigningKey = key
         } else {
             let key = Curve25519.Signing.PrivateKey()
             guard storage.write(key.rawRepresentation.base64EncodedString(), forKey: Self.hostKeyName) else { throw TunnelError.storageUnavailable }
             hostKey = NIOSSHPrivateKey(ed25519Key: key)
+            hostSigningKey = key
         }
         var devices: [PairedDevice] = []
         if let stored = storage.read(Self.devicesName) {
