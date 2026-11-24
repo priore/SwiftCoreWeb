@@ -20,7 +20,7 @@ Your iPhone can run a real web server. SwiftCoreWeb turns any iOS 15+ app into a
 
 ## Requirements
 
-- iOS 15.0+ deployment target
+- iOS 15.0+ deployment target (also macOS 11+ and tvOS 15+; on tvOS screen dimming, battery metrics, the pasteboard and the WebKit helper are not available)
 - Xcode 16+ / Swift 6 language mode (macros require a Swift 5.9+ toolchain at compile time only — zero runtime cost)
 - Dependencies: `swift-nio`, `swift-nio-transport-services`, `swift-syntax` (macros only). Everything else — TLS, JWT signing/verification, logging, network monitoring — uses system frameworks (`Security`, `CryptoKit`, `os.Logger`, `Network`).
 

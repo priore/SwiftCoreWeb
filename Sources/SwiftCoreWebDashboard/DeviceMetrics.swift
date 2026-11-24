@@ -22,12 +22,19 @@ public struct DeviceSnapshot: Sendable {
     public let physicalMemoryBytes: UInt64
     public let thermalState: ProcessInfo.ThermalState
     public let batteryLevel: Float
-    public let batteryState: UIDevice.BatteryState
+    public let batteryState: BatteryState
     public let isLowPowerModeEnabled: Bool
     public let freeStorageBytes: Int64
     public let totalStorageBytes: Int64
     public let systemUptimeSeconds: TimeInterval
 }
+
+#if os(tvOS)
+/// The Apple TV has no battery; the case names follow `UIDevice.BatteryState`.
+public enum BatteryState: Int, Sendable { case unknown, unplugged, charging, full }
+#else
+public typealias BatteryState = UIDevice.BatteryState
+#endif
 
 /// Samples device health once per second on a background `Task` loop
 /// (`Task.sleep`, not `DispatchQueue`, per the project's concurrency style).
@@ -46,7 +53,9 @@ public final class DeviceSampler {
     private var previousCPUTicks: host_cpu_load_info?
 
     public init() {
+        #if !os(tvOS)
         UIDevice.current.isBatteryMonitoringEnabled = true
+        #endif
     }
 
     deinit {
@@ -86,8 +95,8 @@ public final class DeviceSampler {
             availableMemoryBytes: UInt64(os_proc_available_memory()),
             physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory,
             thermalState: ProcessInfo.processInfo.thermalState,
-            batteryLevel: UIDevice.current.batteryLevel,
-            batteryState: UIDevice.current.batteryState,
+            batteryLevel: Self.batteryLevel(),
+            batteryState: Self.batteryState(),
             isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
             freeStorageBytes: storage.free,
             totalStorageBytes: storage.total,
@@ -160,11 +169,28 @@ public final class DeviceSampler {
         }
     }
 
+    #if os(tvOS)
+    private static func batteryLevel() -> Float { -1 }
+    private static func batteryState() -> BatteryState { .unknown }
+    #else
+    private static func batteryLevel() -> Float { UIDevice.current.batteryLevel }
+    private static func batteryState() -> BatteryState { UIDevice.current.batteryState }
+    #endif
+
     private static func storageCapacities() -> (free: Int64, total: Int64) {
+        #if os(tvOS)
+        let freeKey = URLResourceKey.volumeAvailableCapacityKey // the "important usage" figure does not exist on tvOS
+        #else
+        let freeKey = URLResourceKey.volumeAvailableCapacityForImportantUsageKey
+        #endif
         guard let url = URL.documentsDirectoryOrNil,
-              let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
+              let values = try? url.resourceValues(forKeys: [freeKey, .volumeTotalCapacityKey])
         else { return (0, 0) }
+        #if os(tvOS)
+        let free = Int64(values.volumeAvailableCapacity ?? 0)
+        #else
         let free = values.volumeAvailableCapacityForImportantUsage ?? 0
+        #endif
         let total = Int64(values.volumeTotalCapacity ?? 0)
         return (free, total)
     }

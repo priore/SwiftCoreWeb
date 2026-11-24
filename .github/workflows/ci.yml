@@ -15,6 +15,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build (iOS)
         run: xcodebuild build -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'generic/platform=iOS Simulator'
+      - name: Build (tvOS)
+        run: xcodebuild build -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'generic/platform=tvOS Simulator'
       - name: Test (iOS Simulator)
         run: xcodebuild test -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -skip-testing:SwiftCoreWebMacrosTests
       # -skipMacroValidation: CI is non-interactive, so Xcode cannot ask to trust the package macros.

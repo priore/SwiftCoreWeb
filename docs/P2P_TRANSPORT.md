@@ -176,4 +176,4 @@ device uses one token.
   host's key fingerprint in clear, so anyone on the network can recognise the host; it grants no access. The announcement is only a hint: the connection still pins the
   host key. Not covered by a test on a real device, and an address that changes while connected is not noticed until the
   next `start()`.
-- tvOS is not supported yet.
+- tvOS: the core, the dashboard and `SwiftCoreWebP2P` build for tvOS 15+ and the P2P and core tests pass on the Apple TV simulator. On tvOS there is no screen dimming, battery, pasteboard or WebKit helper (those parts are no-ops or absent). Not tried on a real Apple TV, and pairing without a camera (a code to type instead of a QR) is not built: pair from the iPhone or Mac side, or pass the link yourself.

@@ -5,6 +5,7 @@
 // See LICENSE at the repository root. Source-available, not open-source.
 //
 
+#if canImport(WebKit) // tvOS has no WebKit: the module is empty there
 import Foundation
 import WebKit
 import SwiftCoreWeb
@@ -124,3 +125,4 @@ public final class BlobDownloadSupport: NSObject, WKDownloadDelegate {
         onFailed?(error)
     }
 }
+#endif

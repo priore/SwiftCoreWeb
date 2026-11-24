@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **tvOS 15+ support** for `SwiftCoreWeb`, `SwiftCoreWebDashboard` and `SwiftCoreWebP2P` (no screen dimming, battery metrics, pasteboard or `Process`-based zip deploy on tvOS; `SwiftCoreWebKit` is empty there). CI builds for tvOS.
 - **`SwiftCoreWebP2P`: access from another network through a TURN relay.** `useP2P(remote:)` with `P2PRemoteAccess` (a TURN server with TCP allocations, RFC 6062, and a rendezvous), `P2PRendezvous` (mountable on an SCW app: signed host records and device knocks), `SCWPeerConnection.currentRoute` (`.local`, `.discovered`, `.relay`). Supports temporary TURN credentials from a shared secret. Includes a STUN message codec and Binding client (RFC 8489) and a TURN client; verified against `coturn` on the loopback.
 - **Per-route exposure for peers.** `WebApplication.setPeerAccess(_:allowed:)`, `setPeerAccessDefault(allowed:)` and `RouteGroup.setPeerAccess(allowed:)` decide which paths requests from an extension's peer listener may reach (most specific prefix wins; denied paths answer `404`, including WebSocket upgrades). `SwiftCoreWebP2P` wraps them as `app.useP2P(_:)`, `app.useP2P(_:_:)` and `RouteGroup.useP2P(_:)`.
 - **`SwiftCoreWebP2P`: SSH tunnel to the local server (first step, LAN).**

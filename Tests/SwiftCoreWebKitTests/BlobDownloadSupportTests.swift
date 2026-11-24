@@ -5,6 +5,7 @@
 // See LICENSE at the repository root. Source-available, not open-source.
 //
 
+#if canImport(WebKit)
 import Testing
 import Foundation
 import WebKit
@@ -53,3 +54,4 @@ struct BlobDownloadSupportTests {
         #expect(bare.userContentController.userScripts.isEmpty)
     }
 }
+#endif

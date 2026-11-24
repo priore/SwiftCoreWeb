@@ -77,13 +77,7 @@ public struct MissionControlDashboardView: SwiftUI.View {
                     Text(url.absoluteString)
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .contextMenu {
-                            Button {
-                                UIPasteboard.general.string = url.absoluteString
-                            } label: {
-                                Label("Copy", systemImage: "doc.on.doc")
-                            }
-                        }
+                        .copyMenu(url.absoluteString)
                     Spacer()
                 }
             }

@@ -9,7 +9,8 @@ let package = Package(
     name: "SwiftCoreWeb",
     platforms: [
         .iOS(.v15),
-        .macOS(.v11)
+        .macOS(.v11),
+        .tvOS(.v15)
     ],
     products: [
         .library(name: "SwiftCoreWeb", targets: ["SwiftCoreWeb"]),

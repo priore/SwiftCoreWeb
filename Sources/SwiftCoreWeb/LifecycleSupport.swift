@@ -24,6 +24,22 @@ final class KeepAwakeController {
     private var previousBrightness: CGFloat = 1.0
     private var isDimmed = false
 
+    /// The display brightness; tvOS has no such control, so dimming is a no-op there.
+    private static var screenBrightness: CGFloat {
+        get {
+            #if os(tvOS)
+            return 1.0
+            #else
+            return UIScreen.main.brightness
+            #endif
+        }
+        set {
+            #if !os(tvOS)
+            UIScreen.main.brightness = newValue
+            #endif
+        }
+    }
+
     /// Sets `isIdleTimerDisabled = true` so the device never auto-locks while
     /// serving. Called on server start and re-applied on every return to
     /// `.active`, since iOS can silently reset the idle timer.
@@ -67,7 +83,7 @@ final class KeepAwakeController {
     private func resetDimTimer() {
         guard let dimConfig else { return }
         if isDimmed {
-            UIScreen.main.brightness = previousBrightness
+            Self.screenBrightness = previousBrightness
             isDimmed = false
         }
         dimTimer?.invalidate()
@@ -84,8 +100,8 @@ final class KeepAwakeController {
         if ProcessInfo.processInfo.thermalState == .serious || ProcessInfo.processInfo.thermalState == .critical {
             lifecycleLogger.warning("Thermal state is elevated (\(String(describing: ProcessInfo.processInfo.thermalState))) while dimming")
         }
-        previousBrightness = UIScreen.main.brightness
-        UIScreen.main.brightness = dimConfig.brightness
+        previousBrightness = Self.screenBrightness
+        Self.screenBrightness = dimConfig.brightness
         isDimmed = true
     }
 
@@ -93,7 +109,7 @@ final class KeepAwakeController {
         dimTimer?.invalidate()
         dimTimer = nil
         if isDimmed {
-            UIScreen.main.brightness = previousBrightness
+            Self.screenBrightness = previousBrightness
             isDimmed = false
         }
         dimConfig = nil
