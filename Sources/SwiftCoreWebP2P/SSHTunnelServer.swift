@@ -17,14 +17,21 @@ public final class SSHTunnelServer: Sendable {
     private let hostKey: NIOSSHPrivateKey
     private let allowList: TunnelAllowList
     private let isAuthorized: @Sendable (NIOSSHPublicKey) -> Bool
+    private let handshakeTimeout: TimeAmount
+    private let maxConnections: Int
+    private let openConnections = NIOLockedValueBox(0)
     private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     private let listener = NIOLockedValueBox<Channel?>(nil)
 
     public init(
         hostKey: Curve25519.Signing.PrivateKey,
         allowList: TunnelAllowList,
+        handshakeTimeout: TimeAmount = .seconds(10),
+        maxConnections: Int = 64,
         isAuthorized: @escaping @Sendable (NIOSSHPublicKey) -> Bool
     ) {
+        self.handshakeTimeout = handshakeTimeout
+        self.maxConnections = maxConnections
         self.hostKey = NIOSSHPrivateKey(ed25519Key: hostKey)
         self.allowList = allowList
         self.isAuthorized = isAuthorized
@@ -37,10 +44,20 @@ public final class SSHTunnelServer: Sendable {
     @discardableResult
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
         let hostKey = hostKey, allowList = allowList, isAuthorized = isAuthorized
+        let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture {
+                // Bound the sockets held by peers that have not proven anything yet.
+                let admitted = openConnections.withLockedValue { count -> Bool in
+                    guard count < maxConnections else { return false }
+                    count += 1
+                    return true
+                }
+                guard admitted else { return channel.eventLoop.makeFailedFuture(TunnelError.tooManyConnections) }
+                channel.closeFuture.whenComplete { _ in openConnections.withLockedValue { $0 -= 1 } }
+                return channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.addHandler(HandshakeDeadlineHandler(timeout: handshakeTimeout))
                     let configuration = SSHServerConfiguration(hostKeys: [hostKey], userAuthDelegate: PublicKeyAuthDelegate(isAuthorized: isAuthorized))
                     try channel.pipeline.syncOperations.addHandler(
                         NIOSSHHandler(role: .server(configuration), allocator: channel.allocator) { child, channelType in
@@ -66,12 +83,13 @@ public final class SSHTunnelServer: Sendable {
             return child.eventLoop.makeFailedFuture(TunnelError.destinationNotAllowed)
         }
         let (sshSide, targetSide) = TunnelRelayHandler.makePair()
+        // The target side is installed as the channel is created, so a close during the connect is not missed.
+        let targetSideBox = UncheckedSendableBox(targetSide)
         return child.pipeline.addHandlers([SSHDataCodec(), sshSide]).flatMap {
             ClientBootstrap(group: child.eventLoop)
                 .channelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
+                .channelInitializer { $0.pipeline.addHandler(targetSideBox.value) }
                 .connect(host: target.targetHost, port: target.targetPort)
-        }.flatMap { targetChannel in
-            targetChannel.pipeline.addHandler(targetSide)
-        }
+        }.map { _ in }
     }
 }

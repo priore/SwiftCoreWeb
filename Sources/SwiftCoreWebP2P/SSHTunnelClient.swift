@@ -48,7 +48,13 @@ public final class SSHTunnelClient: Sendable {
                     try channel.pipeline.syncOperations.addHandler(AuthCompletionHandler(promise: authenticated))
                 }
             }
-        let channel = try await bootstrap.connect(host: host, port: port).get()
+        let channel: Channel
+        do {
+            channel = try await bootstrap.connect(host: host, port: port).get()
+        } catch {
+            authenticated.fail(error) // the promise must always be completed
+            throw error
+        }
         do {
             try await authenticated.futureResult.get()
         } catch {
@@ -67,12 +73,17 @@ public final class SSHTunnelClient: Sendable {
     ) async throws -> Channel {
         guard let channel = connection.withLockedValue({ $0 }) else { throw TunnelError.notConnected }
         let promise = channel.eventLoop.makePromise(of: Channel.self)
-        try await channel.eventLoop.submit {
-            let handler = try channel.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
-            handler.createChannel(promise, channelType: .directTCPIP(.init(targetHost: host, targetPort: port, originatorAddress: originator))) { child, _ in
-                initialize(child)
-            }
-        }.get()
+        do {
+            try await channel.eventLoop.submit {
+                let handler = try channel.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
+                handler.createChannel(promise, channelType: .directTCPIP(.init(targetHost: host, targetPort: port, originatorAddress: originator))) { child, _ in
+                    initialize(child)
+                }
+            }.get()
+        } catch {
+            promise.fail(error) // the SSH connection is gone: the promise must still be completed
+            throw error
+        }
         return try await promise.futureResult.get()
     }
 

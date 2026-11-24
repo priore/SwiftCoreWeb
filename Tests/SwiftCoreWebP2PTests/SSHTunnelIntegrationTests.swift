@@ -7,7 +7,9 @@
 
 import XCTest
 import Crypto
+import NIOConcurrencyHelpers
 import NIOCore
+import NIOPosix
 import NIOSSH
 import SwiftCoreWeb
 @testable import SwiftCoreWebP2P
@@ -23,7 +25,7 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         let clientKey: Curve25519.Signing.PrivateKey
     }
 
-    private func makeFixture(authorize: Bool = true) async throws -> Fixture {
+    private func makeFixture(authorize: Bool = true, handshakeTimeout: TimeAmount = .seconds(10), maxConnections: Int = 64) async throws -> Fixture {
         let appPort = Int.random(in: 30_000..<60_000)
         let builder = WebApplication.createBuilder()
         builder.usePort(appPort)
@@ -38,9 +40,13 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         let server = SSHTunnelServer(
             hostKey: Curve25519.Signing.PrivateKey(),
             allowList: TunnelAllowList(port: appPort),
+            handshakeTimeout: handshakeTimeout,
+            maxConnections: maxConnections,
             isAuthorized: { authorize && $0 == authorizedKey }
         )
-        return Fixture(app: app, appPort: appPort, server: server, serverPort: try await server.start(host: "127.0.0.1"), clientKey: clientKey)
+        let fixture = Fixture(app: app, appPort: appPort, server: server, serverPort: try await server.start(host: "127.0.0.1"), clientKey: clientKey)
+        addTeardownBlock { await Self.stop(fixture) } // also runs when a step in between throws
+        return fixture
     }
 
     private func connectedClient(_ fixture: Fixture) async throws -> SSHTunnelClient {
@@ -50,7 +56,7 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         return client
     }
 
-    private func tearDown(_ fixture: Fixture) async {
+    private static func stop(_ fixture: Fixture) async {
         await fixture.server.stop()
         try? await fixture.app.stopAsync()
     }
@@ -72,7 +78,7 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         let (echo, _) = try await session.data(for: post)
         XCTAssertEqual(echo.count, 200_000)
 
-        await proxy.stop(); await client.close(); await tearDown(fixture)
+        await proxy.stop(); await client.close(); await Self.stop(fixture)
     }
 
     func testHundredConcurrentRequestsAllSucceed() async throws {
@@ -93,20 +99,34 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         }
         XCTAssertEqual(successes, 100)
 
-        await proxy.stop(); await client.close(); await tearDown(fixture)
+        await proxy.stop(); await client.close(); await Self.stop(fixture)
     }
 
-    func testDestinationOutsideTheAllowListIsRefused() async throws {
+    /// A real listener on the forbidden port: if the tunnel connected there, `accepted` would not stay zero.
+    func testDestinationOutsideTheAllowListIsRefusedAndNeverContacted() async throws {
         let fixture = try await makeFixture()
         let client = try await connectedClient(fixture)
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer { Task { try? await group.shutdownGracefully() } }
+        let accepted = NIOLockedValueBox(0)
+        let decoy = try await ServerBootstrap(group: group)
+            .childChannelInitializer { channel in accepted.withLockedValue { $0 += 1 }; return channel.eventLoop.makeSucceededVoidFuture() }
+            .bind(host: "127.0.0.1", port: 0).get()
+        let decoyPort = try XCTUnwrap(decoy.localAddress?.port)
+
         let origin = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
-        for (host, port) in [("127.0.0.1", fixture.appPort + 1), ("example.com", 80), ("localhost", fixture.appPort)] {
+        for (host, port) in [("127.0.0.1", decoyPort), ("localhost", decoyPort), ("localhost", fixture.appPort), ("::1", fixture.appPort)] {
             do {
                 _ = try await client.openForwardedChannel(toHost: host, port: port, originator: origin) { $0.eventLoop.makeSucceededVoidFuture() }
                 XCTFail("\(host):\(port) must be refused")
-            } catch {}
+            } catch {
+                XCTAssertNotNil(error)
+            }
         }
-        await client.close(); await tearDown(fixture)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(accepted.withLockedValue { $0 }, 0)
+        try await decoy.close()
+        await client.close()
     }
 
     func testUnauthorizedKeyAndUntrustedHostKeyAreRefused() async throws {
@@ -127,6 +147,43 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         } catch {}
         await wrongHost.close()
 
-        await tearDown(fixture)
+        await Self.stop(fixture)
+    }
+
+    func testOfflineHostAndDroppedTunnelFailWithoutCrashing() async throws {
+        let client = SSHTunnelClient()
+        do {
+            try await client.connect(host: "127.0.0.1", port: 1, username: "device", key: Curve25519.Signing.PrivateKey(), trustedHostKey: { _ in true })
+            XCTFail("nothing listens on port 1")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+        await client.close()
+
+        let fixture = try await makeFixture()
+        let connected = try await connectedClient(fixture)
+        await fixture.server.stop()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let origin = try SocketAddress(ipAddress: "127.0.0.1", port: 0)
+        do {
+            _ = try await connected.openForwardedChannel(toHost: "127.0.0.1", port: fixture.appPort, originator: origin) { $0.eventLoop.makeSucceededVoidFuture() }
+            XCTFail("the tunnel is down")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+        await connected.close()
+    }
+
+    func testSilentSocketsAreClosedAndConnectionsAreCapped() async throws {
+        let fixture = try await makeFixture(handshakeTimeout: .milliseconds(300), maxConnections: 1)
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer { Task { try? await group.shutdownGracefully() } }
+
+        let first = try await ClientBootstrap(group: group).connect(host: "127.0.0.1", port: fixture.serverPort).get()
+        // Over the cap: the second socket is closed at once, even though the first is still silent.
+        let second = try await ClientBootstrap(group: group).connect(host: "127.0.0.1", port: fixture.serverPort).get()
+        try await second.closeFuture.get()
+        // The silent first socket is closed by the handshake deadline.
+        try await first.closeFuture.get()
     }
 }

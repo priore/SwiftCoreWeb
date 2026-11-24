@@ -21,7 +21,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.20.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.9.1"),
+        .package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.15.2"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         .package(url: "https://github.com/apple/swift-syntax.git", from: "604.0.0"),
         // ponytail: pinned exact — swift-collections 1.7.0 (swift-nio's own

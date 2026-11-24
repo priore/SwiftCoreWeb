@@ -12,6 +12,8 @@ public enum TunnelError: Error, Sendable, Equatable {
     case destinationNotAllowed
     /// The host did not accept this device's key.
     case authenticationRefused
+    /// The host is already serving its maximum number of connections.
+    case tooManyConnections
     /// The tunnel is not connected (or the connection was lost).
     case notConnected
 }

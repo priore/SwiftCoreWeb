@@ -17,6 +17,7 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
 
     private weak var partner: TunnelRelayHandler?
     private var context: ChannelHandlerContext?
+    private var channelClosed = false
 
     static func makePair() -> (TunnelRelayHandler, TunnelRelayHandler) {
         let first = TunnelRelayHandler()
@@ -30,6 +31,8 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
 
     func handlerAdded(context: ChannelHandlerContext) {
         self.context = context
+        // The partner's channel may have closed before this one existed (the local client gave up early).
+        if partner?.channelClosed == true { context.close(promise: nil) }
     }
 
     func handlerRemoved(context: ChannelHandlerContext) {
@@ -63,6 +66,7 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
     }
 
     func channelInactive(context: ChannelHandlerContext) {
+        channelClosed = true
         partner?.context?.close(promise: nil)
         context.fireChannelInactive()
     }
