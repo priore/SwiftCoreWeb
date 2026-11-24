@@ -306,7 +306,7 @@ final class ServerEngine: @unchecked Sendable {
                         guard let head = requestHead else { continue }
 
                         if isWebSocketUpgrade(head) {
-                            try await handleWebSocketUpgrade(head: head, rawChannel: rawChannel)
+                            try await handleWebSocketUpgrade(head: head, rawChannel: rawChannel, remoteIP: remoteIP, outbound: outbound)
                             return
                         }
 
@@ -481,7 +481,12 @@ final class ServerEngine: @unchecked Sendable {
             && head.headers["Connection"].first?.lowercased().contains("upgrade") == true
     }
 
-    private func handleWebSocketUpgrade(head: HTTPRequestHead, rawChannel: Channel) async throws {
+    private func handleWebSocketUpgrade(
+        head: HTTPRequestHead,
+        rawChannel: Channel,
+        remoteIP: String,
+        outbound: NIOAsyncChannelOutboundWriter<HTTPServerResponsePart>
+    ) async throws {
         let (path, _) = splitPathAndQuery(head.uri)
         guard let route = app.webSocketRegistry.match(path: path) else {
             try? await rawChannel.close()
@@ -491,6 +496,15 @@ final class ServerEngine: @unchecked Sendable {
         guard let key = head.headers["Sec-WebSocket-Key"].first else {
             try? await rawChannel.close()
             return
+        }
+
+        // The route's `auth` is enforced here, before the 101: once upgraded, the HTTP pipeline is gone.
+        if case .none = route.auth {} else {
+            let request = makeHttpRequest(head: head, body: ByteBuffer(), remoteAddress: remoteIP)
+            if let denied = await dispatcher.authorizeUpgrade(request, auth: route.auth) {
+                try await write(denied, method: head.method, to: outbound)
+                return
+            }
         }
         let acceptValue = webSocketAcceptValue(for: key)
 

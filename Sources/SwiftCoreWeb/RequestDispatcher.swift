@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import NIOConcurrencyHelpers
 
 /// Ties routing (`Router.match`), the middleware pipeline, and route
 /// dispatch together into the single entry point the server engine (Part 4)
@@ -128,6 +129,16 @@ public struct RequestDispatcher: Sendable {
             }
             return await runPipeline(ctx, routeAuth: routeAuth, terminal)
         }
+    }
+
+    /// Runs the middleware pipeline for a WebSocket upgrade request with `auth` as the route's requirement,
+    /// so `useAuthentication`/`useAuthorization` apply to WebSocket routes like to HTTP ones.
+    /// Returns `nil` when the upgrade may proceed, else the response (401/403/…) to send instead.
+    func authorizeUpgrade(_ request: HttpRequest, auth: AuthRequirement) async -> HttpResponse? {
+        let ctx = HttpContext(request: request, services: services)
+        let allowed = NIOLockedValueBox(false)
+        let response = await runPipeline(ctx, routeAuth: auth) { allowed.withLockedValue { $0 = true } }
+        return allowed.withLockedValue { $0 } ? nil : response
     }
 
     private func runPipeline(_ ctx: HttpContext, routeAuth: AuthRequirement, _ terminal: @escaping MiddlewareNext) async -> HttpResponse {

@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`mapWebSocket(_:auth:_:)` ignored its `auth` requirement.**
+  - The route's `AuthRequirement` was stored but never checked, so any client could open a protected WebSocket.
+  - The upgrade now runs the authentication and authorization middleware first and answers 401/403 instead of switching protocols.
+
 ## [1.3.3] - 2026-11-09
 
 ### Fixed
