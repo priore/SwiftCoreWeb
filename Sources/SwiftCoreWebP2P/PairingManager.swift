@@ -1,0 +1,183 @@
+// SwiftCoreWeb
+// Copyright (c) 2026 SwiftCoreWeb contributors.
+// Licensed under the PolyForm Noncommercial License 1.0.0.
+// Free for noncommercial use; commercial use requires a separate license from the author.
+// See LICENSE at the repository root. Source-available, not open-source.
+//
+
+import Crypto
+import Foundation
+import NIOConcurrencyHelpers
+import NIOSSH
+
+/// The host side of pairing: owns the host key, the list of paired devices, and the one-time pairing token.
+///
+/// - The host key is created on first use and kept in `storage` (the Keychain by default).
+/// - A pairing session is opened by the user (never by default), yields a random one-time token, and ends at the first
+///   success, after `maxAttempts` tries, or when it expires.
+/// - A paired device is identified by the fingerprint of its key; it can then connect with the key alone.
+public final class PairingManager: Sendable {
+    private struct Session {
+        let token: String
+        let expiresAt: Date
+        var attemptsLeft: Int
+    }
+
+    private struct State {
+        var session: Session?
+        var devices: [PairedDevice]
+        var onRevoke: (@Sendable (String) -> Void)?
+    }
+
+    private static let hostKeyName = "p2p.host-key"
+    private static let devicesName = "p2p.devices"
+
+    private let storage: TunnelSecretStorage
+    private let now: @Sendable () -> Date
+    private let hostKey: NIOSSHPrivateKey
+    private let state: NIOLockedValueBox<State>
+
+    public init(storage: TunnelSecretStorage = KeychainTunnelStorage(), now: @escaping @Sendable () -> Date = { Date() }) throws {
+        self.storage = storage
+        self.now = now
+        if let stored = storage.read(Self.hostKeyName), let raw = Data(base64Encoded: stored),
+           let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) {
+            hostKey = NIOSSHPrivateKey(ed25519Key: key)
+        } else {
+            let key = Curve25519.Signing.PrivateKey()
+            guard storage.write(key.rawRepresentation.base64EncodedString(), forKey: Self.hostKeyName) else { throw TunnelError.storageUnavailable }
+            hostKey = NIOSSHPrivateKey(ed25519Key: key)
+        }
+        let devices = storage.read(Self.devicesName).flatMap { $0.data(using: .utf8) }
+            .flatMap { try? Self.decoder.decode([PairedDevice].self, from: $0) } ?? []
+        state = NIOLockedValueBox(State(session: nil, devices: devices, onRevoke: nil))
+    }
+
+    // MARK: - Host identity
+
+    var hostPrivateKey: NIOSSHPrivateKey { hostKey }
+    public var hostPublicKey: NIOSSHPublicKey { hostKey.publicKey }
+    public var hostFingerprint: String { TunnelFingerprint.of(hostKey.publicKey) }
+
+    // MARK: - Pairing session
+
+    /// Opens a pairing session and returns its token, replacing any session already open.
+    @discardableResult
+    public func openPairing(validFor lifetime: TimeInterval = 120, maxAttempts: Int = 5) -> String {
+        let token = Self.makeToken()
+        let session = Session(token: token, expiresAt: now().addingTimeInterval(lifetime), attemptsLeft: maxAttempts)
+        state.withLockedValue { $0.session = session }
+        return token
+    }
+
+    public func closePairing() {
+        state.withLockedValue { $0.session = nil }
+    }
+
+    /// Whether a pairing session is open (not expired, attempts left).
+    public var isPairingOpen: Bool {
+        let current = now()
+        return state.withLockedValue { $0.session.map { $0.expiresAt > current && $0.attemptsLeft > 0 } ?? false }
+    }
+
+    /// The payload for the open session, or `nil` when none is open. `host` is where the device will connect.
+    public func payload(host: String, port: Int, appPort: Int, name: String? = nil) -> PairingPayload? {
+        let current = now()
+        guard let session = state.withLockedValue({ $0.session }), session.expiresAt > current, session.attemptsLeft > 0 else { return nil }
+        return PairingPayload(host: host, port: port, appPort: appPort, token: session.token, hostKeyFingerprint: hostFingerprint, name: name)
+    }
+
+    /// Checks `token` for `device` and, if it is the open session's, registers the device and ends the session.
+    /// Every call uses up an attempt, right or wrong.
+    func attemptPairing(device: NIOSSHPublicKey, token: String) -> Bool {
+        let current = now()
+        let accepted = state.withLockedValue { state -> Bool in
+            guard var session = state.session, session.expiresAt > current, session.attemptsLeft > 0 else {
+                state.session = nil
+                return false
+            }
+            session.attemptsLeft -= 1
+            let matches = Self.constantTimeEquals(token, session.token)
+            state.session = (matches || session.attemptsLeft == 0) ? nil : session
+            return matches
+        }
+        guard accepted else { return false }
+        let id = TunnelFingerprint.of(device)
+        let paired = PairedDevice(id: id, name: "Device " + id.dropFirst(7).prefix(6), publicKey: String(openSSHPublicKey: device), pairedAt: current)
+        return state.withLockedValue { state in
+            state.devices.removeAll { $0.id == id }
+            state.devices.append(paired)
+            return persist(state.devices)
+        }
+    }
+
+    // MARK: - Paired devices
+
+    public var devices: [PairedDevice] { state.withLockedValue { $0.devices } }
+
+    /// The paired device that owns `key`, if any.
+    func device(for key: NIOSSHPublicKey) -> PairedDevice? {
+        let id = TunnelFingerprint.of(key)
+        return state.withLockedValue { $0.devices.first { $0.id == id } }
+    }
+
+    public func rename(deviceID: String, to name: String) {
+        state.withLockedValue { state in
+            guard let index = state.devices.firstIndex(where: { $0.id == deviceID }) else { return }
+            state.devices[index].name = name
+            _ = persist(state.devices)
+        }
+    }
+
+    /// Removes a device: it can no longer connect, and `onRevoke` lets the server drop its open sessions.
+    @discardableResult
+    public func revoke(deviceID: String) -> Bool {
+        let (removed, handler) = state.withLockedValue { state -> (Bool, (@Sendable (String) -> Void)?) in
+            let before = state.devices.count
+            state.devices.removeAll { $0.id == deviceID }
+            let removed = state.devices.count < before
+            if removed { _ = persist(state.devices) }
+            return (removed, state.onRevoke)
+        }
+        if removed { handler?(deviceID) }
+        return removed
+    }
+
+    /// Set by the server to close a revoked device's open connections.
+    func setRevocationHandler(_ handler: (@Sendable (String) -> Void)?) {
+        state.withLockedValue { $0.onRevoke = handler }
+    }
+
+    // MARK: - Helpers
+
+    private func persist(_ devices: [PairedDevice]) -> Bool {
+        guard let data = try? Self.encoder.encode(devices), let text = String(data: data, encoding: .utf8) else { return false }
+        return storage.write(text, forKey: Self.devicesName)
+    }
+
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    private static func makeToken() -> String {
+        var generator = SystemRandomNumberGenerator()
+        let bytes = (0..<16).map { _ in UInt8.random(in: 0...255, using: &generator) }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
+
+    /// Compares without stopping at the first difference, so timing does not reveal how much of a guess was right.
+    private static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        let a = Array(lhs.utf8), b = Array(rhs.utf8)
+        guard a.count == b.count else { return false }
+        return zip(a, b).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+    }
+}
