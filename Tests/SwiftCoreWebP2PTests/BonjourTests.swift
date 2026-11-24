@@ -47,7 +47,8 @@ final class BonjourTests: XCTestCase {
             try? await channel.close()
             XCTFail("nothing should accept connections over IPv6 on the tunnel port")
         } catch {
-            XCTAssertNotNil(error)
+            // Refused, not "unreachable" or "no such address": something answered on ::1 and it was nobody.
+            XCTAssertTrue(String(describing: error).lowercased().contains("refused"), "\(error)")
         }
     }
 }

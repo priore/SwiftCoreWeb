@@ -12,6 +12,8 @@ import Foundation
 /// to itself (a second listener announcing on the same port would take over the IPv6 side of it).
 final class BonjourAdvertiser: @unchecked Sendable {
     private var reference: DNSServiceRef?
+    /// dns_sd requires a serial queue, and the reference must be deallocated on that same queue.
+    private let queue = DispatchQueue(label: "SwiftCoreWebP2P.bonjour", qos: .utility)
 
     /// `name` `nil` announces under the system's own name for the device. Fails (`nil`) when the announcement cannot be
     /// registered: it is a convenience, the tunnel works without it.
@@ -20,14 +22,19 @@ final class BonjourAdvertiser: @unchecked Sendable {
         var created: DNSServiceRef?
         let status = DNSServiceRegister(&created, 0, 0, name.map(Self.truncated), type, nil, nil, port.bigEndian, 0, nil, nil, nil)
         guard status == kDNSServiceErr_NoError, let created else { return nil }
+        guard DNSServiceSetDispatchQueue(created, queue) == kDNSServiceErr_NoError else {
+            DNSServiceRefDeallocate(created)
+            return nil
+        }
         reference = created
-        DNSServiceSetDispatchQueue(created, DispatchQueue.global(qos: .utility))
     }
 
     func cancel() {
-        guard let current = reference else { return }
-        reference = nil
-        DNSServiceRefDeallocate(current)
+        queue.sync {
+            guard let current = reference else { return }
+            reference = nil
+            DNSServiceRefDeallocate(current)
+        }
     }
 
     deinit { cancel() }
