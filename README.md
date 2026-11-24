@@ -20,30 +20,56 @@ Your iPhone can run a real web server. SwiftCoreWeb turns any iOS 15+ app into a
 
 ## Features
 
-**Server**
-- HTTP/1.1 and HTTPS (TLS from a PKCS#12 identity whose password lives in the Keychain), built on SwiftNIO; secure by default (loopback only until you opt in to the LAN).
-- WebSocket and Server-Sent Events routes, with limits on frame and message size, backpressure and a clean close handshake.
-- Static files, single-page-app hosting, byte ranges, file upload and download (including one-time download links).
-- A router that mixes Minimal API closures and macro-based `@Controller`s, with route templates, parameter binding from route, query and body, and per-route body limits.
-- A middleware pipeline: authentication, CORS, security headers, logging, exception handling, rate limiting and cookie sessions.
-- Dependency injection, `ProblemDetails` error bodies, and generated OpenAPI documentation.
-- Lifecycle for iOS apps: keep-awake, scene-phase binding, restart after backgrounding, network-change handling, Bonjour announcement.
+### Server
 
-**Authentication** — JWT bearer and custom API-key schemes, authorization policies, and signing keys and TLS passwords kept in the Keychain (`SecretStore`). See [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md).
+- **HTTP and HTTPS** on SwiftNIO. TLS comes from a PKCS#12 identity whose password stays in the Keychain.
+- **Secure by default**: the server listens on loopback only, until you opt in to the LAN.
+- **WebSocket and Server-Sent Events** routes, with limits on frame and message size, backpressure, and a clean close handshake.
+- **Static files and single-page apps**, byte ranges, file upload and download, one-time download links.
+- **Two ways to write routes, on the same server**: Minimal API closures and macro-based `@Controller`s. Route templates, parameter binding from route, query and body, per-route body limits.
+- **Middleware pipeline**: authentication, CORS, security headers, logging, exception handling, rate limiting, cookie sessions.
+- **Dependency injection**, `ProblemDetails` error bodies, generated OpenAPI documentation.
+- **Built for iOS apps**: keep-awake, scene-phase binding, restart after backgrounding, network-change handling, Bonjour announcement.
 
-**Front end** — plain HTML, server-rendered templates, zero-build Vue, a full Vite workflow with dev-deploy and live reload, and [Live Pages](docs/web/LIVE_PAGES_GUIDE.md): Vue components wired to Swift event handlers, so a click in the browser runs Swift on the server.
+### Authentication and secrets
 
-**Peer-to-peer access** (`SwiftCoreWebP2P`, optional) — reach the app from a paired iPhone, iPad, Mac or Apple TV with no open port and no server in between. See [docs/P2P_TRANSPORT.md](docs/P2P_TRANSPORT.md).
-- Standard SSH (Ed25519 keys, `direct-tcpip` forwarding): an ordinary HTTP client works through a loopback URL, and so does OpenSSH.
-- Pairing by QR code, or by a six-digit code with the host key confirmed by eye on devices without a camera; per-device identity, revocation, and per-route control of what a paired device can reach.
-- Found again on the local network by Bonjour; from another network through a direct connection (TCP hole punching) or a TURN relay, with a small rendezvous service you can host on a plain SwiftCoreWeb app. The connection follows network changes and reconnects by itself.
-- Verified on the simulator and the loopback; not yet on real devices or across real NATs.
+- JWT bearer and custom API-key schemes, plus authorization policies.
+- Signing keys and TLS passwords live in the Keychain (`SecretStore`), never in a file.
+- Guide: [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md).
 
-**Testing** — `TestHost` runs the real production pipeline in memory, with no sockets (`SwiftCoreWebTesting`).
+### Front end
 
-**Optional libraries** — `SwiftCoreWebDashboard` turns the device's screen into a live console for the server; `SwiftCoreWebKit` makes blob and attachment downloads work inside a `WKWebView`; `SwiftCoreWebP2P` as above.
+- Plain HTML, or server-rendered templates.
+- Zero-build Vue, or a full Vite workflow with on-device dev-deploy and live reload.
+- [Live Pages](docs/web/LIVE_PAGES_GUIDE.md): Vue components wired to Swift event handlers. A click in the browser runs Swift on the server and the page updates.
 
-**Platforms** — iOS 15+, macOS 11+, tvOS 15+ (on tvOS there is no screen dimming, battery metrics, pasteboard or WebKit helper).
+### Peer-to-peer access (`SwiftCoreWebP2P`, optional)
+
+Reach the app from a paired iPhone, iPad, Mac or Apple TV with no open port and no server in between. Full guide: [docs/P2P_TRANSPORT.md](docs/P2P_TRANSPORT.md).
+
+- **Standard protocol**: SSH with Ed25519 keys and `direct-tcpip` forwarding. Any HTTP client works through a loopback URL, and so does OpenSSH.
+- **Pairing**: a QR code, or a six-digit code with the host key confirmed by eye on devices without a camera (Apple TV).
+- **Control**: per-device identity and revocation, and per-route rules for what a paired device can reach.
+- **On the same network**: the host is found again by Bonjour when its address changes.
+- **From another network**: a direct connection (TCP hole punching) is tried first, then a TURN relay. The small rendezvous service they need can run on a plain SwiftCoreWeb app.
+- **Resilient**: the connection follows network changes (Wi-Fi to cellular) and reconnects by itself.
+- **Status**: verified on the simulator and the loopback. Not yet tried on real devices or across real NATs.
+
+### Testing
+
+- `TestHost` runs the real production pipeline in memory, with no sockets (`SwiftCoreWebTesting`).
+
+### Optional libraries
+
+| Library | What it adds |
+|---------|--------------|
+| `SwiftCoreWebDashboard` | Turns the device's screen into a live console for the server running on it |
+| `SwiftCoreWebKit` | Makes blob and attachment downloads work inside a `WKWebView` |
+| `SwiftCoreWebP2P` | Peer-to-peer access, as above |
+
+### Platforms
+
+iOS 15+, macOS 11+ and tvOS 15+. On tvOS there is no screen dimming, battery metrics, pasteboard or WebKit helper.
 
 ---
 
