@@ -98,6 +98,25 @@ final class TURNAllocationTests: XCTestCase {
         try await allocation.permit(ip: "127.0.0.2")
     }
 
+    /// Needs a second coturn: `turnserver --no-tls --listening-port 34781 -L 127.0.0.1 -E 127.0.0.1 --min-port 50200 --max-port 50300
+    /// -r scw.test --use-auth-secret --static-auth-secret=sharedsecret --allow-loopback-peers --simple-log`.
+    func testTemporaryCredentialsFromASharedSecret() async throws {
+        do { try await ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton).connect(host: "127.0.0.1", port: 34781).get().close() } catch {
+            throw XCTSkip("no TURN server with a shared secret on 127.0.0.1:34781")
+        }
+        let relay = P2PRemoteAccess.Relay(host: "127.0.0.1", port: 34781, sharedSecret: "sharedsecret", lifetime: 600)
+        let valid = relay.credentials()
+        let allocation = try await TURNAllocation.allocate(server: "127.0.0.1", port: 34781, credentials: .init(username: valid.username, password: valid.password))
+        await allocation.close()
+
+        let expired = relay.credentials(now: Date().addingTimeInterval(-3600)) // expiry an hour ago
+        do {
+            _ = try await TURNAllocation.allocate(server: "127.0.0.1", port: 34781, credentials: .init(username: expired.username, password: expired.password))
+            XCTFail("expired credentials must be refused")
+        } catch { XCTAssertTrue(error is TURNAllocation.Failure) }
+        XCTAssertFalse(relay.description.contains("sharedsecret"))
+    }
+
     func testWrongPasswordIsRefused() async throws {
         do {
             _ = try await TURNAllocation.allocate(server: "127.0.0.1", port: 34780, credentials: .init(username: "scw", password: "wrong"))

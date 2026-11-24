@@ -66,7 +66,7 @@ service for the local network announcement in its `Info.plist`:
 
 On another network (4G/5G, another Wi-Fi) the host is not directly reachable. Two small pieces of infrastructure fix that, and neither can read the traffic, which is SSH between the device and the host:
 
-- a **TURN server** that allows TCP allocations (RFC 6062; `coturn` does, many managed services only relay UDP) and has long-term credentials for the host;
+- a **TURN server** that allows TCP allocations (RFC 6062; `coturn` does, many managed services only relay UDP) and has long-term credentials for the host, either one account or, better, temporary credentials derived from a shared secret (`Relay.init(host:port:username:sharedSecret:lifetime:)`; `use-auth-secret` in coturn): what the host sends to the TURN server then stops working after `lifetime` (default one hour), and the host asks for a new allocation when that happens;
 - a **rendezvous**: an SCW app that both can reach, where the host publishes the relay address it got and devices announce themselves.
 
 ```swift
@@ -168,7 +168,7 @@ device uses one token.
 ## Limits
 
 - **Another network goes through a relay.** There is no direct connection through NAT yet: a STUN client exists in the module but nothing uses it, and TCP hole punching is not implemented, so every connection from outside costs the relay's traffic and latency. The relay has to support TCP allocations (RFC 6062); this was verified against `coturn` on the loopback only.
-- The TURN credentials are static (one account for the host), not temporary credentials issued per session; the relay address is IPv4 only and is not remembered between runs of the host. The rendezvous keeps its data in memory, so a restart makes hosts republish within a minute; run it behind TLS, and note that behind a reverse proxy it records the proxy's address.
+- The temporary TURN credentials expire on the host only: the allocation is renewed with a new one when the old one stops working, so a connected device may see a short interruption once per `lifetime`. The relay address is IPv4 only and is not remembered between runs of the host. The rendezvous keeps its data in memory, so a restart makes hosts republish within a minute; run it behind TLS, and note that behind a reverse proxy it records the proxy's address.
 - A device that has never paired cannot connect from outside: pairing needs the host on the local network.
 - The client keeps the address it paired with. If `start()` cannot connect to it (no answer; a refusal such as a revoked device is reported as is), the client looks for the host on the local
   network by the fingerprint in its Bonjour announcement (IPv4 only) and remembers the new address. The device's `Info.plist`

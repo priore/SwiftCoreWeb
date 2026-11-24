@@ -5,6 +5,7 @@
 // See LICENSE at the repository root. Source-available, not open-source.
 //
 
+import Crypto
 import Foundation
 
 /// What a host needs to be reachable from another network (4G/5G, another Wi-Fi): a rendezvous where devices find it, and a
@@ -25,6 +26,9 @@ public struct P2PRemoteAccess: Sendable {
         public let port: Int
         public let username: String
         public let password: String
+        /// For servers that issue time-limited credentials (`use-auth-secret` in coturn): the secret they share with the host.
+        private let sharedSecret: String?
+        private let credentialLifetime: TimeInterval
 
         public var description: String { "Relay(\(host):\(port), user: \(username), password: <redacted>)" }
         public var debugDescription: String { description }
@@ -35,6 +39,29 @@ public struct P2PRemoteAccess: Sendable {
             self.port = port
             self.username = username
             self.password = password
+            sharedSecret = nil
+            credentialLifetime = 0
+        }
+
+        /// A relay that accepts temporary credentials derived from a shared secret (the TURN REST scheme: user name
+        /// `<expiry>:<username>`, password HMAC-SHA1 of it). The secret never leaves the host, and what goes to the TURN
+        /// server stops working after `lifetime`; the host asks for a new allocation when that happens. Keep the secret in
+        /// the Keychain (`SecretStore`).
+        public init(host: String, port: Int = 3478, username: String = "scw", sharedSecret: String, lifetime: TimeInterval = 3600) {
+            self.host = host
+            self.port = port
+            self.username = username
+            password = ""
+            self.sharedSecret = sharedSecret
+            credentialLifetime = lifetime
+        }
+
+        /// The user name and password to present now.
+        func credentials(now: Date = Date()) -> (username: String, password: String) {
+            guard let sharedSecret else { return (username, password) }
+            let name = "\(Int(now.timeIntervalSince1970 + credentialLifetime)):\(username)"
+            let mac = HMAC<Insecure.SHA1>.authenticationCode(for: Data(name.utf8), using: SymmetricKey(data: Data(sharedSecret.utf8)))
+            return (name, Data(mac).base64EncodedString())
         }
     }
 

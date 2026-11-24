@@ -35,9 +35,9 @@ final class RemoteAccessPublisher: Sendable {
             var retry: TimeInterval = 2
             while !Task.isCancelled {
                 do {
+                    let issued = remote.relay.credentials()
                     let allocation = try await TURNAllocation.allocate(
-                        server: remote.relay.host, port: remote.relay.port,
-                        credentials: .init(username: remote.relay.username, password: remote.relay.password)
+                        server: remote.relay.host, port: remote.relay.port, credentials: .init(username: issued.username, password: issued.password)
                     )
                     retry = 2
                     await serve(allocation)
