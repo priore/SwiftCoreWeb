@@ -15,7 +15,8 @@ let package = Package(
         .library(name: "SwiftCoreWeb", targets: ["SwiftCoreWeb"]),
         .library(name: "SwiftCoreWebTesting", targets: ["SwiftCoreWebTesting"]),
         .library(name: "SwiftCoreWebDashboard", targets: ["SwiftCoreWebDashboard"]),
-        .library(name: "SwiftCoreWebKit", targets: ["SwiftCoreWebKit"])
+        .library(name: "SwiftCoreWebKit", targets: ["SwiftCoreWebKit"]),
+        .library(name: "SwiftCoreWebP2P", targets: ["SwiftCoreWebP2P"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
@@ -81,6 +82,14 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: - Optional peer-to-peer transport (opt-in; nothing depends on it)
+        .target(
+            name: "SwiftCoreWebP2P",
+            dependencies: ["SwiftCoreWeb"],
+            path: "Sources/SwiftCoreWebP2P",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: - In-memory test host
         .target(
             name: "SwiftCoreWebTesting",
@@ -115,6 +124,12 @@ let package = Package(
             name: "SwiftCoreWebKitTests",
             dependencies: ["SwiftCoreWebKit"],
             path: "Tests/SwiftCoreWebKitTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "SwiftCoreWebP2PTests",
+            dependencies: ["SwiftCoreWebP2P"],
+            path: "Tests/SwiftCoreWebP2PTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
