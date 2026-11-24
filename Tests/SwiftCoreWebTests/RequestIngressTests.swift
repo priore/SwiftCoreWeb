@@ -48,7 +48,8 @@ struct RequestIngressTests {
         await ingressValue.closeConnection()
         #expect(await ingressValue.allowRequest(from: "peer"))
         #expect(await !ingressValue.allowRequest(from: "peer")) // capacity 1, no refill: second is limited
-        #expect(await ingressValue.allowRequest(from: "127.0.0.1")) // namespaced: not the loopback exemption, own bucket
+        #expect(await ingressValue.allowRequest(from: "127.0.0.1"))
+        #expect(await !ingressValue.allowRequest(from: "127.0.0.1")) // namespaced: no loopback exemption
 
         let denied = await ingressValue.acceptWebSocket(HttpRequest(method: .get, path: "/live"), transport: .init(messages: { AsyncThrowingStream { $0.finish() } }, send: { _ in }, close: { _ in }))
         #expect(denied?.status.rawValue == 401)

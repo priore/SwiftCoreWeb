@@ -9,7 +9,7 @@ import Foundation
 
 /// A transport that runs next to the HTTP listener for as long as the server does (registered with
 /// `WebApplicationBuilder.addExtension(_:)`). `start` runs once the listeners are bound and must return when
-/// the setup is done (do not run the transport's loop inside it); `stop` runs when the server stops.
+/// the setup is done, quickly (a `stopAsync()` arriving meanwhile is ignored, as during the bind; do not run the transport's loop inside it); `stop` runs when the server stops.
 /// Each (re)start of the server calls `start` again with a fresh `RequestIngress`, so a stopped extension
 /// must be startable again.
 public protocol ServerExtension: Sendable {
