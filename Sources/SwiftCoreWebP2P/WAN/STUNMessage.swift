@@ -114,6 +114,7 @@ struct STUNMessage: Equatable, Sendable {
         while offset < bytes.count {
             guard offset + 4 <= bytes.count else { throw DecodingError.truncatedAttribute }
             let attributeType = readUInt16(bytes, offset)
+            if integrityOffset != nil, attributeType != AttributeType.fingerprint { break } // after MESSAGE-INTEGRITY only FINGERPRINT counts (RFC 8489 §14.5)
             let valueLength = Int(readUInt16(bytes, offset + 2))
             let end = offset + 4 + valueLength
             guard end <= bytes.count else { throw DecodingError.truncatedAttribute }

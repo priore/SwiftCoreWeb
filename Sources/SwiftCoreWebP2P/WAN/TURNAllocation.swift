@@ -136,7 +136,8 @@ final class TURNAllocation: Sendable {
     // MARK: - Permissions and connections
 
     /// Lets `ip` connect to the relayed address (the server drops everyone else). Renewed automatically.
-    func permit(ip: String) async throws {
+    func permit(ip rawIP: String) async throws {
+        let ip = rawIP.hasPrefix("::ffff:") ? String(rawIP.dropFirst(7)) : rawIP // an IPv4 client seen on a dual-stack socket
         try await createPermissions([ip]) // throws for anything but an IPv4 address, which is then not remembered
         permitted.withLockedValue { list in
             list.removeAll { $0 == ip }

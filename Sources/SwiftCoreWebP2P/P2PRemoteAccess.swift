@@ -20,7 +20,7 @@ import Foundation
 public struct P2PRemoteAccess: Sendable {
     /// A TURN server that allows TCP allocations (RFC 6062), with its long-term credentials. Keep the password in the
     /// Keychain (`SecretStore`), never in a file.
-    public struct Relay: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    public struct Relay: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
         public let host: String
         public let port: Int
         public let username: String
@@ -28,6 +28,7 @@ public struct P2PRemoteAccess: Sendable {
 
         public var description: String { "Relay(\(host):\(port), user: \(username), password: <redacted>)" }
         public var debugDescription: String { description }
+        public var customMirror: Mirror { Mirror(self, children: ["host": host, "port": port, "username": username]) }
 
         public init(host: String, port: Int = 3478, username: String, password: String) {
             self.host = host
