@@ -7,8 +7,7 @@ opening a port to the network, without a VPN and without a server in between**. 
 (`mapGet`, `mapPost`, `mapSse`…) answer the other device; only the way in is new. Used both for Web and API.
 
 > **Status.** LAN only. Pairing, the tunnel, the Bonjour announcement and per-device identity are implemented and
-> tested on the iOS Simulator. Not done yet: reaching the host from another network (NAT traversal), and exposing individual routes to or hiding them from paired
-> devices. See [Limits](#limits).
+> tested on the iOS Simulator. Not done yet: reaching the host from another network (NAT traversal). See [Limits](#limits).
 
 ## How it works
 
@@ -44,7 +43,7 @@ try await app.runAsync()
 
 | Parameter | Meaning |
 |-----------|---------|
-| `mode` | `.enable` (default) or `.disable`. `.disable` starts nothing and does not touch the Keychain: use it for a setting the user can switch off. It is a switch for the whole feature, not per route. |
+| `mode` | `.enable` (default) or `.disable`. `.disable` starts nothing and does not touch the Keychain: use it for a setting the user can switch off. It is a switch for the whole feature; which routes devices reach is set separately, see [Choose which routes devices reach](#choose-which-routes-devices-reach). |
 | `name` | The name announced on the local network. `nil` uses the device's own name. |
 | `port` | The tunnel's port. `0` (default) reuses the last run's port when it is free, so paired devices keep finding the host. |
 | `storage` | Where the host key and the paired devices are kept: the Keychain by default (`KeychainTunnelStorage`). Never a file. |
@@ -61,6 +60,19 @@ service for the local network announcement in its `Info.plist`:
 <key>NSLocalNetworkUsageDescription</key>
 <string>Lets your other devices reach this app.</string>
 ```
+
+## Choose which routes devices reach
+
+By default a paired device reaches every route, like any other client. Narrow that with rules on `WebApplication` or on a route group; the most specific rule wins:
+
+```swift
+app.useP2P(.disable)                       // hide everything from paired devices by default...
+app.mapGroup("/api").useP2P(.enable)       // ...except the API
+app.useP2P("/api/admin", .disable)         // and except one part of it
+app.useP2P("/users/{id}/private", .disable) // a {placeholder} segment matches any value
+```
+
+A path is matched by whole segments (`/admin` covers `/admin/x`, not `/administrator`). A route a device may not reach answers `404`, as if it did not exist, for plain requests and for WebSocket upgrades. Requests that come in on the normal listener (the app's own port) are never affected. The rules are checked at request time, so they can be changed while the server runs. Not covered: requests an extension dispatches itself through `RequestIngress.dispatch`.
 
 ## Pair a device
 

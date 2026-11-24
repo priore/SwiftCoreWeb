@@ -27,6 +27,10 @@ final class PeerIdentityTests: XCTestCase {
         if rateLimit { builder.rateLimit { $0.capacity = 3; $0.refillPerSecond = 0.001 } }
         let host = try builder.useP2P(storage: InMemoryTunnelStorage())
         let app = builder.build()
+        app.mapGet("/open") { _ in "open" }
+        app.mapGet("/admin/secret") { _ in "secret" }
+        app.mapGet("/admin/users/{id}/card") { _ in "card" }
+        app.mapGet("/admin/public/info") { _ in "info" }
         app.mapGet("/whoami") { ctx in ctx.request.remoteAddress ?? "none" }
         app.mapSse("/events") { writer in
             for index in 1...3 { try await writer.send("tick \(index)") }
@@ -56,6 +60,30 @@ final class PeerIdentityTests: XCTestCase {
         let seen = String(decoding: data, as: UTF8.self)
         let device = try XCTUnwrap(fixture.host.pairing?.devices.first)
         XCTAssertEqual(seen, "p2p:" + device.id)
+        await peer.stop()
+    }
+
+    func testRoutesHiddenFromPairedDevicesAnswer404ButStayReachableDirectly() async throws {
+        let fixture = try await makeFixture()
+        fixture.app.useP2P("/admin", .disable)
+        fixture.app.useP2P("/admin/public", .enable) // the most specific rule wins
+        let (peer, base) = try await pair(fixture)
+        let direct = URL(string: "http://127.0.0.1:\(fixture.appPort)")!
+
+        for (path, viaTunnel) in [("open", 200), ("admin/secret", 404), ("admin/users/7/card", 404), ("admin/public/info", 200)] {
+            let code = try await status(base.appendingPathComponent(path))
+            XCTAssertEqual(code, viaTunnel, "/\(path) through the tunnel")
+            let directCode = try await status(direct.appendingPathComponent(path))
+            XCTAssertEqual(directCode, 200, "/\(path) on the normal listener is never affected")
+        }
+
+        // Deny by default, allow one group.
+        fixture.app.useP2P(.disable)
+        fixture.app.useP2P("/open", .enable)
+        let openCode = try await status(base.appendingPathComponent("open"))
+        let whoCode = try await status(base.appendingPathComponent("whoami"))
+        XCTAssertEqual(openCode, 200)
+        XCTAssertEqual(whoCode, 404)
         await peer.stop()
     }
 

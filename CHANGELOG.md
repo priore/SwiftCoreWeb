@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Per-route exposure for peers.** `WebApplication.setPeerAccess(_:allowed:)`, `setPeerAccessDefault(allowed:)` and `RouteGroup.setPeerAccess(allowed:)` decide which paths requests from an extension's peer listener may reach (most specific prefix wins; denied paths answer `404`, including WebSocket upgrades). `SwiftCoreWebP2P` wraps them as `app.useP2P(_:)`, `app.useP2P(_:_:)` and `RouteGroup.useP2P(_:)`.
 - **`SwiftCoreWebP2P`: SSH tunnel to the local server (first step, LAN).**
   - New opt-in product built on `swift-nio-ssh`: `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
   - `SCWPeerConnection.start()` looks the host up again over Bonjour (by the fingerprint in the TXT record) when the stored address no longer answers, and remembers the new one.

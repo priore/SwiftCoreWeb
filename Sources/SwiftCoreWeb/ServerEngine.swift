@@ -240,7 +240,7 @@ final class ServerEngine: @unchecked Sendable {
             }
             self.app.metrics.connectionOpened()
             channel.eventLoop.execute {
-                (peer ? self.setUpPeerPipeline(channel) : self.setUpHTTPPipeline(channel, remoteIP: remoteIP)).cascade(to: promise)
+                (peer ? self.setUpPeerPipeline(channel) : self.setUpHTTPPipeline(channel, remoteIP: remoteIP, fromPeer: false)).cascade(to: promise)
             }
         }
 
@@ -266,7 +266,7 @@ final class ServerEngine: @unchecked Sendable {
         // the HTTP handlers are added when the line arrives.
         identity.futureResult.flatMap { [weak self] remoteIP -> EventLoopFuture<Void> in
             guard let self else { return channel.eventLoop.makeFailedFuture(ServerEngineError.stopped) }
-            return self.setUpHTTPPipeline(channel, remoteIP: remoteIP).flatMapError { error in
+            return self.setUpHTTPPipeline(channel, remoteIP: remoteIP, fromPeer: true).flatMapError { error in
                 // The identity was fine but serving could not start: give back the slot taken for this connection.
                 self.app.metrics.connectionClosed()
                 Task { await self.connectionGate.release() }
@@ -279,7 +279,7 @@ final class ServerEngine: @unchecked Sendable {
     /// Adds the named HTTP1 handlers (WebSocket upgrade removes them by
     /// these names) and starts serving the connection. Runs on the channel's
     /// own event loop, after `ConnectionGate` has reserved a slot.
-    private func setUpHTTPPipeline(_ channel: Channel, remoteIP: String) -> EventLoopFuture<Void> {
+    private func setUpHTTPPipeline(_ channel: Channel, remoteIP: String, fromPeer: Bool) -> EventLoopFuture<Void> {
         // Synchronous (we are on the channel's loop): the peer path relies on the handlers being in place at once.
         channel.eventLoop.makeCompletedFuture {
             try channel.pipeline.syncOperations.addHandler(HTTPResponseEncoder(), name: Self.httpEncoderName)
@@ -297,7 +297,7 @@ final class ServerEngine: @unchecked Sendable {
                     self.app.metrics.connectionClosed()
                     Task { await self.connectionGate.release() }
                 }
-                await self.serve(asyncChannel, remoteIP: remoteIP, rawChannel: channel)
+                await self.serve(asyncChannel, remoteIP: remoteIP, fromPeer: fromPeer, rawChannel: channel)
             }
         }
     }
@@ -307,6 +307,7 @@ final class ServerEngine: @unchecked Sendable {
     private func serve(
         _ channel: NIOAsyncChannel<HTTPServerRequestPart, HTTPServerResponsePart>,
         remoteIP: String,
+        fromPeer: Bool,
         rawChannel: Channel
     ) async {
         var rateLimited = false
@@ -396,6 +397,16 @@ final class ServerEngine: @unchecked Sendable {
 
                     case .end:
                         guard let head = requestHead else { continue }
+
+                        // A path the app keeps away from peers does not exist as far as they can tell.
+                        if fromPeer, !dispatcher.router.peerAccess.allows(path: splitPathAndQuery(head.uri).path) {
+                            try await writeSimpleResponse(outbound, status: .notFound)
+                            requestHead = nil
+                            bodyBuffer.clear()
+                            spool?.discard()
+                            spool = nil
+                            continue
+                        }
 
                         if isWebSocketUpgrade(head) {
                             try await handleWebSocketUpgrade(head: head, rawChannel: rawChannel, remoteIP: remoteIP, outbound: outbound)
