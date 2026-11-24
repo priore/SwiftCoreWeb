@@ -102,7 +102,13 @@ A route a device may not reach is answered exactly like a path that matches noth
 
 ## Pair a device
 
-On the host, open a pairing session when the user asks for it (a button, a settings screen) and show the payload as a
+The quickest way is the ready-made SwiftUI screen, native on iPhone, iPad, Mac and Apple TV (on Apple TV the TV shows the code and the phone scans it):
+
+```swift
+P2PPairingView(host: p2p, name: "Living room")   // QR code, countdown, host key fingerprint, paired devices with Revoke
+```
+
+It closes the pairing session when it disappears. To draw your own, open a pairing session when the user asks for it (a button, a settings screen) and show the payload as a
 QR code (`QRCodeView` in `SwiftCoreWebDashboard` renders any URL):
 
 ```swift
@@ -176,4 +182,4 @@ device uses one token.
   host's key fingerprint in clear, so anyone on the network can recognise the host; it grants no access. The announcement is only a hint: the connection still pins the
   host key. Not covered by a test on a real device, and an address that changes while connected is not noticed until the
   next `start()`.
-- tvOS: the core, the dashboard and `SwiftCoreWebP2P` build for tvOS 15+ and the P2P and core tests pass on the Apple TV simulator. On tvOS there is no screen dimming, battery, pasteboard or WebKit helper (those parts are no-ops or absent). Not tried on a real Apple TV, and pairing without a camera (a code to type instead of a QR) is not built: pair from the iPhone or Mac side, or pass the link yourself.
+- tvOS: the core, the dashboard and `SwiftCoreWebP2P` build for tvOS 15+ and the P2P and core tests pass on the Apple TV simulator. On tvOS there is no screen dimming, battery, pasteboard or WebKit helper (those parts are no-ops or absent). Not tried on a real Apple TV, and a tvOS device acting as the *client* cannot scan a QR (no camera) and typing a code is not built: use the Apple TV as the host (`P2PPairingView`) and scan from the phone.
