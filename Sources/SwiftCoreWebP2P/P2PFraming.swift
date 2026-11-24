@@ -21,6 +21,13 @@ import Foundation
 ///     4      8    message id
 ///     12     4    fragment index   0, 1, 2, ... in order
 ///     16     2    payload length   0 ... 32768
+///
+/// Rules a receiver enforces, and a sender must follow:
+/// - every fragment except the last carries exactly 32768 payload bytes; the last carries 0 ... 32768;
+/// - a message is at most 1 MiB, so at most 32 full fragments plus the last;
+/// - fragments of one message arrive in order; frames of different messages may interleave;
+/// - a message id may be reused once its last fragment has been sent;
+/// - an unknown version or message type is fatal for the connection (a new type needs a new version).
 public enum P2PFraming {
     public static let version: UInt8 = 1
     public static let headerSize = 18
@@ -47,16 +54,5 @@ public enum P2PFraming {
             frame.append(chunk)
             return frame
         }
-    }
-}
-
-extension Data {
-    fileprivate mutating func append<T: FixedWidthInteger>(bigEndian value: T) {
-        Swift.withUnsafeBytes(of: value.bigEndian) { append(contentsOf: $0) }
-    }
-
-    /// The big-endian integer at `offset` (relative to the start of this data, which must be zero-based).
-    func bigEndian<T: FixedWidthInteger>(at offset: Int, as type: T.Type) -> T {
-        (0..<MemoryLayout<T>.size).reduce(T.zero) { ($0 << 8) | T(self[offset + $1]) }
     }
 }

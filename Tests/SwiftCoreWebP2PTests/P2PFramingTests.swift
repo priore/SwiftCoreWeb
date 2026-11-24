@@ -84,4 +84,56 @@ final class P2PFramingTests: XCTestCase {
         let third = try P2PFraming.encode(P2PMessage(type: .response, id: 3, payload: Data(count: 40_000)))[0]
         XCTAssertThrowsError(try limited.accept(third)) { XCTAssertEqual($0 as? P2PFramingError, .tooManyPartialMessages) }
     }
+
+    /// A hand-built frame, to send what a correct encoder never would.
+    private func frame(type: UInt8 = 2, last: Bool, id: UInt64 = 1, index: UInt32, payload: Data) -> Data {
+        var data = Data([1, type, last ? 1 : 0, 0])
+        withUnsafeBytes(of: id.bigEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: index.bigEndian) { data.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(payload.count).bigEndian) { data.append(contentsOf: $0) }
+        return data + payload
+    }
+
+    func testShortNonFinalFragmentIsRefused() {
+        var reassembler = P2PReassembler()
+        XCTAssertThrowsError(try reassembler.accept(frame(last: false, index: 0, payload: Data()))) {
+            XCTAssertEqual($0 as? P2PFramingError, .lengthMismatch)
+        }
+    }
+
+    func testOversizedMessageIsRefusedByTheReassembler() throws {
+        var reassembler = P2PReassembler(maxPartialMessages: 8, maxBufferedBytes: 8 * P2PFraming.maxMessageSize)
+        let full = Data(count: P2PFraming.maxFragmentPayload)
+        for index in 0..<32 { XCTAssertNil(try reassembler.accept(frame(last: false, index: UInt32(index), payload: full))) }
+        XCTAssertThrowsError(try reassembler.accept(frame(last: false, index: 32, payload: full))) {
+            XCTAssertEqual($0 as? P2PFramingError, .messageTooLarge)
+        }
+    }
+
+    func testBufferBudgetIsEnforcedAndReleasedAfterAnError() throws {
+        let full = Data(count: P2PFraming.maxFragmentPayload)
+        var reassembler = P2PReassembler(maxPartialMessages: 8, maxBufferedBytes: 2 * P2PFraming.maxFragmentPayload)
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 1, index: 0, payload: full)))
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 2, index: 0, payload: full)))
+        XCTAssertThrowsError(try reassembler.accept(frame(last: false, id: 3, index: 0, payload: full))) {
+            XCTAssertEqual($0 as? P2PFramingError, .bufferBudgetExceeded)
+        }
+        // Message 1 is untouched by the failure of message 3 and can still finish.
+        XCTAssertEqual(try reassembler.accept(frame(last: true, id: 1, index: 1, payload: Data([9]))),
+                       P2PMessage(type: .response, id: 1, payload: full + Data([9])))
+        // Its bytes were released: a new partial fits again.
+        XCTAssertNil(try reassembler.accept(frame(last: false, id: 4, index: 0, payload: full)))
+    }
+
+    func testTypeChangeMidMessageAndSlicedInputAreHandled() throws {
+        let full = Data(count: P2PFraming.maxFragmentPayload)
+        var reassembler = P2PReassembler()
+        XCTAssertNil(try reassembler.accept(frame(type: 2, last: false, index: 0, payload: full)))
+        XCTAssertThrowsError(try reassembler.accept(frame(type: 4, last: true, index: 1, payload: Data()))) {
+            XCTAssertEqual($0 as? P2PFramingError, .unexpectedFragment)
+        }
+
+        let wire = Data([0xAA, 0xBB]) + frame(last: true, index: 0, payload: Data("ok".utf8))
+        XCTAssertEqual(try reassembler.accept(wire.dropFirst(2)), P2PMessage(type: .response, id: 1, payload: Data("ok".utf8)))
+    }
 }

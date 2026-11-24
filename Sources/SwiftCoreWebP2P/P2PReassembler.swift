@@ -8,8 +8,9 @@
 import Foundation
 
 /// Rebuilds messages from the frames of one connection, in arrival order. Frames of different messages may
-/// interleave; the fragments of one message must arrive in order. Memory is bounded by
-/// `P2PFraming.maxMessageSize` per message and `maxPartialMessages` messages at once.
+/// interleave; the fragments of one message must arrive in order. Memory is bounded: at most
+/// `maxPartialMessages` unfinished messages holding `maxBufferedBytes` in total (a connection that has not
+/// authenticated yet must not be able to pin much memory).
 public struct P2PReassembler: Sendable {
     private struct Partial {
         let type: P2PMessageType
@@ -18,14 +19,18 @@ public struct P2PReassembler: Sendable {
     }
 
     private var partials: [UInt64: Partial] = [:]
+    private var bufferedBytes = 0
     private let maxPartialMessages: Int
+    private let maxBufferedBytes: Int
 
-    public init(maxPartialMessages: Int = 64) {
+    public init(maxPartialMessages: Int = 8, maxBufferedBytes: Int = 4 * P2PFraming.maxMessageSize) {
         self.maxPartialMessages = maxPartialMessages
+        self.maxBufferedBytes = maxBufferedBytes
     }
 
     /// Feeds one complete frame. Returns the message when this frame finished it, `nil` when more are needed.
-    /// A throw means the peer broke the protocol; the partial message it concerned is discarded.
+    /// A throw means the peer broke the protocol: close the connection. (Errors found after the header was
+    /// read also discard that message's partial state; header errors leave state as it was.)
     public mutating func accept(_ rawFrame: Data) throws -> P2PMessage? {
         let frame = Data(rawFrame) // zero-based indices
         guard frame.count >= P2PFraming.headerSize else { throw P2PFramingError.truncatedFrame }
@@ -40,6 +45,8 @@ public struct P2PReassembler: Sendable {
             throw P2PFramingError.lengthMismatch
         }
         let isLast = frame[2] & P2PFraming.lastFragmentFlag != 0
+        // A short non-final fragment would let a peer send unlimited empty frames that never grow the buffer.
+        guard isLast || length == P2PFraming.maxFragmentPayload else { throw P2PFramingError.lengthMismatch }
 
         var partial: Partial
         if let existing = partials[id] {
@@ -49,21 +56,32 @@ public struct P2PReassembler: Sendable {
             partial = Partial(type: type)
         }
         guard index == partial.nextIndex, type == partial.type else {
-            partials[id] = nil
+            discard(id)
             throw P2PFramingError.unexpectedFragment
         }
         guard partial.payload.count + length <= P2PFraming.maxMessageSize else {
-            partials[id] = nil
+            discard(id)
             throw P2PFramingError.messageTooLarge
         }
 
-        partial.payload.append(frame[P2PFraming.headerSize...])
-        partial.nextIndex += 1
         if isLast {
             partials[id] = nil
+            bufferedBytes -= partial.payload.count
+            partial.payload.append(frame[P2PFraming.headerSize...])
             return P2PMessage(type: type, id: id, payload: partial.payload)
         }
+        guard bufferedBytes + length <= maxBufferedBytes else {
+            discard(id)
+            throw P2PFramingError.bufferBudgetExceeded
+        }
+        partial.payload.append(frame[P2PFraming.headerSize...])
+        partial.nextIndex += 1
+        bufferedBytes += length
         partials[id] = partial
         return nil
+    }
+
+    private mutating func discard(_ id: UInt64) {
+        if let removed = partials.removeValue(forKey: id) { bufferedBytes -= removed.payload.count }
     }
 }

@@ -15,4 +15,5 @@ public enum P2PFramingError: Error, Sendable, Equatable {
     case lengthMismatch
     case unexpectedFragment
     case tooManyPartialMessages
+    case bufferBudgetExceeded
 }
