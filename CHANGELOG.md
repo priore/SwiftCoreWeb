@@ -11,7 +11,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - New opt-in product built on `swift-nio-ssh`: `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
   - `SSHTunnelClient` pins the host key; `LoopbackProxy` lets any HTTP client reach the remote app through `http://127.0.0.1:<port>`.
   - Pairing: the host opens a session on request and shows a payload (`scw-p2p://…`, with the host key fingerprint and a one-time token); `SCWPeerConnection.pair(_:)` registers the device, which then reconnects with its key alone. Keys and the device list live in the Keychain (`TunnelSecretStorage`), and `PairingManager.revoke(deviceID:)` also closes the device's open connections.
-  - The Bonjour announcement and the `builder.useP2P()` entry point are not part of this step.
+  - `builder.useP2P()` starts the tunnel with the server and announces it on the local network as `_scw-p2p._tcp` (the hosting app declares that service and a local network usage description). It returns a `P2PHost` to open pairing sessions; `LocalAddresses.ipv4()` lists the addresses to put in the payload.
+  - Not part of this step: per-route exposure, the peer's identity in `remoteAddress` and rate limiting, discovery on the client, WAN.
 - **`ServerExtension` and `RequestIngress`: an entry point for transports other than the HTTP listener.**
   - `builder.addExtension(_:)` registers a module that starts once the listeners are bound and stops with the server.
   - It receives a `RequestIngress`: the same dispatcher, connection gate and rate limiter the HTTP engine uses, plus `acceptWebSocket` (route lookup and `auth` enforced) over a `WebSocket.Transport`.

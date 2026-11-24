@@ -24,14 +24,15 @@ final class UseP2PTests: XCTestCase {
         builder.usePort(appPort)
         let host = try builder.useP2P(name: "test-host", storage: InMemoryTunnelStorage())
         let app = builder.build()
+        addTeardownBlock { try? await app.stopAsync() }
         app.mapGet("/ping") { _ in "pong" }
         XCTAssertNil(host.tunnelPort) // not running yet
-        XCTAssertNil(host.openPairing(host: "127.0.0.1", appPort: appPort))
+        XCTAssertNil(host.openPairing(host: "127.0.0.1"))
 
         Task { try await app.runAsync() }
         let started = try await waitUntil { host.tunnelPort != nil }
         XCTAssertTrue(started)
-        let payload = try XCTUnwrap(host.openPairing(host: "127.0.0.1", appPort: appPort, name: "Test"))
+        let payload = try XCTUnwrap(host.openPairing(host: "127.0.0.1", name: "Test"))
         XCTAssertEqual(payload.appPort, appPort)
 
         let peer = try await SCWPeerConnection.pair(payload, storage: InMemoryTunnelStorage())
@@ -56,15 +57,33 @@ final class UseP2PTests: XCTestCase {
         let appPort = Int.random(in: 30_000..<60_000)
         let builder = WebApplication.createBuilder()
         builder.usePort(appPort)
-        let host = try builder.useP2P(.disable, storage: InMemoryTunnelStorage())
+        let storage = InMemoryTunnelStorage()
+        let host = try builder.useP2P(.disable, storage: storage)
         let app = builder.build()
+        addTeardownBlock { try? await app.stopAsync() }
         app.mapGet("/ping") { _ in "pong" }
         Task { try await app.runAsync() }
         let started = try await waitUntil { app.isRunning }
         XCTAssertTrue(started)
         XCTAssertFalse(host.isEnabled)
         XCTAssertNil(host.tunnelPort)
-        XCTAssertNil(host.openPairing(host: "127.0.0.1", appPort: appPort))
+        XCTAssertNil(host.openPairing(host: "127.0.0.1"))
+        XCTAssertNil(host.pairing)
+        XCTAssertNil(storage.read("p2p.host-key")) // disabled means the Keychain stays untouched
         try await app.stopAsync()
+    }
+
+    func testInvalidHostOpensNoPairingSession() async throws {
+        let builder = WebApplication.createBuilder()
+        builder.usePort(Int.random(in: 30_000..<60_000))
+        let host = try builder.useP2P(storage: InMemoryTunnelStorage())
+        let app = builder.build()
+        addTeardownBlock { try? await app.stopAsync() }
+        Task { try? await app.runAsync() }
+        let started = try await waitUntil { host.tunnelPort != nil }
+        XCTAssertTrue(started)
+        XCTAssertNil(host.openPairing(host: "fe80::1%en0"))
+        XCTAssertFalse(try XCTUnwrap(host.pairing).isPairingOpen)
+        XCTAssertNotNil(host.openPairing(host: LocalAddresses.ipv4().first ?? "127.0.0.1"))
     }
 }

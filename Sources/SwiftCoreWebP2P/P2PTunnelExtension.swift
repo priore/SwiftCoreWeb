@@ -29,6 +29,7 @@ final class P2PTunnelExtension: ServerExtension {
     private let requestedPort: Int
     private let running = NIOLockedValueBox<Running?>(nil)
     private let boundPort = NIOLockedValueBox<Int?>(nil)
+    private let servedAppPort = NIOLockedValueBox<Int?>(nil)
 
     init(pairing: PairingManager, storage: TunnelSecretStorage, name: String, port: Int) {
         self.pairing = pairing
@@ -38,6 +39,8 @@ final class P2PTunnelExtension: ServerExtension {
     }
 
     var tunnelPort: Int? { boundPort.withLockedValue { $0 } }
+    /// The HTTP port the tunnel forwards to, known once the server runs.
+    var appPort: Int? { servedAppPort.withLockedValue { $0 } }
 
     func start(ingress: RequestIngress) async throws {
         await stop() // a restart of the server starts the tunnel again
@@ -57,7 +60,8 @@ final class P2PTunnelExtension: ServerExtension {
             }
         }
         guard let (server, port) = started else { throw lastError }
-        storage.write(String(port), forKey: Self.portKey)
+        if remembered != port { storage.write(String(port), forKey: Self.portKey) }
+        servedAppPort.withLockedValue { $0 = ingress.port }
         let advertiser = Self.advertise(name: name, port: port)
         running.withLockedValue { $0 = Running(server: server, advertiser: advertiser) }
         boundPort.withLockedValue { $0 = port }
@@ -65,9 +69,17 @@ final class P2PTunnelExtension: ServerExtension {
 
     func stop() async {
         boundPort.withLockedValue { $0 = nil }
+        servedAppPort.withLockedValue { $0 = nil }
         guard let current = running.withLockedValue({ $0.take() }) else { return }
         current.advertiser?.cancel()
         await current.server.stop()
+    }
+
+    /// A Bonjour service name is at most 63 bytes of UTF-8.
+    private static func truncated(_ name: String) -> String {
+        var result = name
+        while result.utf8.count > 63 { result.removeLast() }
+        return result
     }
 
     /// Announces `_scw-p2p._tcp` on the tunnel's port. The announcement is a convenience (a device on the LAN finds the host
@@ -77,7 +89,7 @@ final class P2PTunnelExtension: ServerExtension {
             p2pLogger.error("Bonjour announcement could not start")
             return nil
         }
-        listener.service = NWListener.Service(name: name, type: bonjourType)
+        listener.service = NWListener.Service(name: Self.truncated(name), type: bonjourType)
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state { p2pLogger.error("Bonjour announcement failed: \(String(describing: error), privacy: .public)") }
         }
