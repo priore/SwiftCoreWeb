@@ -130,3 +130,5 @@ the `git ls-files` verification command to run before every push.
 all in the Keychain under the service name `SwiftCoreWebP2P` (through `KeychainTunnelStorage`, never a file): the host's
 Ed25519 key, the list of paired devices, on a client its own device key and the paired-host records, and the tunnel port (`p2p.tunnel-port`) reused across launches. The pairing link shows only the
 fingerprint of the host's *public* key and a one-time token; no private key is ever displayed or exported.
+
+For access from another network, the TURN server's password (`P2PRemoteAccess.Relay`) is a secret of the host app: keep it in the Keychain through `SecretStore` and pass it at startup, never in a file or in source.

@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`SwiftCoreWebP2P`: access from another network through a TURN relay.** `useP2P(remote:)` with `P2PRemoteAccess` (a TURN server with TCP allocations, RFC 6062, and a rendezvous), `P2PRendezvous` (mountable on an SCW app: signed host records and device knocks), `SCWPeerConnection.currentRoute` (`.local`, `.discovered`, `.relay`). Includes a STUN message codec and Binding client (RFC 8489) and a TURN client; verified against `coturn` on the loopback.
 - **Per-route exposure for peers.** `WebApplication.setPeerAccess(_:allowed:)`, `setPeerAccessDefault(allowed:)` and `RouteGroup.setPeerAccess(allowed:)` decide which paths requests from an extension's peer listener may reach (most specific prefix wins; denied paths answer `404`, including WebSocket upgrades). `SwiftCoreWebP2P` wraps them as `app.useP2P(_:)`, `app.useP2P(_:_:)` and `RouteGroup.useP2P(_:)`.
 - **`SwiftCoreWebP2P`: SSH tunnel to the local server (first step, LAN).**
   - New opt-in product built on `swift-nio-ssh`: `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
@@ -25,6 +26,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Handlers and the HTTP upgrade path are unchanged.
 
 ### Fixed
+- **The client address of connections on the public listener is no longer `unknown`.** It was read before the connection was active, so on NIO Transport Services every client shared one rate-limit bucket and `exemptLoopback` never applied. It is now read when the channel becomes active.
 - **WebSocket upgrade no longer crashes the engine.** The 101 now goes through the HTTP encoder, and the frame codec plus a bridge handler are installed in the same event-loop turn as the HTTP handlers' removal (a client's first frame can no longer arrive in between). Pings are answered, fragmented messages are reassembled, frames up to 1 MiB and messages up to 16 MiB are accepted (larger ones close with 1009), unmasked frames, invalid UTF-8 and a reader that falls behind close with 1002/1007/1008, a handler that returns closes with 1000 and waits (5 s at most) for the peer's close frame before dropping the connection. A handler that falls behind sees `WebSocketError.slowConsumer`; invalid close payloads and reserved bits are refused with 1002/1007.
 - **A network change no longer ends `runAsync()`.** Rebinding the listeners used to make the server's wait return, leaving extensions, Bonjour and the watchdog running with no way to stop them; it now waits for `stop()` or for a listener the OS closed on its own, rebinds one at a time, and keeps the server alive (retrying on the next change) when a rebind fails. The watchdog's first reading is a baseline, not a change, so a server on a non-loopback host no longer rebinds right after starting.
 - **A server-initiated close could drop the tail of a response in the tunnel.** The relay now sends what was already written before closing or half-closing a side.
