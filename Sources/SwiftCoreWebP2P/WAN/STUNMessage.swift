@@ -15,6 +15,11 @@ struct STUNMessage: Equatable, Sendable {
 
     enum AttributeType {
         static let username: UInt16 = 0x0006
+        static let lifetime: UInt16 = 0x000D
+        static let xorPeerAddress: UInt16 = 0x0012
+        static let xorRelayedAddress: UInt16 = 0x0016
+        static let requestedTransport: UInt16 = 0x0019
+        static let connectionID: UInt16 = 0x002A
         static let messageIntegrity: UInt16 = 0x0008
         static let errorCode: UInt16 = 0x0009
         static let realm: UInt16 = 0x0014
@@ -26,6 +31,11 @@ struct STUNMessage: Equatable, Sendable {
 
     enum Method {
         static let binding: UInt16 = 0x0001
+        static let allocate: UInt16 = 0x0003
+        static let refresh: UInt16 = 0x0004
+        static let createPermission: UInt16 = 0x0008
+        static let connectionBind: UInt16 = 0x000B
+        static let connectionAttempt: UInt16 = 0x000C
     }
 
     enum Class: UInt16 {
@@ -160,12 +170,12 @@ struct STUNMessage: Equatable, Sendable {
         }
     }
 
-    static func xorAddressAttribute(host: String, port: Int, transactionID: [UInt8]) -> Attribute? {
+    static func xorAddressAttribute(host: String, port: Int, transactionID: [UInt8], type: UInt16 = AttributeType.xorMappedAddress) -> Attribute? {
         let parts = host.split(separator: ".").compactMap { UInt8($0) }
         guard parts.count == 4, let port = UInt16(exactly: port) else { return nil }
         let mask = bytes(of: magicCookie) + transactionID
         let xoredPort = port ^ UInt16(magicCookie >> 16)
-        return Attribute(type: AttributeType.xorMappedAddress, value: [0, 0x01] + bytes(of: xoredPort) + zip(parts, mask).map { $0 ^ $1 })
+        return Attribute(type: type, value: [0, 0x01] + bytes(of: xoredPort) + zip(parts, mask).map { $0 ^ $1 })
     }
 
     // MARK: - Helpers
@@ -177,8 +187,8 @@ struct STUNMessage: Equatable, Sendable {
 
     static func bytes(of value: UInt16) -> [UInt8] { [UInt8(value >> 8), UInt8(value & 0xFF)] }
     static func bytes(of value: UInt32) -> [UInt8] { (0..<4).map { UInt8((value >> (24 - 8 * UInt32($0))) & 0xFF) } }
-    private static func readUInt16(_ bytes: [UInt8], _ offset: Int) -> UInt16 { UInt16(bytes[offset]) << 8 | UInt16(bytes[offset + 1]) }
-    private static func readUInt32(_ bytes: [UInt8], _ offset: Int) -> UInt32 {
+    static func readUInt16(_ bytes: [UInt8], _ offset: Int) -> UInt16 { UInt16(bytes[offset]) << 8 | UInt16(bytes[offset + 1]) }
+    static func readUInt32(_ bytes: [UInt8], _ offset: Int) -> UInt32 {
         (0..<4).reduce(UInt32(0)) { $0 << 8 | UInt32(bytes[offset + $1]) }
     }
 

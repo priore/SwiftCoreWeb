@@ -44,45 +44,53 @@ public final class SSHTunnelServer: Sendable {
     /// in. Unauthenticated sockets still use connection slots (`maxConnections`) until the handshake deadline closes them.
     @discardableResult
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
-        let pairing = pairing, registry = registry, allowList = allowList, peer = peer
-        let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             // A peer that vanishes without a FIN (a phone changing network) is eventually detected and frees its slot.
             .childChannelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
-            .childChannelInitializer { channel in
-                // Caps the tunnel's total connections (authenticated ones included): the host's capacity, and a bound on
-                // what unauthenticated sockets can occupy.
-                let admitted = openConnections.withLockedValue { count -> Bool in
-                    guard count < maxConnections else { return false }
-                    count += 1
-                    return true
-                }
-                guard admitted else { return channel.eventLoop.makeFailedFuture(TunnelError.tooManyConnections) }
-                channel.closeFuture.whenComplete { _ in openConnections.withLockedValue { $0 -= 1 } }
-                return channel.eventLoop.makeCompletedFuture {
-                    let deadline = HandshakeDeadline(channel: channel, timeout: handshakeTimeout)
-                    let configuration = SSHServerConfiguration(
-                        hostKeys: [pairing.hostPrivateKey],
-                        userAuthDelegate: PairingAuthDelegate(pairing: pairing, onAuthenticated: { deviceID in
-                            deadline.cancel()
-                            registry.add(channel, deviceID: deviceID)
-                            // Revoked between the check and the registration: closeAll would have missed this connection.
-                            if !pairing.isPaired(deviceID: deviceID) { channel.close(promise: nil) }
-                        })
-                    )
-                    try channel.pipeline.syncOperations.addHandler(
-                        NIOSSHHandler(role: .server(configuration), allocator: channel.allocator) { child, channelType in
-                            Self.forward(child, channelType, allowList: allowList, registry: registry, peer: peer)
-                        }
-                    )
-                }
+            .childChannelInitializer { [weak self] channel in
+                guard let self else { return channel.eventLoop.makeFailedFuture(TunnelError.notConnected) }
+                return self.serve(channel)
             }
         let channel = try await bootstrap.bind(host: host, port: port).get()
         pairing.setRevocationHandler { [registry] deviceID in registry.closeAll(deviceID: deviceID) }
         listener.withLockedValue { $0 = channel }
         guard let bound = channel.localAddress?.port else { throw TunnelError.notConnected }
         return bound
+    }
+
+    /// Serves SSH on a channel that was accepted elsewhere (the listener above, or a relayed connection): applies the
+    /// connection cap, the handshake deadline and the pairing authentication, then forwards the allow-listed channels.
+    /// Fails, leaving the channel for the caller to close, when the host is at capacity.
+    func serve(_ channel: Channel) -> EventLoopFuture<Void> {
+        let pairing = pairing, registry = registry, allowList = allowList, peer = peer
+        let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
+        // Caps the tunnel's total connections (authenticated ones included): the host's capacity, and a bound on
+        // what unauthenticated sockets can occupy.
+        let admitted = openConnections.withLockedValue { count -> Bool in
+            guard count < maxConnections else { return false }
+            count += 1
+            return true
+        }
+        guard admitted else { return channel.eventLoop.makeFailedFuture(TunnelError.tooManyConnections) }
+        channel.closeFuture.whenComplete { _ in openConnections.withLockedValue { $0 -= 1 } }
+        return channel.eventLoop.makeCompletedFuture {
+            let deadline = HandshakeDeadline(channel: channel, timeout: handshakeTimeout)
+            let configuration = SSHServerConfiguration(
+                hostKeys: [pairing.hostPrivateKey],
+                userAuthDelegate: PairingAuthDelegate(pairing: pairing, onAuthenticated: { deviceID in
+                    deadline.cancel()
+                    registry.add(channel, deviceID: deviceID)
+                    // Revoked between the check and the registration: closeAll would have missed this connection.
+                    if !pairing.isPaired(deviceID: deviceID) { channel.close(promise: nil) }
+                })
+            )
+            try channel.pipeline.syncOperations.addHandler(
+                NIOSSHHandler(role: .server(configuration), allocator: channel.allocator) { child, channelType in
+                    Self.forward(child, channelType, allowList: allowList, registry: registry, peer: peer)
+                }
+            )
+        }
     }
 
     public func stop() async {
