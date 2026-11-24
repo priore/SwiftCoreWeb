@@ -18,7 +18,8 @@ public struct RequestIngress: Sendable {
     let metrics: ServerMetrics
 
     /// Reserves a connection slot (`maxConcurrentConnections`). `false` when at capacity: refuse the connection.
-    /// Every `true` must be paired with `closeConnection()`.
+    /// Every `true` must be paired with exactly one `closeConnection()`: an unpaired close frees a slot that
+    /// belongs to an HTTP connection.
     public func openConnection() async -> Bool {
         guard await connectionGate.tryAcquire() else {
             metrics.recordRejected(.atCapacity)
@@ -34,10 +35,11 @@ public struct RequestIngress: Sendable {
     }
 
     /// Consumes one rate-limit token for `clientKey`. `false` when over the limit (answer 429); always `true`
-    /// when no rate limit is configured. The key is whatever identifies the client for this transport.
+    /// when no rate limit is configured. The key identifies the client for this transport (a paired device id);
+    /// it is namespaced here so it never collides with an IP bucket nor matches the loopback exemption.
     public func allowRequest(from clientKey: String) async -> Bool {
         guard let rateLimiter else { return true }
-        guard await rateLimiter.allow(clientIP: clientKey) else {
+        guard await rateLimiter.allow(clientIP: "ingress:" + clientKey) else {
             metrics.recordRejected(.rateLimited)
             return false
         }
@@ -45,7 +47,8 @@ public struct RequestIngress: Sendable {
     }
 
     /// The largest body accepted for `method`/`path`: the matched route's own limit, else the global one.
-    /// Check it against the declared length before buffering the body.
+    /// Check it against the declared length before buffering the body. Routes that spool to disk are not
+    /// special-cased: the transport buffers up to this limit.
     public func bodyLimit(method: HttpMethod, path: String) -> Int {
         dispatcher.bodyLimit(method: method, path: path)
     }
@@ -57,6 +60,7 @@ public struct RequestIngress: Sendable {
 
     /// Serves a WebSocket route over `transport`. Returns `nil` once the handler has finished (the socket was
     /// accepted), or the response to send instead when there is no such route or its `auth` is not satisfied.
+    /// `request.path` is the path without query string; `request.remoteAddress` is whatever the transport sets.
     public func acceptWebSocket(_ request: HttpRequest, transport: WebSocket.Transport) async -> HttpResponse? {
         guard let route = webSocketRegistry.match(path: request.path) else { return Results.notFound().response }
         if case .none = route.auth {} else if let denied = await dispatcher.authorizeUpgrade(request, auth: route.auth) {
@@ -66,22 +70,5 @@ public struct RequestIngress: Sendable {
         defer { metrics.webSocketClosed() }
         try? await route.handler(WebSocket(transport: transport))
         return nil
-    }
-}
-
-/// A transport that runs next to the HTTP listener for as long as the server does (registered with
-/// `WebApplicationBuilder.addExtension(_:)`). `start` runs once the listeners are bound; `stop` when the server stops.
-public protocol ServerExtension: Sendable {
-    func start(ingress: RequestIngress) async throws
-    /// May run without a prior `start` (a failed bind) or more than once: keep it idempotent.
-    func stop() async
-}
-
-extension WebApplicationBuilder {
-    /// Runs `serverExtension` alongside the server. Not registered, not running: modules stay opt-in.
-    @discardableResult
-    public func addExtension(_ serverExtension: some ServerExtension) -> Self {
-        extensions.append(serverExtension)
-        return self
     }
 }

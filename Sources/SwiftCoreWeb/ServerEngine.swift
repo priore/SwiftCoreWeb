@@ -80,8 +80,7 @@ final class ServerEngine: @unchecked Sendable {
             try? await stop(timeout: 0)
             throw error
         }
-        app.engineBox.engine = self
-
+        // Extensions start before the engine registers (`isRunning`), so a `stopAsync()` cannot land mid-start.
         do {
             let ingress = RequestIngress(
                 dispatcher: dispatcher, rateLimiter: rateLimiter, connectionGate: connectionGate,
@@ -92,6 +91,7 @@ final class ServerEngine: @unchecked Sendable {
             try? await stop(timeout: 0)
             throw error
         }
+        app.engineBox.engine = self
 
         if let bonjourName = app.bonjourName {
             startBonjour(name: bonjourName)
