@@ -82,20 +82,33 @@ public final class SCWPeerConnection: Sendable {
         let known = record.withLockedValue { $0 }
         do {
             return try await connect(to: known)
-        } catch TunnelError.untrustedHostKey {
-            throw TunnelError.untrustedHostKey
         } catch {
-            guard let found = await PeerDiscovery.find(fingerprint: hostFingerprint),
-                  found.host != known.host || found.port != known.port else { throw error }
-            var moved = known
-            moved.host = found.host
-            moved.port = found.port
-            let url = try await connect(to: moved)
-            record.withLockedValue { $0 = moved }
-            if let text = try? JSONEncoder().encode(moved), let string = String(data: text, encoding: .utf8) {
-                storage.write(string, forKey: Self.recordName(hostFingerprint))
+            // Only an address that does not answer is worth a search: a refusal (revoked device, wrong key) would repeat anywhere.
+            switch error {
+            case TunnelError.notConnected: break
+            case is TunnelError: throw error
+            default: break
             }
-            return url
+            var rejected: Set<String> = [known.host]
+            var lastError = error
+            for _ in 0..<3 {
+                guard !Task.isCancelled, let found = await PeerDiscovery.find(fingerprint: hostFingerprint, excluding: rejected) else { throw lastError }
+                var moved = known
+                moved.host = found.host
+                moved.port = found.port
+                do {
+                    let url = try await connect(to: moved)
+                    record.withLockedValue { $0 = moved }
+                    if let data = try? JSONEncoder().encode(moved), let text = String(data: data, encoding: .utf8) {
+                        storage.write(text, forKey: Self.recordName(hostFingerprint))
+                    }
+                    return url
+                } catch {
+                    lastError = error
+                    rejected.insert(found.host)
+                }
+            }
+            throw lastError
         }
     }
 

@@ -15,9 +15,10 @@ enum PeerDiscovery {
     static let fingerprintKey = "fp"
 
     /// The IPv4 address and tunnel port of the host announcing `fingerprint`, or `nil` when none shows up within `timeout`.
-    static func find(fingerprint: String, timeout: TimeInterval = 5) async -> (host: String, port: Int)? {
+    /// Addresses in `excluding` are skipped: they answered but were not the host (a lookalike announcing the same fingerprint).
+    static func find(fingerprint: String, excluding: Set<String> = [], timeout: TimeInterval = 5) async -> (host: String, port: Int)? {
         await withCheckedContinuation { continuation in
-            let state = NIOLockedValueBox<(done: Bool, probes: [NWConnection])>((false, []))
+            let state = NIOLockedValueBox<(done: Bool, probes: [NWConnection], seen: Set<NWEndpoint>)>((false, [], []))
             let queue = DispatchQueue(label: "SwiftCoreWebP2P.discovery", qos: .userInitiated)
             let browser = NWBrowser(for: .bonjourWithTXTRecord(type: P2PTunnelExtension.bonjourType, domain: nil), using: .tcp)
 
@@ -36,9 +37,12 @@ enum PeerDiscovery {
             browser.browseResultsChangedHandler = { results, _ in
                 for result in results {
                     guard case .bonjour(let txt) = result.metadata, txt[fingerprintKey] == fingerprint else { continue }
-                    let probe = NWConnection(to: result.endpoint, using: .tcp)
+                    // The browser reports the whole set on every change: probe each endpoint once. IPv4 only, like the pairing link.
+                    let parameters = NWParameters.tcp
+                    (parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options)?.version = .v4
+                    let probe = NWConnection(to: result.endpoint, using: parameters)
                     let accepted = state.withLockedValue { value -> Bool in
-                        guard !value.done else { return false }
+                        guard !value.done, value.seen.insert(result.endpoint).inserted else { return false }
                         value.probes.append(probe)
                         return true
                     }
@@ -49,6 +53,7 @@ enum PeerDiscovery {
                               case .ipv4(let address) = host else { return }
                         // `debugDescription` carries the interface as a suffix ("192.168.1.5%en0").
                         let text = address.debugDescription.split(separator: "%").first.map(String.init) ?? address.debugDescription
+                        guard !excluding.contains(text) else { return }
                         finish((text, Int(port.rawValue)))
                     }
                     probe.start(queue: queue)

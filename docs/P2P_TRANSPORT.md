@@ -130,9 +130,10 @@ device uses one token.
 ## Limits
 
 - **LAN only.** Reaching the host from another network (4G/5G, another Wi-Fi) is not implemented.
-- The client keeps the address it paired with. If `start()` cannot reach it, the client looks for the host on the local
+- The client keeps the address it paired with. If `start()` cannot connect to it (no answer; a refusal such as a revoked device is reported as is), the client looks for the host on the local
   network by the fingerprint in its Bonjour announcement (IPv4 only) and remembers the new address. The device's `Info.plist`
-  needs the same `NSBonjourServices` entry as the host. The announcement is only a hint: the connection still pins the
+  needs the same `NSBonjourServices` and `NSLocalNetworkUsageDescription` entries as the host. The announcement carries the
+  host's key fingerprint in clear, so anyone on the network can recognise the host; it grants no access. The announcement is only a hint: the connection still pins the
   host key. Not covered by a test on a real device, and an address that changes while connected is not noticed until the
   next `start()`.
 - **WebSocket routes (`mapWebSocket`) do not work**, with or without the tunnel: the engine's upgrade crashes. This is a
