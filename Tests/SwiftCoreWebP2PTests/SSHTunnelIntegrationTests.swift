@@ -186,4 +186,18 @@ final class SSHTunnelIntegrationTests: XCTestCase {
         // The silent first socket is closed by the handshake deadline.
         try await first.closeFuture.get()
     }
+
+    /// The handshake deadline must stop applying once the peer has authenticated.
+    func testAuthenticatedConnectionOutlivesTheHandshakeTimeout() async throws {
+        let fixture = try await makeFixture(handshakeTimeout: .milliseconds(300))
+        let client = try await connectedClient(fixture)
+        let proxy = LoopbackProxy(client: client, destination: TunnelAllowList(port: fixture.appPort))
+        let url = URL(string: "http://127.0.0.1:\(try await proxy.start())/ping")!
+
+        try await Task.sleep(nanoseconds: 1_200_000_000)
+        let (data, _) = try await URLSession(configuration: .ephemeral).data(from: url)
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "pong")
+
+        await proxy.stop(); await client.close()
+    }
 }

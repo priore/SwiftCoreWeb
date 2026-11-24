@@ -48,7 +48,8 @@ public final class SSHTunnelServer: Sendable {
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
-                // Bound the sockets held by peers that have not proven anything yet.
+                // Caps the tunnel's total connections (authenticated ones included): the host's capacity, and a bound on
+                // what unauthenticated sockets can occupy.
                 let admitted = openConnections.withLockedValue { count -> Bool in
                     guard count < maxConnections else { return false }
                     count += 1
@@ -57,8 +58,11 @@ public final class SSHTunnelServer: Sendable {
                 guard admitted else { return channel.eventLoop.makeFailedFuture(TunnelError.tooManyConnections) }
                 channel.closeFuture.whenComplete { _ in openConnections.withLockedValue { $0 -= 1 } }
                 return channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHandler(HandshakeDeadlineHandler(timeout: handshakeTimeout))
-                    let configuration = SSHServerConfiguration(hostKeys: [hostKey], userAuthDelegate: PublicKeyAuthDelegate(isAuthorized: isAuthorized))
+                    let deadline = HandshakeDeadline(channel: channel, timeout: handshakeTimeout)
+                    let configuration = SSHServerConfiguration(
+                        hostKeys: [hostKey],
+                        userAuthDelegate: PublicKeyAuthDelegate(isAuthorized: isAuthorized, onAuthenticated: { deadline.cancel() })
+                    )
                     try channel.pipeline.syncOperations.addHandler(
                         NIOSSHHandler(role: .server(configuration), allocator: channel.allocator) { child, channelType in
                             Self.forward(child, channelType, allowList: allowList)

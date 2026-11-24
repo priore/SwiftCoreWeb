@@ -15,24 +15,32 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
     typealias OutboundIn = ByteBuffer
     typealias OutboundOut = ByteBuffer
 
+    /// Shared by the pair, so "one side already closed" survives the other handler being removed and freed.
+    private final class PairState {
+        var closed = false
+    }
+
     private weak var partner: TunnelRelayHandler?
     private var context: ChannelHandlerContext?
-    private var channelClosed = false
+    private let state: PairState
 
     static func makePair() -> (TunnelRelayHandler, TunnelRelayHandler) {
-        let first = TunnelRelayHandler()
-        let second = TunnelRelayHandler()
+        let state = PairState()
+        let first = TunnelRelayHandler(state: state)
+        let second = TunnelRelayHandler(state: state)
         first.partner = second
         second.partner = first
         return (first, second)
     }
 
-    private init() {}
+    private init(state: PairState) {
+        self.state = state
+    }
 
     func handlerAdded(context: ChannelHandlerContext) {
         self.context = context
         // The partner's channel may have closed before this one existed (the local client gave up early).
-        if partner?.channelClosed == true { context.close(promise: nil) }
+        if state.closed { context.close(promise: nil) }
     }
 
     func handlerRemoved(context: ChannelHandlerContext) {
@@ -66,7 +74,7 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
     }
 
     func channelInactive(context: ChannelHandlerContext) {
-        channelClosed = true
+        state.closed = true
         partner?.context?.close(promise: nil)
         context.fireChannelInactive()
     }

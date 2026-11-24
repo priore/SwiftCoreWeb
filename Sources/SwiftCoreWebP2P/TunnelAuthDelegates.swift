@@ -12,11 +12,14 @@ import NIOSSH
 /// Passwords are not offered (they exist only inside a pairing session, which is a later step).
 struct PublicKeyAuthDelegate: NIOSSHServerUserAuthenticationDelegate {
     let isAuthorized: @Sendable (NIOSSHPublicKey) -> Bool
+    /// Called once the peer is accepted (used to stop the handshake deadline).
+    let onAuthenticated: @Sendable () -> Void
 
     var supportedAuthenticationMethods: NIOSSHAvailableUserAuthenticationMethods { .publicKey }
 
     func requestReceived(request: NIOSSHUserAuthenticationRequest, responsePromise: EventLoopPromise<NIOSSHUserAuthenticationOutcome>) {
         if case .publicKey(let offered) = request.request, isAuthorized(offered.publicKey) {
+            onAuthenticated()
             responsePromise.succeed(.success)
         } else {
             responsePromise.succeed(.failure)
