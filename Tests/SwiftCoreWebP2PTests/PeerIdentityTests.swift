@@ -153,6 +153,26 @@ final class PeerIdentityTests: XCTestCase {
         XCTAssertTrue(glued.hasSuffix("p2p:glued"), glued)
     }
 
+    func testTheConnectionIsReestablishedOnTheSameURLAfterItDrops() async throws {
+        let fixture = try await makeFixture()
+        let (peer, base) = try await pair(fixture)
+        let before = try await status(base.appendingPathComponent("open"))
+        XCTAssertEqual(before, 200)
+
+        await peer.dropConnection() // as when the network changes under the connection
+        var recovered = false
+        for _ in 0..<40 where !recovered { // the supervisor reconnects after a second
+            try await Task.sleep(nanoseconds: 250_000_000)
+            recovered = ((try? await status(base.appendingPathComponent("open"))) ?? 0) == 200
+        }
+        XCTAssertTrue(recovered, "the same URL must work again without calling start()")
+        XCTAssertEqual(peer.currentRoute, .local)
+
+        await peer.stop()
+        let afterStop = try? await status(base.appendingPathComponent("open"))
+        XCTAssertNotEqual(afterStop, 200, "a stopped connection must not come back")
+    }
+
     func testServerSentEventsWorkThroughTheTunnel() async throws {
         let fixture = try await makeFixture()
         let (peer, base) = try await pair(fixture)

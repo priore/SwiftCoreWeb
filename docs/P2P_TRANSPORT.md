@@ -180,6 +180,5 @@ device uses one token.
   network by the fingerprint in its Bonjour announcement (IPv4 only) and remembers the new address. The device's `Info.plist`
   needs the same `NSBonjourServices` and `NSLocalNetworkUsageDescription` entries as the host. The announcement carries the
   host's key fingerprint in clear, so anyone on the network can recognise the host; it grants no access. The announcement is only a hint: the connection still pins the
-  host key. Not covered by a test on a real device, and an address that changes while connected is not noticed until the
-  next `start()`.
+  host key. Not covered by a test on a real device, A dropped connection (network change, host restart) is noticed within about a minute (TCP keepalive) or at once when the socket closes, and `SCWPeerConnection` reconnects on the same loopback URL, trying the same routes as `start()`; requests made in between fail.
 - tvOS: the core, the dashboard and `SwiftCoreWebP2P` build for tvOS 15+ and the P2P and core tests pass on the Apple TV simulator. On tvOS there is no screen dimming, battery, pasteboard or WebKit helper (those parts are no-ops or absent). Not tried on a real Apple TV, and a tvOS device acting as the *client* cannot scan a QR (no camera) and typing a code is not built: use the Apple TV as the host (`P2PPairingView`) and scan from the phone.

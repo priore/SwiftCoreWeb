@@ -12,12 +12,14 @@ import NIOPosix
 /// Listens on `127.0.0.1` and forwards every accepted connection through the tunnel to `destination`, so any HTTP
 /// client can talk to the remote SCW by pointing at `http://127.0.0.1:<port>`.
 final class LoopbackProxy: Sendable {
-    private let client: SSHTunnelClient
+    private let client: NIOLockedValueBox<SSHTunnelClient>
+    private let eventLoop: EventLoop
     private let destination: TunnelAllowList
     private let listener = NIOLockedValueBox<Channel?>(nil)
 
     init(client: SSHTunnelClient, destination: TunnelAllowList) {
-        self.client = client
+        self.client = NIOLockedValueBox(client)
+        eventLoop = client.eventLoop
         self.destination = destination
     }
 
@@ -25,7 +27,7 @@ final class LoopbackProxy: Sendable {
     @discardableResult
     func start(port: Int = 0) async throws -> Int {
         let client = client, destination = destination
-        let bootstrap = ServerBootstrap(group: client.eventLoop)
+        let bootstrap = ServerBootstrap(group: eventLoop)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
             // Reads stay off until the tunnel channel exists, so no byte is read before it can be relayed.
@@ -38,7 +40,7 @@ final class LoopbackProxy: Sendable {
                 return local.pipeline.addHandler(localSide).map {
                     Task {
                         do {
-                            _ = try await client.openForwardedChannel(toHost: destination.host, port: destination.port, originator: originator) { child in
+                            _ = try await client.withLockedValue { $0 }.openForwardedChannel(toHost: destination.host, port: destination.port, originator: originator) { child in
                                 child.pipeline.addHandlers([SSHDataCodec(), tunnelSideBox.value])
                             }
                             local.eventLoop.execute { _ = local.setOption(ChannelOptions.autoRead, value: true) }
@@ -52,6 +54,12 @@ final class LoopbackProxy: Sendable {
         listener.withLockedValue { $0 = channel }
         guard let bound = channel.localAddress?.port else { throw TunnelError.notConnected }
         return bound
+    }
+
+    /// Serves new connections through `replacement` (same event loop) after the SSH connection was re-established.
+    /// Connections already open ended with the old one.
+    func replace(client replacement: SSHTunnelClient) {
+        client.withLockedValue { $0 = replacement }
     }
 
     func stop() async {

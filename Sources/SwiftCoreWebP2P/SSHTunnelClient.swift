@@ -15,10 +15,14 @@ import NIOSSH
 final class SSHTunnelClient: Sendable {
     let group: EventLoopGroup
     let eventLoop: EventLoop
+    private let ownsGroup: Bool
     private let connection = NIOLockedValueBox<Channel?>(nil)
 
-    init() {
-        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    /// With no `group` the client runs on a thread of its own and stops it on `close()`; a group passed in belongs to the
+    /// caller (so a replacement client can run on the same event loop as the one it replaces).
+    init(group shared: MultiThreadedEventLoopGroup? = nil) {
+        let group = shared ?? MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        ownsGroup = shared == nil
         self.group = group
         self.eventLoop = group.next()
     }
@@ -91,6 +95,12 @@ final class SSHTunnelClient: Sendable {
 
     func close() async {
         if let channel = connection.withLockedValue({ $0.take() }) { try? await channel.close() }
-        try? await (group as? MultiThreadedEventLoopGroup)?.shutdownGracefully()
+        if ownsGroup { try? await (group as? MultiThreadedEventLoopGroup)?.shutdownGracefully() }
+    }
+
+    /// Returns when the SSH connection ends (the host went away, the network changed, `close()`); at once when not connected.
+    func waitUntilClosed() async {
+        guard let channel = connection.withLockedValue({ $0 }) else { return }
+        try? await channel.closeFuture.get()
     }
 }
