@@ -157,7 +157,7 @@ final class TURNAllocation: Sendable {
             )
             let response = try await binder.send(request, on: channel, timeout: Self.requestTimeout)
             guard response.messageClass == .success else { throw Failure.refused(code: response.errorCode?.code ?? 0) }
-            try await setUp(channel).get()
+            try await channel.eventLoop.flatSubmit { setUp(channel) }.get() // pipeline changes belong on the channel's own loop
             binder.activate(on: channel)
         } catch {
             try? await channel.close()
