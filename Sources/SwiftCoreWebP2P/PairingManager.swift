@@ -137,6 +137,11 @@ public final class PairingManager: Sendable {
         return state.withLockedValue { $0.devices.first { $0.id == id } }
     }
 
+    /// Whether `deviceID` is still paired (used to drop a connection that authenticated just as it was revoked).
+    func isPaired(deviceID: String) -> Bool {
+        state.withLockedValue { $0.devices.contains { $0.id == deviceID } }
+    }
+
     /// Returns `false` when the device is unknown or the change could not be saved (then nothing changed).
     @discardableResult
     public func rename(deviceID: String, to name: String) -> Bool {

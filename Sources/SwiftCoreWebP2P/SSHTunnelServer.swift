@@ -35,7 +35,9 @@ public final class SSHTunnelServer: Sendable {
         self.allowList = allowList
     }
 
-    /// Starts listening and returns the bound port (`port: 0` picks a free one).
+    /// Starts listening and returns the bound port (`port: 0` picks a free one). The default `host` listens on every IPv4
+    /// interface (cellular and VPN included): that is what lets a paired device reach the host, and only paired keys get
+    /// in. Unauthenticated sockets still use connection slots (`maxConnections`) until the handshake deadline closes them.
     @discardableResult
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
         let pairing = pairing, registry = registry, allowList = allowList
@@ -61,6 +63,8 @@ public final class SSHTunnelServer: Sendable {
                         userAuthDelegate: PairingAuthDelegate(pairing: pairing, onAuthenticated: { deviceID in
                             deadline.cancel()
                             registry.add(channel, deviceID: deviceID)
+                            // Revoked between the check and the registration: closeAll would have missed this connection.
+                            if !pairing.isPaired(deviceID: deviceID) { channel.close(promise: nil) }
                         })
                     )
                     try channel.pipeline.syncOperations.addHandler(

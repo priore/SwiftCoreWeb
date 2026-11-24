@@ -66,10 +66,14 @@ public final class SCWPeerConnection: Sendable {
     public convenience init(hostFingerprint: String, storage: TunnelSecretStorage = KeychainTunnelStorage()) throws {
         guard let text = storage.read(Self.recordName(hostFingerprint)), let data = text.data(using: .utf8),
               let record = try? JSONDecoder().decode(PeerRecord.self, from: data) else { throw TunnelError.pairingFailed }
+        // A paired host implies a stored device key: without it the host would refuse this device, so fail here.
+        guard storage.read(Self.deviceKeyName) != nil else { throw TunnelError.pairingFailed }
         self.init(hostFingerprint: hostFingerprint, record: record, deviceKey: try Self.loadOrCreateDeviceKey(storage))
     }
 
     /// Connects to the host and starts the loopback listener; returns its base URL. A new call restarts the connection.
+    /// The listener is on `127.0.0.1` and is not authenticated: any local process that knows the port can use this
+    /// device's tunnel, so keep the URL inside the app.
     public func start() async throws -> URL {
         await stop()
         let pinned = try NIOSSHPublicKey(openSSHPublicKey: record.hostKey)
