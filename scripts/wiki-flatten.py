@@ -49,6 +49,7 @@ PAGE_NAMES = {
     "GETTING_STARTED.md": "Getting-Started",
     "ROUTING_AND_MIDDLEWARE.md": "Routing-and-Middleware",
     "SECRETS_AND_CERTIFICATES.md": "Secrets-and-Certificates",
+    "P2P_TRANSPORT.md": "Peer-to-Peer-Access",
     "TESTING_GUIDE.md": "Testing-Guide",
     "FAQ_AND_TROUBLESHOOTING.md": "FAQ-and-Troubleshooting",
     "DOTNET_MAPPING.md": "Dotnet-Naming-Table",

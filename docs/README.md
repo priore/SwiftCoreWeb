@@ -19,6 +19,7 @@ Read these first, regardless of whether you're building a web app, an API, or bo
 - [Getting started](GETTING_STARTED.md) — install, Hello World, project layout, running the Showcase app.
 - [Routing and middleware](ROUTING_AND_MIDDLEWARE.md) — Minimal API vs `@Controller`, route templates, parameter binding, the middleware pipeline.
 - [Secrets and certificates](SECRETS_AND_CERTIFICATES.md) — generating JWT signing secrets and TLS certificates (self-signed and CA-issued), storing them in the Keychain.
+- [Peer-to-peer access](P2P_TRANSPORT.md) — reach the app from a paired device with no open port and no server in between (`SwiftCoreWebP2P`): pairing by QR, SSH tunnel, per-device identity.
 - [Testing guide](TESTING_GUIDE.md) — testing routes, auth, and middleware with `TestHost`.
 - [FAQ and troubleshooting](FAQ_AND_TROUBLESHOOTING.md) — the obvious questions, the "is X even possible on iOS" questions, and common gotchas.
 
