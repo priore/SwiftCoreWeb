@@ -16,7 +16,7 @@ extension WebApplicationBuilder {
     ///   - mode: `.disable` leaves peer-to-peer off (for a setting the user can turn off): nothing starts and the storage is
     ///     not touched. This is an on/off switch for the whole feature; exposing individual routes to or hiding them from paired
     ///     devices is a separate, later step.
-    ///   - name: the label announced on the local network (Bonjour) and shown to devices; defaults to the device's name.
+    ///   - name: the name announced on the local network (Bonjour); `nil` uses the system's name for the device.
     ///   - port: the tunnel's port. `0` (default) reuses the port of the last run when it is free, else picks one: devices
     ///     paired earlier keep finding the host. Read the actual port from `P2PHost.tunnelPort`.
     ///   - storage: where the host key and paired devices are kept; the Keychain by default.
@@ -34,13 +34,8 @@ extension WebApplicationBuilder {
         // Disabled means untouched: no host key is created and the storage is not read.
         guard mode == .enable else { return P2PHost(pairing: nil, tunnel: nil) }
         let pairing = try PairingManager(storage: storage)
-        let tunnel = P2PTunnelExtension(pairing: pairing, storage: storage, name: name ?? Self.defaultAnnouncedName, port: port)
+        let tunnel = P2PTunnelExtension(pairing: pairing, storage: storage, name: name, port: port)
         addExtension(tunnel)
         return P2PHost(pairing: pairing, tunnel: tunnel)
-    }
-
-    private static var defaultAnnouncedName: String {
-        let host = ProcessInfo.processInfo.hostName
-        return host.hasSuffix(".local") ? String(host.dropLast(6)) : host
     }
 }

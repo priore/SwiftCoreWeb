@@ -5,7 +5,6 @@
 // See LICENSE at the repository root. Source-available, not open-source.
 //
 
-import Network
 import NIOConcurrencyHelpers
 import os
 import SwiftCoreWeb
@@ -18,20 +17,20 @@ final class P2PTunnelExtension: ServerExtension {
 
     private struct Running {
         let server: SSHTunnelServer
-        let advertiser: NWListener?
+        let advertiser: BonjourAdvertiser?
     }
 
     private static let portKey = "p2p.tunnel-port"
 
     private let pairing: PairingManager
     private let storage: TunnelSecretStorage
-    private let name: String
+    private let name: String?
     private let requestedPort: Int
     private let running = NIOLockedValueBox<Running?>(nil)
     private let boundPort = NIOLockedValueBox<Int?>(nil)
     private let servedAppPort = NIOLockedValueBox<Int?>(nil)
 
-    init(pairing: PairingManager, storage: TunnelSecretStorage, name: String, port: Int) {
+    init(pairing: PairingManager, storage: TunnelSecretStorage, name: String?, port: Int) {
         self.pairing = pairing
         self.storage = storage
         self.name = name
@@ -62,7 +61,8 @@ final class P2PTunnelExtension: ServerExtension {
         guard let (server, port) = started else { throw lastError }
         if remembered != port { storage.write(String(port), forKey: Self.portKey) }
         servedAppPort.withLockedValue { $0 = ingress.port }
-        let advertiser = Self.advertise(name: name, port: port)
+        let advertiser = BonjourAdvertiser(name: name, type: Self.bonjourType, port: port)
+        if advertiser == nil { p2pLogger.error("Bonjour announcement could not start") }
         running.withLockedValue { $0 = Running(server: server, advertiser: advertiser) }
         boundPort.withLockedValue { $0 = port }
     }
@@ -73,29 +73,5 @@ final class P2PTunnelExtension: ServerExtension {
         guard let current = running.withLockedValue({ $0.take() }) else { return }
         current.advertiser?.cancel()
         await current.server.stop()
-    }
-
-    /// A Bonjour service name is at most 63 bytes of UTF-8.
-    private static func truncated(_ name: String) -> String {
-        var result = name
-        while result.utf8.count > 63 { result.removeLast() }
-        return result
-    }
-
-    /// Announces `_scw-p2p._tcp` on the tunnel's port. The announcement is a convenience (a device on the LAN finds the host
-    /// without typing an address): when it cannot start the tunnel still works through the pairing payload.
-    private static func advertise(name: String, port: Int) -> NWListener? {
-        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)), let listener = try? NWListener(using: .tcp, on: nwPort) else {
-            p2pLogger.error("Bonjour announcement could not start")
-            return nil
-        }
-        listener.service = NWListener.Service(name: Self.truncated(name), type: bonjourType)
-        listener.stateUpdateHandler = { state in
-            if case .failed(let error) = state { p2pLogger.error("Bonjour announcement failed: \(String(describing: error), privacy: .public)") }
-        }
-        // This listener only announces; the SSH server bound to the same port serves the connections.
-        listener.newConnectionHandler = { $0.cancel() }
-        listener.start(queue: .global(qos: .utility))
-        return listener
     }
 }

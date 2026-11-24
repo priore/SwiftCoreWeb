@@ -8,6 +8,8 @@
 import XCTest
 import Network
 import NIOConcurrencyHelpers
+import NIOCore
+import NIOPosix
 import SwiftCoreWeb
 @testable import SwiftCoreWebP2P
 
@@ -36,5 +38,16 @@ final class BonjourTests: XCTestCase {
         defer { browser.cancel() }
         for _ in 0..<100 where !found.withLockedValue({ $0 }) { try await Task.sleep(nanoseconds: 100_000_000) }
         XCTAssertTrue(found.withLockedValue { $0 }, "the service \(name) was not announced")
+
+        // The announcement owns no socket: an IPv6 client is refused at once, it does not reach a listener that hangs up.
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer { Task { try? await group.shutdownGracefully() } }
+        do {
+            let channel = try await ClientBootstrap(group: group).connect(host: "::1", port: try XCTUnwrap(host.tunnelPort)).get()
+            try? await channel.close()
+            XCTFail("nothing should accept connections over IPv6 on the tunnel port")
+        } catch {
+            XCTAssertNotNil(error)
+        }
     }
 }
