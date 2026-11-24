@@ -42,6 +42,9 @@ final class ServerEngine: @unchecked Sendable {
     #endif
     private var previousIdleTimerApplied = false
     private let group: NIOTSEventLoopGroup
+    /// Random per run; only extensions receive it (through `RequestIngress.peer`).
+    private let peerSecret = ServerEngine.makeSecret()
+    private let peerPort = NIOLockedValueBox<Int?>(nil)
 
     /// Bytes ever appended to an in-memory request-body buffer: stays 0 for spooled routes
     /// (the memory-bound test asserts on it, not on process RSS).
@@ -84,7 +87,8 @@ final class ServerEngine: @unchecked Sendable {
         do {
             let ingress = RequestIngress(
                 dispatcher: dispatcher, rateLimiter: rateLimiter, connectionGate: connectionGate,
-                webSocketRegistry: app.webSocketRegistry, metrics: app.metrics, port: listenerChannelsSnapshot().first?.localAddress?.port ?? app.serverOptions.port
+                webSocketRegistry: app.webSocketRegistry, metrics: app.metrics, port: listenerChannelsSnapshot().first?.localAddress?.port ?? app.serverOptions.port,
+                peer: peerPort.withLockedValue { $0 }.map { PeerEndpoint(port: $0, secret: peerSecret) }
             )
             for serverExtension in app.extensions { try await serverExtension.start(ingress: ingress) }
         } catch {
@@ -148,17 +152,24 @@ final class ServerEngine: @unchecked Sendable {
             bound.append(tlsChannel)
         }
 
+        // Extensions that forward traffic get a loopback listener that reads the peer's identity (see `PeerPreambleDecoder`).
+        if !app.extensions.isEmpty {
+            let peerChannel = try await makeBootstrap(tls: false, peer: true).bind(host: "127.0.0.1", port: 0).get()
+            bound.append(peerChannel)
+            peerPort.withLockedValue { $0 = peerChannel.localAddress?.port }
+        }
+
         listenerChannels.withLockedValue { $0 = bound }
     }
 
-    private func makeBootstrap(tls: Bool, tlsOptions: TlsOptions? = nil) -> NIOTSListenerBootstrap {
+    private func makeBootstrap(tls: Bool, tlsOptions: TlsOptions? = nil, peer: Bool = false) -> NIOTSListenerBootstrap {
         var bootstrap = NIOTSListenerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { [weak self] channel in
                 guard let self else {
                     return channel.eventLoop.makeFailedFuture(ServerEngineError.stopped)
                 }
-                return self.configureChildChannel(channel)
+                return self.configureChildChannel(channel, peer: peer)
             }
 
         if tls, let tlsOptions {
@@ -172,7 +183,7 @@ final class ServerEngine: @unchecked Sendable {
         return bootstrap
     }
 
-    private func configureChildChannel(_ channel: Channel) -> EventLoopFuture<Void> {
+    private func configureChildChannel(_ channel: Channel, peer: Bool = false) -> EventLoopFuture<Void> {
         let remoteIP = channel.remoteAddress?.ipAddress ?? "unknown"
         let promise = channel.eventLoop.makePromise(of: Void.self)
 
@@ -189,18 +200,43 @@ final class ServerEngine: @unchecked Sendable {
             }
             self.app.metrics.connectionOpened()
             channel.eventLoop.execute {
-                self.setUpHTTPPipeline(channel, remoteIP: remoteIP).cascade(to: promise)
+                (peer ? self.setUpPeerPipeline(channel) : self.setUpHTTPPipeline(channel, remoteIP: remoteIP)).cascade(to: promise)
             }
         }
 
         return promise.futureResult
     }
 
+    /// A connection to the peer listener: reads the identity line first, then serves HTTP as usual with that identity as the
+    /// client address. A bad or missing line closes the connection and gives back the slot taken for it.
+    private func setUpPeerPipeline(_ channel: Channel) -> EventLoopFuture<Void> {
+        let identity = channel.eventLoop.makePromise(of: String.self)
+        identity.futureResult.whenFailure { [weak self] _ in
+            guard let self else { return }
+            self.app.metrics.connectionClosed()
+            Task { await self.connectionGate.release() }
+        }
+        do {
+            try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(PeerPreambleDecoder(secret: peerSecret, promise: identity)))
+        } catch {
+            identity.fail(error)
+            return channel.eventLoop.makeFailedFuture(error)
+        }
+        // The channel only starts reading once its initializer has finished, so this must not wait for the identity line:
+        // the HTTP handlers are added when the line arrives.
+        identity.futureResult.flatMap { [weak self] remoteIP -> EventLoopFuture<Void> in
+            guard let self else { return channel.eventLoop.makeFailedFuture(ServerEngineError.stopped) }
+            return self.setUpHTTPPipeline(channel, remoteIP: remoteIP)
+        }.whenFailure { _ in channel.close(promise: nil) }
+        return channel.eventLoop.makeSucceededVoidFuture()
+    }
+
     /// Adds the named HTTP1 handlers (WebSocket upgrade removes them by
     /// these names) and starts serving the connection. Runs on the channel's
     /// own event loop, after `ConnectionGate` has reserved a slot.
     private func setUpHTTPPipeline(_ channel: Channel, remoteIP: String) -> EventLoopFuture<Void> {
-        channel.eventLoop.submit {
+        // Synchronous (we are on the channel's loop): the peer path relies on the handlers being in place at once.
+        channel.eventLoop.makeCompletedFuture {
             try channel.pipeline.syncOperations.addHandler(HTTPResponseEncoder(), name: Self.httpEncoderName)
             try channel.pipeline.syncOperations.addHandler(
                 ByteToMessageHandler(HTTPRequestDecoder()),
@@ -653,6 +689,13 @@ final class ServerEngine: @unchecked Sendable {
         app.urls = []
         app.metrics.markStopped()
         serverLogger.info("SwiftCoreWeb stopped")
+    }
+}
+
+extension ServerEngine {
+    static func makeSecret() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<16).map { _ in UInt8.random(in: 0...255, using: &generator) }).map { String(format: "%02x", $0) }.joined()
     }
 }
 

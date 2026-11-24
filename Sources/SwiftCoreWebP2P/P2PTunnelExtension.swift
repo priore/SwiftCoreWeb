@@ -29,6 +29,9 @@ final class P2PTunnelExtension: ServerExtension {
     private let running = NIOLockedValueBox<Running?>(nil)
     private let boundPort = NIOLockedValueBox<Int?>(nil)
     private let servedAppPort = NIOLockedValueBox<Int?>(nil)
+    private let servedPeer = NIOLockedValueBox<PeerEndpoint?>(nil)
+    /// The core's peer listener this tunnel forwards through (visible to tests).
+    var peer: PeerEndpoint? { servedPeer.withLockedValue { $0 } }
 
     init(pairing: PairingManager, storage: TunnelSecretStorage, name: String?, port: Int) {
         self.pairing = pairing
@@ -43,13 +46,15 @@ final class P2PTunnelExtension: ServerExtension {
 
     func start(ingress: RequestIngress) async throws {
         await stop() // a restart of the server starts the tunnel again
+        // Without the peer listener every device would reach the app as 127.0.0.1 (no rate limit): refuse to run that way.
+        guard let peer = ingress.peer else { throw TunnelError.notConnected }
         // Paired devices remember the port, so it is reused across launches when it is free; a random one is the fallback.
         let remembered = storage.read(Self.portKey).flatMap(Int.init)
         let candidates = requestedPort != 0 ? [requestedPort] : [remembered, 0].compactMap { $0 }
         var started: (server: SSHTunnelServer, port: Int)?
         var lastError: Error = TunnelError.notConnected
         for candidate in candidates {
-            let server = SSHTunnelServer(pairing: pairing, allowList: TunnelAllowList(port: ingress.port))
+            let server = SSHTunnelServer(pairing: pairing, allowList: TunnelAllowList(port: ingress.port), peer: peer)
             do {
                 started = (server, try await server.start(port: candidate))
                 break
@@ -61,6 +66,7 @@ final class P2PTunnelExtension: ServerExtension {
         guard let (server, port) = started else { throw lastError }
         if remembered != port { storage.write(String(port), forKey: Self.portKey) }
         servedAppPort.withLockedValue { $0 = ingress.port }
+        servedPeer.withLockedValue { $0 = peer }
         let advertiser = BonjourAdvertiser(name: name, type: Self.bonjourType, port: port)
         if advertiser == nil { p2pLogger.error("Bonjour announcement could not start") }
         running.withLockedValue { $0 = Running(server: server, advertiser: advertiser) }
@@ -70,6 +76,7 @@ final class P2PTunnelExtension: ServerExtension {
     func stop() async {
         boundPort.withLockedValue { $0 = nil }
         servedAppPort.withLockedValue { $0 = nil }
+        servedPeer.withLockedValue { $0 = nil }
         guard let current = running.withLockedValue({ $0.take() }) else { return }
         current.advertiser?.cancel()
         await current.server.stop()

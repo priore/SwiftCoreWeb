@@ -68,15 +68,24 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if let event = event as? ChannelEvent, case .inputClosed = event {
-            partner?.context?.close(mode: .output, promise: nil)
+            partner?.closeAfterWrites(mode: .output)
         }
         context.fireUserInboundEventTriggered(event)
     }
 
     func channelInactive(context: ChannelHandlerContext) {
         state.closed = true
-        partner?.context?.close(promise: nil)
+        partner?.closeAfterWrites(mode: .all)
         context.fireChannelInactive()
+    }
+
+    /// Closes (or half-closes) this side only once what was already written has been sent: a plain close would drop the
+    /// tail of a response that the other side finished sending an instant before it hung up.
+    private func closeAfterWrites(mode: CloseMode) {
+        guard let context else { return }
+        let marker = context.eventLoop.makePromise(of: Void.self)
+        context.writeAndFlush(wrapOutboundOut(context.channel.allocator.buffer(capacity: 0)), promise: marker)
+        marker.futureResult.whenComplete { _ in context.close(mode: mode, promise: nil) }
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {

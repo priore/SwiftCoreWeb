@@ -10,6 +10,7 @@ import NIOConcurrencyHelpers
 import NIOCore
 import NIOPosix
 import NIOSSH
+import SwiftCoreWeb
 
 /// Accepts SSH connections from authorized peers and forwards each `direct-tcpip` channel to the allow-listed
 /// destination (the local SCW listener). Nothing else is served: no shell, no exec, no other destinations.
@@ -19,6 +20,7 @@ public final class SSHTunnelServer: Sendable {
     private let allowList: TunnelAllowList
     private let handshakeTimeout: TimeAmount
     private let maxConnections: Int
+    private let peer: PeerEndpoint?
     private let openConnections = NIOLockedValueBox(0)
     private let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     private let listener = NIOLockedValueBox<Channel?>(nil)
@@ -27,8 +29,10 @@ public final class SSHTunnelServer: Sendable {
         pairing: PairingManager,
         allowList: TunnelAllowList,
         handshakeTimeout: TimeAmount = .seconds(10),
-        maxConnections: Int = 64
+        maxConnections: Int = 64,
+        peer: PeerEndpoint? = nil
     ) {
+        self.peer = peer
         self.handshakeTimeout = handshakeTimeout
         self.maxConnections = maxConnections
         self.pairing = pairing
@@ -40,7 +44,7 @@ public final class SSHTunnelServer: Sendable {
     /// in. Unauthenticated sockets still use connection slots (`maxConnections`) until the handshake deadline closes them.
     @discardableResult
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
-        let pairing = pairing, registry = registry, allowList = allowList
+        let pairing = pairing, registry = registry, allowList = allowList, peer = peer
         let handshakeTimeout = handshakeTimeout, maxConnections = maxConnections, openConnections = openConnections
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -69,7 +73,7 @@ public final class SSHTunnelServer: Sendable {
                     )
                     try channel.pipeline.syncOperations.addHandler(
                         NIOSSHHandler(role: .server(configuration), allocator: channel.allocator) { child, channelType in
-                            Self.forward(child, channelType, allowList: allowList)
+                            Self.forward(child, channelType, allowList: allowList, registry: registry, peer: peer)
                         }
                     )
                 }
@@ -88,18 +92,38 @@ public final class SSHTunnelServer: Sendable {
     }
 
     /// Connects an SSH child channel to its destination, or refuses it when it is not allow-listed.
-    private static func forward(_ child: Channel, _ type: SSHChannelType, allowList: TunnelAllowList) -> EventLoopFuture<Void> {
+    private static func forward(
+        _ child: Channel,
+        _ type: SSHChannelType,
+        allowList: TunnelAllowList,
+        registry: ConnectionRegistry,
+        peer: PeerEndpoint?
+    ) -> EventLoopFuture<Void> {
         guard case .directTCPIP(let target) = type, allowList.permits(host: target.targetHost, port: target.targetPort) else {
             return child.eventLoop.makeFailedFuture(TunnelError.destinationNotAllowed)
         }
         let (sshSide, targetSide) = TunnelRelayHandler.makePair()
+        // With a peer listener the connection goes there, announcing which paired device it belongs to, so the app sees
+        // that device (not 127.0.0.1) as the client. Without one (tests of the tunnel alone) it goes straight to the target.
+        var destination = (host: target.targetHost, port: target.targetPort)
+        var preamble: ByteBuffer?
+        if let peer {
+            guard let parent = child.parent, let deviceID = registry.deviceID(for: parent) else {
+                return child.eventLoop.makeFailedFuture(TunnelError.notConnected)
+            }
+            destination = ("127.0.0.1", peer.port)
+            preamble = child.allocator.buffer(string: peer.preamble(identity: "p2p:" + deviceID))
+        }
         // The target side is installed as the channel is created, so a close during the connect is not missed.
         let targetSideBox = UncheckedSendableBox(targetSide)
         return child.pipeline.addHandlers([SSHDataCodec(), sshSide]).flatMap {
             ClientBootstrap(group: child.eventLoop)
                 .channelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
                 .channelInitializer { $0.pipeline.addHandler(targetSideBox.value) }
-                .connect(host: target.targetHost, port: target.targetPort)
-        }.map { _ in }
+                .connect(host: destination.host, port: destination.port)
+        }.flatMap { target -> EventLoopFuture<Void> in
+            guard let preamble else { return child.eventLoop.makeSucceededVoidFuture() }
+            return target.writeAndFlush(preamble)
+        }
     }
 }

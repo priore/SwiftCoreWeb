@@ -12,7 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `SSHTunnelClient` pins the host key; `LoopbackProxy` lets any HTTP client reach the remote app through `http://127.0.0.1:<port>`.
   - Pairing: the host opens a session on request and shows a payload (`scw-p2p://…`, with the host key fingerprint and a one-time token); `SCWPeerConnection.pair(_:)` registers the device, which then reconnects with its key alone. Keys and the device list live in the Keychain (`TunnelSecretStorage`), and `PairingManager.revoke(deviceID:)` also closes the device's open connections.
   - `builder.useP2P()` starts the tunnel with the server and announces it on the local network as `_scw-p2p._tcp` (the hosting app declares that service and a local network usage description). It returns a `P2PHost` to open pairing sessions; `LocalAddresses.ipv4()` lists the addresses to put in the payload.
-  - Not part of this step: per-route exposure, the peer's identity in `remoteAddress` and rate limiting, discovery on the client, WAN.
+  - The app sees each paired device as its own client: with an extension registered the server also listens on a loopback-only "peer" port that reads the client's identity from a first line carrying a per-run secret (`RequestIngress.peer`, `PeerEndpoint`), so `HttpRequest.remoteAddress` is `p2p:<device fingerprint>` and rate limiting is per device. Server-Sent Events work through the tunnel.
+  - Not part of this step: per-route exposure, discovery on the client, WAN.
 - **`ServerExtension` and `RequestIngress`: an entry point for transports other than the HTTP listener.**
   - `builder.addExtension(_:)` registers a module that starts once the listeners are bound and stops with the server.
   - It receives a `RequestIngress`: the same dispatcher, connection gate and rate limiter the HTTP engine uses, plus `acceptWebSocket` (route lookup and `auth` enforced) over a `WebSocket.Transport`.
@@ -22,6 +23,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Handlers and the HTTP upgrade path are unchanged.
 
 ### Fixed
+- **A server-initiated close could drop the tail of a response in the tunnel.** The relay now sends what was already written before closing or half-closing a side.
 - **`mapWebSocket(_:auth:_:)` ignored its `auth` requirement.**
   - The route's `AuthRequirement` was stored but never checked, so any client could open a protected WebSocket.
   - The upgrade now runs the authentication and authorization middleware first and answers 401/403 instead of switching protocols.

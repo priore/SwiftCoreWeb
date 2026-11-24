@@ -13,7 +13,7 @@ public final class P2PHost: Sendable {
     /// The paired devices, pairing sessions and revocation. `nil` when peer-to-peer is disabled: nothing was created,
     /// and the Keychain was not touched.
     public let pairing: PairingManager?
-    private let tunnel: P2PTunnelExtension?
+    let tunnel: P2PTunnelExtension?
 
     init(pairing: PairingManager?, tunnel: P2PTunnelExtension?) {
         self.pairing = pairing

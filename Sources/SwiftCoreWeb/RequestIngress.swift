@@ -18,6 +18,10 @@ public struct RequestIngress: Sendable {
     let metrics: ServerMetrics
     /// The port of the HTTP listener, for an extension that forwards traffic to it.
     public let port: Int
+    /// A loopback listener that serves the same routes but takes the client's identity from a first line the extension
+    /// sends (`SCW-PEER <secret> <identity>\n`), so rate limiting, metrics and `HttpRequest.remoteAddress` see the
+    /// peer instead of `127.0.0.1`. Always set while the server runs with extensions.
+    public let peer: PeerEndpoint?
 
     /// Reserves a connection slot (`maxConcurrentConnections`). `false` when at capacity: refuse the connection.
     /// Every `true` must be paired with exactly one `closeConnection()`: an unpaired close frees a slot that
