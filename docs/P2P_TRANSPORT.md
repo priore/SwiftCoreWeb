@@ -171,6 +171,10 @@ device uses one token.
 - On iOS the Keychain items are written with the default accessibility (readable while unlocked). A host that must
   start while the device is locked needs a different accessibility class, which `SecretStore` does not set yet.
 
+## Standard SSH
+
+The tunnel is plain SSH, so a standard client works once a device is paired: with that device's key and the host key pinned in `known_hosts`, `ssh -p <tunnel port> -W 127.0.0.1:<app port> user@host` forwards to the app, and any other destination is refused. `scripts/p2p-openssh-interop.sh` checks this against the OpenSSH `ssh` of the machine (it pairs a device in a test, writes its key, and runs `ssh`).
+
 ## Limits
 
 - **Another network goes through a relay.** There is no direct connection through NAT yet: a STUN client exists in the module but nothing uses it, and TCP hole punching is not implemented, so every connection from outside costs the relay's traffic and latency. The relay has to support TCP allocations (RFC 6062); this was verified against `coturn` on the loopback only.
