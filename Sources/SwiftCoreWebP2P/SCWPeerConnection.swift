@@ -156,7 +156,10 @@ public final class SCWPeerConnection: Sendable {
                 var target = known
                 target.host = candidate.host
                 target.port = candidate.port
-                do { return try await connect(to: target) } catch { failure = error }
+                do { return try await connect(to: target) } catch {
+                    failure = error
+                    if let refusal = error as? TunnelError, refusal != .notConnected { return nil } // refused (revoked, wrong key): retrying cannot change it
+                }
             }
         }
         return nil

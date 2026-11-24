@@ -105,6 +105,23 @@ final class RendezvousTests: XCTestCase {
         XCTAssertNil(none)
     }
 
+    func testAnOlderRecordCannotReplaceANewerOne() async throws {
+        let rendezvous = try await startRendezvous()
+        let host = identity()
+        let now = Int(Date().timeIntervalSince1970)
+        func put(_ issued: Int, port: Int) async throws -> Int {
+            let record = RendezvousRecord(fingerprint: host.fingerprint, issued: issued, candidates: [.init(kind: "relay", host: "198.51.100.9", port: port)])
+            var request = URLRequest(url: rendezvous.baseURL.appendingPathComponent("p2p/v1/hosts/\(RendezvousPath.hostID(host.fingerprint))"))
+            request.httpMethod = "PUT"
+            request.httpBody = try JSONEncoder().encode(SignedEnvelope.sign(JSONEncoder().encode(record), with: host.key))
+            return ((try await URLSession.shared.data(for: request)).1 as? HTTPURLResponse)?.statusCode ?? 0
+        }
+        let fresh = try await put(now, port: 2), replayed = try await put(now - 100, port: 1)
+        XCTAssertEqual([fresh, replayed], [204, 409])
+        let found = try await rendezvous.candidates(hostFingerprint: host.fingerprint)
+        XCTAssertEqual(found?.first?.port, 2)
+    }
+
     func testRegistrationsAreBounded() async throws {
         let rendezvous = try await startRendezvous(maxHosts: 2)
         for index in 0..<3 {

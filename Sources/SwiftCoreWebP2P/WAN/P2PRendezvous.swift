@@ -26,6 +26,7 @@ public final class P2PRendezvous: Sendable {
     private struct Stored {
         let envelope: SignedEnvelope
         let expires: Date
+        let issued: Int
     }
 
     private struct State {
@@ -61,13 +62,15 @@ public final class P2PRendezvous: Sendable {
               fresh(record.issued), record.candidates.count <= 8 else {
             return Results.problem(status: .badRequest, detail: "The record must be signed by the host it is for and be recent.")
         }
-        let stored = state.withLockedValue { state -> Bool in
+        let stored = state.withLockedValue { state -> Bool? in
             state.records = state.records.filter { $0.value.expires > Date() }
             state.knocks = state.knocks.filter { state.records[$0.key] != nil } // knocks never outlive their host's record
+            if let old = state.records[id], old.issued > record.issued { return nil } // an older record replayed
             if state.records[id] == nil, state.records.count >= maxHosts { return false }
-            state.records[id] = Stored(envelope: envelope, expires: Date().addingTimeInterval(recordLifetime))
+            state.records[id] = Stored(envelope: envelope, expires: Date().addingTimeInterval(recordLifetime), issued: record.issued)
             return true
         }
+        guard let stored else { return Results.problem(status: HttpStatusCode(409), detail: "A newer record is already stored.") }
         return stored ? Results.noContent() : Results.problem(status: HttpStatusCode(503), detail: "The rendezvous is full.")
     }
 

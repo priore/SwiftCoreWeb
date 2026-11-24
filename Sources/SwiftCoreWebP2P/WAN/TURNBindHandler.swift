@@ -18,6 +18,7 @@ final class TURNBindHandler: ChannelInboundHandler, @unchecked Sendable {
     private var framing = STUNFraming()
     private var answer: EventLoopPromise<STUNMessage>?
     private var expected: [UInt8] = []
+    private var integrityKey: [UInt8]?
     private var bound = false
     private var active = false
     private var held = ByteBuffer()
@@ -32,6 +33,7 @@ final class TURNBindHandler: ChannelInboundHandler, @unchecked Sendable {
         try await channel.eventLoop.submit {
             self.answer = promise
             self.expected = request.transactionID
+            self.integrityKey = request.integrityKey
         }.get()
         let deadline = channel.eventLoop.scheduleTask(in: timeout) { promise.fail(TURNAllocation.Failure.timedOut) }
         defer { deadline.cancel() }
@@ -61,7 +63,9 @@ final class TURNBindHandler: ChannelInboundHandler, @unchecked Sendable {
         }
         framing.append(&bytes)
         guard let raw = framing.nextMessage() else { return }
-        guard let (message, _) = try? STUNMessage.decode(raw), message.transactionID == expected else {
+        guard let (message, integrityOffset) = try? STUNMessage.decode(raw), message.transactionID == expected,
+              message.messageClass != .success || integrityKey == nil
+                || (integrityOffset.map { STUNMessage.integrityIsValid(raw, integrityOffset: $0, key: integrityKey ?? []) } ?? false) else {
             answer?.fail(TURNAllocation.Failure.unexpectedResponse)
             context.close(promise: nil)
             return
