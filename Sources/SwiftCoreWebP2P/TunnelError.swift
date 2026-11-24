@@ -22,4 +22,6 @@ public enum TunnelError: Error, Sendable, Equatable {
     case pairingFailed
     /// The tunnel is not connected (or the connection was lost).
     case notConnected
+    /// No direct connection could be made to the host (the networks did not let the two sides meet) and no relay was available.
+    case directConnectionFailed
 }

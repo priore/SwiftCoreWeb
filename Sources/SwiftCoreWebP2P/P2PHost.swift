@@ -26,14 +26,18 @@ public final class P2PHost: Sendable {
     /// The tunnel's port once the server is running, otherwise `nil`.
     public var tunnelPort: Int? { tunnel?.tunnelPort }
 
+    /// The six-digit code of the open pairing session, if it was opened with `shortCode`.
+    public var pairingCode: String? { pairing?.pairingCode }
+
     /// Opens a pairing session and returns what to show as a QR code. `host` is the address the other device will connect
     /// to: an address from `LocalAddresses.ipv4()`, or the machine's Bonjour name. `nil` (and no session opened) when the
-    /// server is not running, peer-to-peer is disabled, or `host` is not a valid address. With `shortCode` the token is a
-    /// six-digit code that a device without a camera can type (`SCWPeerConnection.pair(code:with:confirm:)`).
+    /// server is not running, peer-to-peer is disabled, or `host` is not a valid address. With `shortCode` the session also
+    /// accepts the six-digit `pairingCode`, which a device without a camera types
+    /// (`SCWPeerConnection.pair(code:with:confirm:)`); the QR token stays long.
     public func openPairing(host: String, name: String? = nil, validFor lifetime: TimeInterval = 120, shortCode: Bool = false) -> PairingPayload? {
         guard let pairing, let port = tunnel?.tunnelPort, let appPort = tunnel?.appPort,
               PairingPayload(host: host, port: port, appPort: appPort, token: "-", hostKeyFingerprint: "-") != nil else { return nil }
-        pairing.openPairing(validFor: lifetime, codeDigits: shortCode ? 6 : nil)
+        pairing.openPairing(validFor: lifetime, withCode: shortCode)
         return pairing.payload(host: host, port: port, appPort: appPort, name: name, rendezvous: tunnel?.remote?.rendezvous)
     }
 }

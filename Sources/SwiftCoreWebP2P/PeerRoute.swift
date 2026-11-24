@@ -11,6 +11,9 @@ public enum PeerRoute: Sendable, Hashable {
     case local
     /// Directly, at an address found again on the local network.
     case discovered
+    /// Directly across the internet: both sides opened a TCP connection to each other at the same time (hole punching),
+    /// so no relay carries the bytes. Works only through some NATs.
+    case direct
     /// Through the TURN relay, from another network. The relay carries the tunnel's encrypted bytes and cannot read them.
     case relay
 }

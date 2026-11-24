@@ -53,7 +53,7 @@ final class OpenSSHInteropTests: XCTestCase {
         for _ in 0..<240 where !FileManager.default.fileExists(atPath: result.path) { try await Task.sleep(nanoseconds: 250_000_000) }
         let text = try String(contentsOf: result, encoding: .utf8)
         XCTAssertTrue(text.contains("200 OK") && text.contains("hello from the host"), "ssh -W to the app: \(text)")
-        XCTAssertFalse(text.contains("SSH-2.0-OpenSSH"), "a destination outside the allow-list must not be reached: \(text)")
+        XCTAssertTrue(text.contains("open failed"), "ssh must report that the host refused the channel to a destination outside the allow-list: \(text)")
     }
 
     // MARK: - Helpers

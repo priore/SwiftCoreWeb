@@ -34,6 +34,8 @@ final class SSHTunnelClient: Sendable {
         port: Int,
         key: Curve25519.Signing.PrivateKey,
         credential: TunnelCredential,
+        localPort: Int? = nil,
+        connectTimeout: TimeAmount = .seconds(4),
         trustedHostKey: @escaping @Sendable (NIOSSHPublicKey) async -> Bool
     ) async throws {
         let privateKey = NIOSSHPrivateKey(ed25519Key: key)
@@ -41,9 +43,9 @@ final class SSHTunnelClient: Sendable {
         // Never wait forever for a host that accepts the socket but does not finish the handshake.
         let deadline = eventLoop.scheduleTask(in: .seconds(15)) { authenticated.fail(TunnelError.notConnected) }
         defer { deadline.cancel() }
-        let bootstrap = ClientBootstrap(group: eventLoop)
+        var bootstrap = ClientBootstrap(group: eventLoop)
             // An address that does not answer must not hold up the next way of reaching the host.
-            .connectTimeout(.seconds(4))
+            .connectTimeout(connectTimeout)
             .channelInitializer { channel in
                 TCPKeepAlive.apply(to: channel).flatMapThrowing {
                     let configuration = SSHClientConfiguration(
@@ -54,6 +56,16 @@ final class SSHTunnelClient: Sendable {
                     try channel.pipeline.syncOperations.addHandler(AuthCompletionHandler(promise: authenticated))
                 }
             }
+        if let localPort {
+            // The same local port as a socket that learned its public mapping or is listening: hole punching needs it.
+            bootstrap = bootstrap
+                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+                .channelOption(ChannelOptions.socketOption(.so_reuseport), value: 1)
+            do { bootstrap = try bootstrap.bind(to: SocketAddress(ipAddress: "0.0.0.0", port: localPort)) } catch {
+                authenticated.fail(error)
+                throw error
+            }
+        }
         let channel: Channel
         do {
             channel = try await bootstrap.connect(host: host, port: port).get()

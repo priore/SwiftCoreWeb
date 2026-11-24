@@ -39,7 +39,7 @@ public struct P2PPairingView: View {
 
     public var body: some View {
         VStack(spacing: 24) {
-            if let payload, expires > now, let image = Self.qrImage(for: payload.link) {
+            if let payload, expires > now, host.pairing?.isPairingOpen ?? false, let image = Self.qrImage(for: payload.link) {
                 Image(decorative: image, scale: 1)
                     .interpolation(.none)
                     .resizable()
@@ -49,7 +49,7 @@ public struct P2PPairingView: View {
                     .background(Color.white) // a QR code needs a light margin to scan, also in dark mode
                 Text("Scan with the other device. Valid for \(max(0, Int(expires.timeIntervalSince(now)))) s.")
                     .font(.headline)
-                Text(Self.spaced(payload.token))
+                Text(Self.spaced(host.pairingCode ?? ""))
                     .font(.system(size: 44, weight: .semibold, design: .monospaced))
                 Text("or type this code on a device without a camera")
                     .foregroundStyle(.secondary)
@@ -57,10 +57,10 @@ public struct P2PPairingView: View {
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
             } else {
-                Text(host.isEnabled ? "The pairing code expired." : "Peer-to-peer access is not running.")
+                Text(host.isEnabled ? "The pairing code expired or was used up." : "Peer-to-peer access is not running.")
                     .font(.headline)
             }
-            Button(payload == nil || expires <= now ? "Show a pairing code" : "New code") { open() }
+            Button(payload == nil || expires <= now || !(host.pairing?.isPairingOpen ?? false) ? "Show a pairing code" : "New code") { open() }
                 .disabled(!host.isEnabled)
             if !devices.isEmpty {
                 Divider()

@@ -37,6 +37,8 @@ struct RendezvousClient: Sendable {
     struct Knock: Equatable, Sendable {
         let address: String
         let deviceFingerprint: String
+        /// The device's own direct address, when it sent one.
+        let direct: RendezvousRecord.Candidate?
     }
 
     /// The devices that knocked since the last call. The rendezvous only vouches for the address; who knocked is checked here.
@@ -48,14 +50,14 @@ struct RendezvousClient: Sendable {
                   let request = try? JSONDecoder().decode(RendezvousKnockRequest.self, from: payload),
                   request.type == RendezvousPayloadType.knock, request.hostFingerprint == hostFingerprint,
                   abs(Self.now - request.issued) <= 300 else { return nil }
-            return Knock(address: knock.address, deviceFingerprint: signer)
+            return Knock(address: knock.address, deviceFingerprint: signer, direct: request.candidate.flatMap { $0.kind == "direct" ? $0 : nil })
         }
     }
 
     // MARK: - Device
 
-    func knock(hostFingerprint: String, deviceKey: Curve25519.Signing.PrivateKey) async throws {
-        let request = RendezvousKnockRequest(hostFingerprint: hostFingerprint, issued: Self.now)
+    func knock(hostFingerprint: String, deviceKey: Curve25519.Signing.PrivateKey, candidate: RendezvousRecord.Candidate? = nil) async throws {
+        let request = RendezvousKnockRequest(hostFingerprint: hostFingerprint, issued: Self.now, candidate: candidate)
         _ = try await send("POST", hostPath(hostFingerprint) + "/knocks", envelope: .sign(JSONEncoder().encode(request), with: deviceKey))
     }
 

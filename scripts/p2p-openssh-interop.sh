@@ -4,7 +4,8 @@
 set -euo pipefail
 
 DIR="$(mktemp -d)"
-trap 'rm -rf "$DIR"' EXIT
+TEST_PID=
+trap '[ -n "$TEST_PID" ] && kill "$TEST_PID" 2>/dev/null; rm -rf "$DIR"' EXIT
 chmod 700 "$DIR"
 DEVICE="${SCW_SIM_DEVICE:-iPhone 17}"
 

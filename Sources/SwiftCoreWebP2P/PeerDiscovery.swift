@@ -88,12 +88,12 @@ enum PeerDiscovery {
             browser.browseResultsChangedHandler = { results, _ in
                 for result in results {
                     guard case .bonjour(let txt) = result.metadata, let fingerprint = txt[fingerprintKey],
-                          let appPort = txt[appPortKey].flatMap({ Int($0) }), case .service(let name, _, _, _) = result.endpoint else { continue }
+                          let appPort = txt[appPortKey].flatMap({ Int($0) }), (1...65_535).contains(appPort), case .service(let name, _, _, _) = result.endpoint else { continue }
                     let parameters = NWParameters.tcp
                     (parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options)?.version = .v4
                     let probe = NWConnection(to: result.endpoint, using: parameters)
                     let accepted = state.withLockedValue { value -> Bool in
-                        guard !value.done, value.seen.insert(result.endpoint).inserted else { return false }
+                        guard !value.done, value.seen.count < 32, value.seen.insert(result.endpoint).inserted else { return false } // a flood of announcements is capped
                         value.probes.append(probe)
                         return true
                     }

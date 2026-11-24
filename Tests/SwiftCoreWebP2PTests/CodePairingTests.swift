@@ -38,12 +38,14 @@ final class CodePairingTests: XCTestCase {
         XCTAssertEqual(found.appPort, host.tunnel?.appPort)
 
         let payload = try XCTUnwrap(host.openPairing(host: "127.0.0.1", shortCode: true))
-        XCTAssertEqual(payload.token.count, 6)
-        XCTAssertTrue(payload.token.allSatisfy(\.isNumber))
+        let code = try XCTUnwrap(host.pairingCode)
+        XCTAssertEqual(code.count, 6)
+        XCTAssertTrue(code.allSatisfy(\.isNumber))
+        XCTAssertGreaterThan(payload.token.count, 16, "the QR token stays long")
 
         let shown = NIOLockedValueBox("")
         let storage = InMemoryTunnelStorage()
-        let peer = try await SCWPeerConnection.pair(code: payload.token, with: found, storage: storage) { fingerprint in
+        let peer = try await SCWPeerConnection.pair(code: code, with: found, storage: storage) { fingerprint in
             shown.withLockedValue { $0 = fingerprint }
             return true
         }
@@ -59,9 +61,9 @@ final class CodePairingTests: XCTestCase {
     func testRefusingTheFingerprintSendsNoCodeAndPairsNothing() async throws {
         let host = try await startHost()
         let found = try await discover(host)
-        let payload = try XCTUnwrap(host.openPairing(host: "127.0.0.1", shortCode: true))
+        _ = try XCTUnwrap(host.openPairing(host: "127.0.0.1", shortCode: true))
         do {
-            _ = try await SCWPeerConnection.pair(code: payload.token, with: found, storage: InMemoryTunnelStorage()) { _ in false }
+            _ = try await SCWPeerConnection.pair(code: try XCTUnwrap(host.pairingCode), with: found, storage: InMemoryTunnelStorage()) { _ in false }
             XCTFail("must not pair")
         } catch { XCTAssertEqual(error as? TunnelError, .untrustedHostKey) }
         XCTAssertEqual(host.pairing?.devices.count, 0)
@@ -71,13 +73,27 @@ final class CodePairingTests: XCTestCase {
     func testAWrongCodeIsRefusedAndTheAttemptsAreLimited() async throws {
         let host = try await startHost()
         let found = try await discover(host)
-        let payload = try XCTUnwrap(host.openPairing(host: "127.0.0.1", shortCode: true))
-        let wrong = payload.token == "000000" ? "000001" : "000000"
+        _ = try XCTUnwrap(host.openPairing(host: "127.0.0.1", shortCode: true))
+        let wrong = host.pairingCode == "000000" ? "000001" : "000000"
         do {
             _ = try await SCWPeerConnection.pair(code: wrong, with: found, storage: InMemoryTunnelStorage()) { _ in true }
             XCTFail("must not pair")
         } catch { XCTAssertEqual(error as? TunnelError, .authenticationRefused) }
         XCTAssertEqual(host.pairing?.devices.count, 0)
+    }
+
+    func testTheCodeIsNotSentWhileTheUserIsStillComparing() async throws {
+        let host = try await startHost()
+        let found = try await discover(host)
+        _ = try XCTUnwrap(host.openPairing(host: "127.0.0.1", shortCode: true))
+        let code = try XCTUnwrap(host.pairingCode)
+        // Longer than the host's handshake deadline: a person comparing 12 characters is not that quick.
+        let peer = try await SCWPeerConnection.pair(code: code, with: found, storage: InMemoryTunnelStorage()) { _ in
+            try? await Task.sleep(nanoseconds: 11_000_000_000)
+            return true
+        }
+        XCTAssertEqual(host.pairing?.devices.count, 1)
+        await peer.stop()
     }
 
     func testTheViewShowsTheCodeInTwoGroups() {

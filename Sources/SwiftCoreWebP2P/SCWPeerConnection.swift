@@ -8,6 +8,7 @@
 import Crypto
 import Foundation
 import NIOConcurrencyHelpers
+import NIOCore
 import NIOPosix
 import NIOSSH
 
@@ -29,7 +30,7 @@ public final class SCWPeerConnection: Sendable {
         var client: SSHTunnelClient
         let proxy: LoopbackProxy
         let group: MultiThreadedEventLoopGroup
-        let supervisor: Task<Void, Never>?
+        var supervisor: Task<Void, Never>?
     }
 
     private let running = NIOLockedValueBox<Running?>(nil)
@@ -83,26 +84,38 @@ public final class SCWPeerConnection: Sendable {
     /// Pairs with `host` using the six-digit code its screen shows, without a scanned QR code. The host key does not arrive
     /// out of band here, so before anything secret is sent `confirm` receives the short fingerprint of the key the host
     /// really presents: show it and let the user compare it with the one on the host's screen. Only if `confirm` returns
-    /// `true` is the code sent. Fails with `TunnelError.untrustedHostKey` when it returns `false`.
+    /// `true` is the code sent, and only to that key. Fails with `TunnelError.untrustedHostKey` when it returns `false` or
+    /// when the host answers with another key the second time.
     public static func pair(
         code: String, with host: DiscoveredHost, rendezvous: URL? = nil, storage: TunnelSecretStorage = KeychainTunnelStorage(),
         confirm: @escaping @Sendable (_ shortFingerprint: String) async -> Bool
     ) async throws -> SCWPeerConnection {
         let deviceKey = try loadOrCreateDeviceKey(storage)
+        // First connection: only to see the host key. It is refused after the key exchange, before any credential is sent, so
+        // the user can take as long as they need to compare fingerprints without a handshake deadline running.
         let seenHostKey = NIOLockedValueBox<NIOSSHPublicKey?>(nil)
+        let probe = SSHTunnelClient()
+        do {
+            try await probe.connect(host: host.host, port: host.port, key: deviceKey, credential: .pairing(token: code)) { key in
+                seenHostKey.withLockedValue { $0 = key }
+                return false
+            }
+        } catch {
+            // Expected: `untrustedHostKey`, having learned the key.
+        }
+        await probe.close()
+        guard let hostKey = seenHostKey.withLockedValue({ $0 }) else { throw TunnelError.notConnected }
+        guard await confirm(TunnelFingerprint.short(TunnelFingerprint.of(hostKey))) else { throw TunnelError.untrustedHostKey }
+
+        // Second connection: pinned to the key the user confirmed; the code goes only to that key.
         let client = SSHTunnelClient()
         do {
-            try await client.connect(host: host.host, port: host.port, key: deviceKey, credential: .pairing(token: code)) { key in
-                guard await confirm(TunnelFingerprint.short(TunnelFingerprint.of(key))) else { return false }
-                seenHostKey.withLockedValue { $0 = key }
-                return true
-            }
+            try await client.connect(host: host.host, port: host.port, key: deviceKey, credential: .pairing(token: code)) { $0 == hostKey }
         } catch {
             await client.close()
             throw error
         }
         await client.close()
-        guard let hostKey = seenHostKey.withLockedValue({ $0 }) else { throw TunnelError.untrustedHostKey }
         let fingerprint = TunnelFingerprint.of(hostKey)
         let record = PeerRecord(host: host.host, port: host.port, appPort: host.appPort, hostKey: String(openSSHPublicKey: hostKey), name: host.name, rendezvous: rendezvous?.absoluteString)
         guard let text = try String(data: JSONEncoder().encode(record), encoding: .utf8), storage.write(text, forKey: recordName(fingerprint)) else {
@@ -146,11 +159,12 @@ public final class SCWPeerConnection: Sendable {
             throw error
         }
         guard let url = URL(string: "http://127.0.0.1:\(port)") else { throw TunnelError.notConnected }
+        running.withLockedValue { $0 = Running(client: client, proxy: proxy, group: group, supervisor: nil) }
         let supervisor = Task { [weak self] in
             guard let self else { return }
             await self.keepConnected(proxy: proxy, group: group)
         }
-        running.withLockedValue { $0 = Running(client: client, proxy: proxy, group: group, supervisor: supervisor) }
+        running.withLockedValue { $0?.supervisor = supervisor }
         return url
     }
 
@@ -165,17 +179,14 @@ public final class SCWPeerConnection: Sendable {
             return (try await connect(to: known, group: group), .local)
         } catch {
             // Only an address that does not answer is worth a search: a refusal (revoked device, wrong key) would repeat anywhere.
-            switch error {
-            case TunnelError.notConnected: break
-            case is TunnelError: throw error
-            default: break
-            }
+            // A different key at this address says nothing about where the host is now, so the search goes on.
+            if let refusal = error as? TunnelError, refusal == .authenticationRefused || refusal == .tooManyConnections { throw error }
             failure = error
         }
         if !skippedRoutes.withLockedValue({ $0.contains(.discovered) }), let client = await rediscover(known, group: group, failure: &failure) {
             return (client, .discovered)
         }
-        if let client = await viaRelay(known, group: group, failure: &failure) { return (client, .relay) }
+        if let reached = await viaRendezvous(known, group: group, failure: &failure) { return reached }
         throw failure
     }
 
@@ -201,7 +212,7 @@ public final class SCWPeerConnection: Sendable {
                     delay = 1_000_000_000
                     break
                 } catch {
-                    if let refusal = error as? TunnelError, refusal != .notConnected { return } // revoked or wrong key: waiting will not help
+                    if error as? TunnelError == .authenticationRefused { return } // revoked or wrong key: waiting will not help
                     delay = min(delay * 2, 30_000_000_000)
                 }
             }
@@ -231,16 +242,28 @@ public final class SCWPeerConnection: Sendable {
         return nil
     }
 
-    /// Not on the same network: knock at the rendezvous, so the host lets this device through its relay, then connect to the
-    /// relayed address the host published. The relayed address changes between runs of the host, so it is not remembered.
-    private func viaRelay(_ known: PeerRecord, group: MultiThreadedEventLoopGroup, failure: inout Error) async -> SSHTunnelClient? {
+    /// Not on the same network: knock at the rendezvous, so the host lets this device in, then reach it. First directly, by
+    /// both sides opening a TCP connection to the other at the same time (this device announces the public address its NAT
+    /// gave the socket, the host announces its own); if that does not work within a few seconds, through the relay address
+    /// the host published. The addresses change between runs of the host, so none is remembered.
+    private func viaRendezvous(_ known: PeerRecord, group: MultiThreadedEventLoopGroup, failure: inout Error) async -> (SSHTunnelClient, PeerRoute)? {
         guard let text = known.rendezvous, let base = URL(string: text) else { return nil }
         let rendezvous = RendezvousClient(baseURL: base)
-        do { try await rendezvous.knock(hostFingerprint: hostFingerprint, deviceKey: deviceKey) } catch {
+
+        // Where this device looks from the outside, from a port it will also connect from.
+        var punch: (port: Int, mine: RendezvousRecord.Candidate)?
+        if !skippedRoutes.withLockedValue({ $0.contains(.direct) }),
+           let stun = (try? await rendezvous.candidates(hostFingerprint: hostFingerprint))?.first(where: { $0.kind == "stun" }),
+           let port = await Self.freePort(group: group),
+           let mapped = try? await STUNClient.reflexiveAddress(server: stun.host, port: stun.port, localPort: port, group: group) {
+            punch = (port, .init(kind: "direct", host: mapped.host, port: mapped.port))
+        }
+        do { try await rendezvous.knock(hostFingerprint: hostFingerprint, deviceKey: deviceKey, candidate: punch?.mine) } catch {
             failure = error
             return nil
         }
-        for _ in 0..<4 {
+        var directTried = false, relaySeen = false
+        for round in 0..<4 {
             // The host reads its knocks every couple of seconds.
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard !Task.isCancelled else { return nil }
@@ -249,24 +272,51 @@ public final class SCWPeerConnection: Sendable {
                 failure = error
                 continue
             }
+            if let punch, round < 2, let direct = candidates?.first(where: { $0.kind == "direct" }) {
+                directTried = true
+                var target = known
+                target.host = direct.host
+                target.port = direct.port
+                let deadline = Date().addingTimeInterval(6)
+                while Date() < deadline, !Task.isCancelled {
+                    do { return (try await connect(to: target, group: group, localPort: punch.port, connectTimeout: .seconds(2)), .direct) } catch {
+                        failure = error
+                        if error as? TunnelError == .authenticationRefused { return nil }
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                }
+            }
             for candidate in candidates ?? [] where candidate.kind == "relay" {
+                relaySeen = true
                 var target = known
                 target.host = candidate.host
                 target.port = candidate.port
-                do { return try await connect(to: target, group: group) } catch {
+                do { return (try await connect(to: target, group: group), .relay) } catch {
                     failure = error
-                    if let refusal = error as? TunnelError, refusal != .notConnected { return nil } // refused (revoked, wrong key): retrying cannot change it
+                    if error as? TunnelError == .authenticationRefused { return nil } // refused (revoked, wrong key): retrying cannot change it
                 }
             }
         }
+        if directTried, !relaySeen { failure = TunnelError.directConnectionFailed }
         return nil
     }
 
-    private func connect(to target: PeerRecord, group: MultiThreadedEventLoopGroup) async throws -> SSHTunnelClient {
+    /// A TCP port that is free right now and may be shared (the connection and the address lookup leave from the same one).
+    private static func freePort(group: EventLoopGroup) async -> Int? {
+        guard let channel = try? await ServerBootstrap(group: group)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseport), value: 1)
+            .bind(host: "0.0.0.0", port: 0).get() else { return nil }
+        let port = channel.localAddress?.port
+        try? await channel.close()
+        return port
+    }
+
+    private func connect(to target: PeerRecord, group: MultiThreadedEventLoopGroup, localPort: Int? = nil, connectTimeout: TimeAmount = .seconds(4)) async throws -> SSHTunnelClient {
         let pinned = try NIOSSHPublicKey(openSSHPublicKey: target.hostKey)
         let client = SSHTunnelClient(group: group)
         do {
-            try await client.connect(host: target.host, port: target.port, key: deviceKey, credential: .key) { $0 == pinned }
+            try await client.connect(host: target.host, port: target.port, key: deviceKey, credential: .key, localPort: localPort, connectTimeout: connectTimeout) { $0 == pinned }
             return client
         } catch {
             await client.close()

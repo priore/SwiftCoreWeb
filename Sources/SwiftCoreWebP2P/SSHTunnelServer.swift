@@ -17,6 +17,9 @@ import SwiftCoreWeb
 public final class SSHTunnelServer: Sendable {
     private let pairing: PairingManager
     private let registry = ConnectionRegistry()
+    private let boundPort = NIOLockedValueBox<Int?>(nil)
+    /// The port the tunnel listens on, once started.
+    var port: Int? { boundPort.withLockedValue { $0 } }
     private let allowList: TunnelAllowList
     private let handshakeTimeout: TimeAmount
     private let maxConnections: Int
@@ -46,6 +49,8 @@ public final class SSHTunnelServer: Sendable {
     public func start(host: String = "0.0.0.0", port: Int = 0) async throws -> Int {
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            // Outgoing connections made from this same port (hole punching) need it to be shareable.
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseport), value: 1)
             .childChannelInitializer { [weak self] channel in
                 guard let self else { return channel.eventLoop.makeFailedFuture(TunnelError.notConnected) }
                 return TCPKeepAlive.apply(to: channel).flatMap { self.serve(channel) }
@@ -54,6 +59,7 @@ public final class SSHTunnelServer: Sendable {
         pairing.setRevocationHandler { [registry] deviceID in registry.closeAll(deviceID: deviceID) }
         listener.withLockedValue { $0 = channel }
         guard let bound = channel.localAddress?.port else { throw TunnelError.notConnected }
+        boundPort.withLockedValue { $0 = bound }
         return bound
     }
 

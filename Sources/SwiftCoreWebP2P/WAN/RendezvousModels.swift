@@ -29,6 +29,10 @@ struct RendezvousKnockRequest: Codable, Sendable, Equatable {
     var type = RendezvousPayloadType.knock
     let hostFingerprint: String
     let issued: Int
+    /// Where this device is reachable across the internet (`kind` `direct`: the address and port its NAT gave the socket the
+    /// device will connect from), signed with the rest so the rendezvous cannot change it. The host connects to it from its
+    /// own tunnel port at the same time the device connects to the host (hole punching).
+    var candidate: RendezvousRecord.Candidate? = nil
 }
 
 /// What the host reads back for each knock.

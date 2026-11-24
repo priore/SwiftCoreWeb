@@ -7,6 +7,8 @@
 
 import Foundation
 import NIOConcurrencyHelpers
+import NIOCore
+import NIOPosix
 import os
 
 private let remoteLogger = Logger(subsystem: "SwiftCoreWebP2P", category: "remote")
@@ -21,6 +23,7 @@ final class RemoteAccessPublisher: Sendable {
     private let publishEvery: TimeInterval
     private let pollEvery: TimeInterval
     private let task = NIOLockedValueBox<Task<Void, Never>?>(nil)
+    private let punching = NIOLockedValueBox(0)
 
     init(remote: P2PRemoteAccess, pairing: PairingManager, server: SSHTunnelServer, publishEvery: TimeInterval = 60, pollEvery: TimeInterval = 2) {
         self.remote = remote
@@ -59,6 +62,34 @@ final class RemoteAccessPublisher: Sendable {
         await task?.value
     }
 
+    /// Opens a connection to a paired device from the tunnel's own port while the device connects to this one: through most
+    /// NATs the two crossing attempts make a connection, which is then served like any other. Gives up after a few seconds.
+    private func punch(to candidate: RendezvousRecord.Candidate, from localPort: Int) {
+        guard punching.withLockedValue({ count -> Bool in count < 4 ? { count += 1; return true }() : false }) else { return }
+        let server = server, punching = punching
+        Task {
+            defer { punching.withLockedValue { $0 -= 1 } }
+            let deadline = Date().addingTimeInterval(8)
+            while Date() < deadline, !Task.isCancelled {
+                do {
+                    let channel = try await ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton.next())
+                        .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+                        .channelOption(ChannelOptions.socketOption(.so_reuseport), value: 1)
+                        .bind(to: SocketAddress(ipAddress: "0.0.0.0", port: localPort))
+                        .connectTimeout(.seconds(2))
+                        .connect(host: candidate.host, port: candidate.port).get()
+                    do {
+                        try await TCPKeepAlive.apply(to: channel).get()
+                        try await channel.eventLoop.flatSubmit { server.serve(channel) }.get()
+                    } catch { try? await channel.close() }
+                    return
+                } catch {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                }
+            }
+        }
+    }
+
     /// Returns when the allocation is lost (or the task is cancelled).
     private func serve(_ allocation: TURNAllocation) async {
         let client = RendezvousClient(baseURL: remote.rendezvous)
@@ -80,15 +111,23 @@ final class RemoteAccessPublisher: Sendable {
                 while !Task.isCancelled {
                     if untilPublish <= 0 {
                         do {
-                            try await client.publish(
-                                [.init(kind: "relay", host: allocation.relayedHost, port: allocation.relayedPort)],
-                                hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint
-                            )
+                            // The relay; the TURN server's own address, where a device learns its public address (STUN); and
+                            // this host's, learned from the tunnel's own port so a device can aim a direct connection at it.
+                            var candidates: [RendezvousRecord.Candidate] = [
+                                .init(kind: "relay", host: allocation.relayedHost, port: allocation.relayedPort),
+                                .init(kind: "stun", host: remote.relay.host, port: remote.relay.port),
+                            ]
+                            if let tunnelPort = server.port,
+                               let mapped = try? await STUNClient.reflexiveAddress(server: remote.relay.host, port: remote.relay.port, localPort: tunnelPort) {
+                                candidates.append(.init(kind: "direct", host: mapped.host, port: mapped.port))
+                            }
+                            try await client.publish(candidates, hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint)
                         } catch { remoteLogger.error("Could not publish to the rendezvous: \(String(describing: error), privacy: .public)") }
                         untilPublish = publishEvery
                     }
                     if let knocks = try? await client.collectKnocks(hostKey: pairing.hostSigningKey, hostFingerprint: pairing.hostFingerprint) {
                         for knock in knocks where pairing.isPaired(deviceID: knock.deviceFingerprint) {
+                            if let direct = knock.direct, let tunnelPort = server.port { punch(to: direct, from: tunnelPort) }
                             // Only paired devices are let through (the knock is verified against the device's own signature);
                             // the relay is asked for IPv4 addresses only, anything else is skipped.
                             try? await allocation.permit(ip: knock.address)

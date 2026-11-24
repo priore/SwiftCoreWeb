@@ -15,6 +15,15 @@ import SwiftCoreWeb
 /// device whose remembered address no longer works still gets through, by the relay.
 final class RemoteAccessTests: XCTestCase {
     func testADeviceOnAnotherNetworkReachesTheHostThroughTheRelay() async throws {
+        try await reachFromAnotherNetwork(skipping: [.direct], expecting: .relay)
+    }
+
+    /// On the loopback there is no NAT, so the address the device learns is its real one and the connection is direct.
+    func testADeviceOnAnotherNetworkReachesTheHostDirectlyWhenItCan() async throws {
+        try await reachFromAnotherNetwork(skipping: [], expecting: .direct)
+    }
+
+    private func reachFromAnotherNetwork(skipping: Set<PeerRoute>, expecting expected: PeerRoute) async throws {
         do {
             try await ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton).connect(host: "127.0.0.1", port: 34780).get().close()
         } catch { throw XCTSkip("no TURN server on 127.0.0.1:34780") }
@@ -57,10 +66,16 @@ final class RemoteAccessTests: XCTestCase {
         record.port = 1
         storage.write(String(decoding: try JSONEncoder().encode(record), as: UTF8.self), forKey: key)
         let away = try SCWPeerConnection(hostFingerprint: peer.hostFingerprint, storage: storage)
-        away.skippedRoutes.withLockedValue { $0 = [.discovered] }
+        away.skippedRoutes.withLockedValue { $0 = skipping.union([.discovered]) }
 
+        // The host has published its addresses (it does so as soon as its relay allocation exists).
+        let lookup = RendezvousClient(baseURL: remote.rendezvous)
+        for _ in 0..<100 {
+            if (try? await lookup.candidates(hostFingerprint: peer.hostFingerprint))?.contains(where: { $0.kind == "direct" }) == true { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
         let base = try await away.start()
-        XCTAssertEqual(away.currentRoute, .relay)
+        XCTAssertEqual(away.currentRoute, expected)
         let (data, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("ping"))
         XCTAssertEqual(String(decoding: data, as: UTF8.self), "pong")
         await away.stop()

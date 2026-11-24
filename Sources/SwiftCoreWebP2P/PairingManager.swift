@@ -19,6 +19,8 @@ import NIOSSH
 public final class PairingManager: Sendable {
     private struct Session {
         let token: String
+        /// A short number to type instead of scanning, valid for the same session and attempts.
+        let code: String?
         let expiresAt: Date
         var attemptsLeft: Int
     }
@@ -78,13 +80,23 @@ public final class PairingManager: Sendable {
     /// Opens a pairing session and returns its token, replacing any session already open.
     @discardableResult
     ///
-    /// `codeDigits` makes the token a number of that many digits (a code to type on a device without a camera) instead of a
-    /// long random string; with `maxAttempts` guesses per session a six-digit code is guessed with probability 5 in a million.
-    public func openPairing(validFor lifetime: TimeInterval = 120, maxAttempts: Int = 5, codeDigits: Int? = nil) -> String {
-        let token = codeDigits.map { Self.makeCode(digits: $0) } ?? Self.makeToken()
-        let session = Session(token: token, expiresAt: now().addingTimeInterval(lifetime), attemptsLeft: maxAttempts)
+    /// With `withCode` the session also accepts a six-digit code (`pairingCode`), for a device without a camera. The QR
+    /// token stays long and random; the code shares the session's attempts, so with five guesses a code is guessed with
+    /// probability 5 in a million.
+    public func openPairing(validFor lifetime: TimeInterval = 120, maxAttempts: Int = 5, withCode: Bool = false) -> String {
+        let token = Self.makeToken()
+        let session = Session(token: token, code: withCode ? Self.makeCode(digits: 6) : nil, expiresAt: now().addingTimeInterval(lifetime), attemptsLeft: maxAttempts)
         state.withLockedValue { $0.session = session }
         return token
+    }
+
+    /// The six-digit code of the open session, when it was opened with one.
+    public var pairingCode: String? {
+        let current = now()
+        return state.withLockedValue { state in
+            guard let session = state.session, session.expiresAt > current, session.attemptsLeft > 0 else { return nil }
+            return session.code
+        }
     }
 
     public func closePairing() {
@@ -114,7 +126,9 @@ public final class PairingManager: Sendable {
                 return false
             }
             session.attemptsLeft -= 1
-            let matches = Self.constantTimeEquals(token, session.token)
+            let byToken = Self.constantTimeEquals(token, session.token)
+            let byCode = session.code.map { Self.constantTimeEquals(token, $0) } ?? false
+            let matches = byToken || byCode
             state.session = (matches || session.attemptsLeft == 0) ? nil : session
             return matches
         }
