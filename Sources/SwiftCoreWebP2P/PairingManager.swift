@@ -134,7 +134,7 @@ public final class PairingManager: Sendable {
         return state.withLockedValue { $0.devices.first { $0.id == id } }
     }
 
-    /// Returns \`false\` when the device is unknown or the change could not be saved (then nothing changed).
+    /// Returns `false` when the device is unknown or the change could not be saved (then nothing changed).
     @discardableResult
     public func rename(deviceID: String, to name: String) -> Bool {
         state.withLockedValue { state in
