@@ -65,7 +65,8 @@ public final class WebSocket: Sendable {
         try await transport.send(.binary(data))
     }
 
-    /// Closes the connection with the given close code.
+    /// Closes the connection with the given close code: sends the close frame, then waits (5 seconds at most) for the peer's
+    /// close frame before dropping the connection.
     public func close(code: WebSocketErrorCode = .normalClosure) async throws {
         let alreadyClosed = isClosed.withLockedValue { closed -> Bool in
             let wasClosed = closed

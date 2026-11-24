@@ -92,6 +92,8 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
                 // Say goodbye, then give the peer a moment to answer with its own close frame before dropping the TCP
                 // connection: closing at once can reset a peer that is still sending.
                 let sent = try? await channel.eventLoop.submit {
+                    // A close frame is already on its way (the peer's echo, or a protocol failure): never send a second one.
+                    guard !bridge.isClosing else { return channel.eventLoop.makeSucceededVoidFuture() }
                     bridge.markCloseSent()
                     return channel.writeAndFlush(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer))
                 }.flatMap { $0 }.get()
@@ -166,7 +168,7 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
         }
         if hasConsumer.withLockedValue({ $0 }) {
             if case .dropped = continuation.yield(message) { fail(context, .policyViolation, throwing: WebSocketError.slowConsumer) }
-        } else if earlyMessages < Self.maxQueuedMessages, earlyBytes + bytes.count <= Self.maxEarlyBytes {
+        } else if earlyMessages < Self.maxQueuedMessages / 2, earlyBytes + bytes.count <= Self.maxEarlyBytes {
             earlyMessages += 1
             earlyBytes += bytes.count
             continuation.yield(message)
@@ -179,12 +181,15 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
         if buffer.readableBytes == 0 { return nil }
         guard buffer.readableBytes >= 2, let code = buffer.readInteger(as: UInt16.self) else { return .protocolError }
         switch code {
-        case 1000...1003, 1007...1011, 3000...4999: break
+        case 1000...1003, 1007...1014, 3000...4999: break
         default: return .protocolError
         }
         let reason = Data(buffer.readBytes(length: buffer.readableBytes) ?? [])
         return String(data: reason, encoding: .utf8) == nil ? .dataInconsistentWithMessage : nil
     }
+
+    /// Event loop only.
+    var isClosing: Bool { closing }
 
     /// Called from the event loop when this side sends its own close frame.
     func markCloseSent() {

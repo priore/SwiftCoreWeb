@@ -141,6 +141,17 @@ app.mapWebSocket("/ws") { socket in
 }
 ```
 
+The loop ends when the peer closes the connection. Things worth knowing:
+
+- `messages()` is read once per connection; call it as soon as the handler starts. Frames that arrive before that are kept
+  up to 1 MiB (128 messages) and dropped beyond it.
+- A handler that reads slower than the client sends sees `WebSocketError.slowConsumer` once 256 messages are waiting
+  (queued messages are delivered first); the server closes the connection with 1008.
+- Messages up to 16 MiB are accepted (a single frame up to 1 MiB); fragmented messages are reassembled. Larger ones close
+  with 1009, invalid UTF-8 text with 1007, protocol violations with 1002.
+- When the handler returns, the server closes with 1000. `socket.close(code:)` sends the close frame and waits up to
+  5 seconds for the client's answer.
+
 ## Next
 
 - [Auth and security](AUTH_AND_SECURITY.md) — protecting the pages built above.

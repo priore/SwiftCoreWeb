@@ -81,7 +81,7 @@ final class WebSocketUpgradeTests: XCTestCase {
         XCTAssertEqual(task.closeCode, .normalClosure)
     }
 
-    func testHandlerThatFallsBehindGetsSlowConsumerAndTheConnectionCloses() async throws {
+    func testHandlerThatFallsBehindGetsSlowConsumer() async throws {
         let port = Int.random(in: 30_000..<60_000)
         let builder = WebApplication.createBuilder()
         builder.usePort(port)
@@ -90,7 +90,7 @@ final class WebSocketUpgradeTests: XCTestCase {
         app.mapWebSocket("/slow") { socket in
             let stream = socket.messages()
             try await Task.sleep(nanoseconds: 1_500_000_000) // reads nothing while the client floods
-            do { for try await _ in stream {}; outcome.withLockedValue { $0 = "clean" } } catch WebSocketError.slowConsumer { outcome.withLockedValue { $0 = "slow" } }
+            do { for try await _ in stream {}; outcome.withLockedValue { $0 = "clean" } } catch { outcome.withLockedValue { $0 = "\(error)" } }
         }
         Task { try? await app.runAsync() }
         for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
@@ -98,9 +98,10 @@ final class WebSocketUpgradeTests: XCTestCase {
 
         let task = URLSession(configuration: .ephemeral).webSocketTask(with: URL(string: "ws://127.0.0.1:\(port)/slow")!)
         task.resume()
-        for _ in 0..<600 { try? await task.send(.string("x")) }
+        for _ in 0..<600 { task.send(.string("x")) { _ in } } // not awaited: sends stall once the server stops reading
+        defer { task.cancel(with: .goingAway, reason: nil) }
         for _ in 0..<60 where outcome.withLockedValue({ $0 }) == nil { try await Task.sleep(nanoseconds: 100_000_000) }
-        XCTAssertEqual(outcome.withLockedValue { $0 }, "slow")
+        XCTAssertEqual(outcome.withLockedValue { $0 }, "slowConsumer")
     }
 
     func testCloseFramePayloadValidation() {
