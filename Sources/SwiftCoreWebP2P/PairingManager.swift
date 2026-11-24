@@ -95,10 +95,10 @@ public final class PairingManager: Sendable {
     }
 
     /// The payload for the open session, or `nil` when none is open or `host`/the ports cannot form a valid payload. `host` is where the device will connect.
-    public func payload(host: String, port: Int, appPort: Int, name: String? = nil) -> PairingPayload? {
+    public func payload(host: String, port: Int, appPort: Int, name: String? = nil, rendezvous: URL? = nil) -> PairingPayload? {
         let current = now()
         guard let session = state.withLockedValue({ $0.session }), session.expiresAt > current, session.attemptsLeft > 0 else { return nil }
-        return PairingPayload(host: host, port: port, appPort: appPort, token: session.token, hostKeyFingerprint: hostFingerprint, name: name)
+        return PairingPayload(host: host, port: port, appPort: appPort, token: session.token, hostKeyFingerprint: hostFingerprint, name: name, rendezvous: rendezvous)
     }
 
     /// Checks `token` for `device` and, if it is the open session's, registers the device and ends the session.

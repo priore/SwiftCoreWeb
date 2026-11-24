@@ -16,4 +16,6 @@ struct PeerRecord: Codable, Sendable, Equatable {
     /// The host's public key in OpenSSH form.
     var hostKey: String
     var name: String?
+    /// Where to look for the host when it is not on this network (`P2PRendezvous`).
+    var rendezvous: String? = nil
 }

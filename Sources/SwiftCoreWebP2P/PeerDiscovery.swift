@@ -16,7 +16,7 @@ enum PeerDiscovery {
 
     /// The IPv4 address and tunnel port of the host announcing `fingerprint`, or `nil` when none shows up within `timeout`.
     /// Addresses in `excluding` are skipped: they answered but were not the host (a lookalike announcing the same fingerprint).
-    static func find(fingerprint: String, excluding: Set<String> = [], timeout: TimeInterval = 5) async -> (host: String, port: Int)? {
+    static func find(fingerprint: String, excluding: Set<String> = [], timeout: TimeInterval = 3) async -> (host: String, port: Int)? {
         await withCheckedContinuation { continuation in
             let state = NIOLockedValueBox<(done: Bool, probes: [NWConnection], seen: Set<NWEndpoint>)>((false, [], []))
             let queue = DispatchQueue(label: "SwiftCoreWebP2P.discovery", qos: .userInitiated)

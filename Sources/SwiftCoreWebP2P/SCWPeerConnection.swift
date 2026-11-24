@@ -25,6 +25,9 @@ public final class SCWPeerConnection: Sendable {
     private let storage: TunnelSecretStorage
     private let deviceKey: Curve25519.Signing.PrivateKey
     private let running = NIOLockedValueBox<(client: SSHTunnelClient, proxy: LoopbackProxy)?>(nil)
+    private let route = NIOLockedValueBox<PeerRoute?>(nil)
+    /// Routes `start()` must not try (tests that need to prove a specific one).
+    let skippedRoutes = NIOLockedValueBox<Set<PeerRoute>>([])
 
     private init(hostFingerprint: String, record: PeerRecord, deviceKey: Curve25519.Signing.PrivateKey, storage: TunnelSecretStorage) {
         self.hostFingerprint = hostFingerprint
@@ -57,7 +60,7 @@ public final class SCWPeerConnection: Sendable {
         await client.close()
         guard let hostKey = seenHostKey.withLockedValue({ $0 }) else { throw TunnelError.untrustedHostKey }
 
-        let record = PeerRecord(host: payload.host, port: payload.port, appPort: payload.appPort, hostKey: String(openSSHPublicKey: hostKey), name: payload.name)
+        let record = PeerRecord(host: payload.host, port: payload.port, appPort: payload.appPort, hostKey: String(openSSHPublicKey: hostKey), name: payload.name, rendezvous: payload.rendezvous?.absoluteString)
         guard let text = try String(data: JSONEncoder().encode(record), encoding: .utf8), storage.write(text, forKey: recordName(expected)) else {
             throw TunnelError.storageUnavailable
         }
@@ -80,8 +83,11 @@ public final class SCWPeerConnection: Sendable {
     public func start() async throws -> URL {
         await stop()
         let known = record.withLockedValue { $0 }
+        var failure: Error
         do {
-            return try await connect(to: known)
+            let url = try await connect(to: known)
+            route.withLockedValue { $0 = .local }
+            return url
         } catch {
             // Only an address that does not answer is worth a search: a refusal (revoked device, wrong key) would repeat anywhere.
             switch error {
@@ -89,27 +95,71 @@ public final class SCWPeerConnection: Sendable {
             case is TunnelError: throw error
             default: break
             }
-            var rejected: Set<String> = [known.host]
-            var lastError = error
-            for _ in 0..<3 {
-                guard !Task.isCancelled, let found = await PeerDiscovery.find(fingerprint: hostFingerprint, excluding: rejected) else { throw lastError }
-                var moved = known
-                moved.host = found.host
-                moved.port = found.port
-                do {
-                    let url = try await connect(to: moved)
-                    record.withLockedValue { $0 = moved }
-                    if let data = try? JSONEncoder().encode(moved), let text = String(data: data, encoding: .utf8) {
-                        storage.write(text, forKey: Self.recordName(hostFingerprint))
-                    }
-                    return url
-                } catch {
-                    lastError = error
-                    rejected.insert(found.host)
-                }
-            }
-            throw lastError
+            failure = error
         }
+        if !skippedRoutes.withLockedValue({ $0.contains(.discovered) }), let url = await rediscover(known, failure: &failure) {
+            route.withLockedValue { $0 = .discovered }
+            return url
+        }
+        if let url = await viaRelay(known, failure: &failure) {
+            route.withLockedValue { $0 = .relay }
+            return url
+        }
+        throw failure
+    }
+
+    /// How the connection reached the host the last time `start()` succeeded; `nil` before that and after `stop()`.
+    public var currentRoute: PeerRoute? { route.withLockedValue { $0 } }
+
+    /// The host moved on the local network: look for it by the fingerprint it announces (Bonjour) and remember the new address.
+    private func rediscover(_ known: PeerRecord, failure: inout Error) async -> URL? {
+        var rejected: Set<String> = [known.host]
+        for _ in 0..<3 {
+            guard !Task.isCancelled, let found = await PeerDiscovery.find(fingerprint: hostFingerprint, excluding: rejected) else { return nil }
+            var moved = known
+            moved.host = found.host
+            moved.port = found.port
+            do {
+                let url = try await connect(to: moved)
+                record.withLockedValue { $0 = moved }
+                if let data = try? JSONEncoder().encode(moved), let text = String(data: data, encoding: .utf8) {
+                    storage.write(text, forKey: Self.recordName(hostFingerprint))
+                }
+                return url
+            } catch {
+                failure = error
+                rejected.insert(found.host)
+            }
+        }
+        return nil
+    }
+
+    /// Not on the same network: knock at the rendezvous, so the host lets this device through its relay, then connect to the
+    /// relayed address the host published. The relayed address changes between runs of the host, so it is not remembered.
+    private func viaRelay(_ known: PeerRecord, failure: inout Error) async -> URL? {
+        guard let text = known.rendezvous, let base = URL(string: text) else { return nil }
+        let rendezvous = RendezvousClient(baseURL: base)
+        do { try await rendezvous.knock(hostFingerprint: hostFingerprint, deviceKey: deviceKey) } catch {
+            failure = error
+            return nil
+        }
+        for _ in 0..<4 {
+            // The host reads its knocks every couple of seconds.
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return nil }
+            let candidates: [RendezvousRecord.Candidate]?
+            do { candidates = try await rendezvous.candidates(hostFingerprint: hostFingerprint) } catch {
+                failure = error
+                continue
+            }
+            for candidate in candidates ?? [] where candidate.kind == "relay" {
+                var target = known
+                target.host = candidate.host
+                target.port = candidate.port
+                do { return try await connect(to: target) } catch { failure = error }
+            }
+        }
+        return nil
     }
 
     private func connect(to target: PeerRecord) async throws -> URL {
@@ -129,6 +179,7 @@ public final class SCWPeerConnection: Sendable {
     }
 
     public func stop() async {
+        route.withLockedValue { $0 = nil }
         guard let current = running.withLockedValue({ $0.take() }) else { return }
         await current.proxy.stop()
         await current.client.close()

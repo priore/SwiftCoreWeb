@@ -33,6 +33,6 @@ public final class P2PHost: Sendable {
         guard let pairing, let port = tunnel?.tunnelPort, let appPort = tunnel?.appPort,
               PairingPayload(host: host, port: port, appPort: appPort, token: "-", hostKeyFingerprint: "-") != nil else { return nil }
         pairing.openPairing(validFor: lifetime)
-        return pairing.payload(host: host, port: port, appPort: appPort, name: name)
+        return pairing.payload(host: host, port: port, appPort: appPort, name: name, rendezvous: tunnel?.remote?.rendezvous)
     }
 }

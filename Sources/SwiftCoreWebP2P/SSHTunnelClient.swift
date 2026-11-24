@@ -38,6 +38,8 @@ final class SSHTunnelClient: Sendable {
         let deadline = eventLoop.scheduleTask(in: .seconds(15)) { authenticated.fail(TunnelError.notConnected) }
         defer { deadline.cancel() }
         let bootstrap = ClientBootstrap(group: eventLoop)
+            // An address that does not answer must not hold up the next way of reaching the host.
+            .connectTimeout(.seconds(4))
             // A host that vanishes without a FIN (it went to sleep, the network changed) is noticed instead of waited on forever.
             .channelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
             .channelInitializer { channel in

@@ -23,11 +23,13 @@ public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
     public let hostKeyFingerprint: String
     /// A label for the host, shown to the user.
     public let name: String?
+    /// A rendezvous (`P2PRendezvous`) a device can use to reach the host from another network.
+    public let rendezvous: URL?
 
     /// `nil` when `host` is empty or has characters a host cannot have, or a port is outside 1...65535. An IPv6
     /// address is given without brackets.
-    public init?(host: String, port: Int, appPort: Int, token: String, hostKeyFingerprint: String, name: String? = nil) {
-        guard Self.isValidHost(host), (1...65_535).contains(port), (1...65_535).contains(appPort),
+    public init?(host: String, port: Int, appPort: Int, token: String, hostKeyFingerprint: String, name: String? = nil, rendezvous: URL? = nil) {
+        guard Self.isValidHost(host), rendezvous.map(Self.isValidRendezvous) ?? true, (1...65_535).contains(port), (1...65_535).contains(appPort),
               !token.isEmpty, !hostKeyFingerprint.isEmpty else { return nil }
         self.host = host
         self.port = port
@@ -35,6 +37,7 @@ public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
         self.token = token
         self.hostKeyFingerprint = hostKeyFingerprint
         self.name = name
+        self.rendezvous = rendezvous
     }
 
     /// `scw-p2p://host:port?sp=<app port>&t=<token>&fp=<fingerprint>&n=<name>` (an IPv6 host in brackets).
@@ -42,6 +45,7 @@ public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
         let authority = host.contains(":") ? "[\(host)]" : host
         var query = "sp=\(appPort)&t=\(Self.encode(token))&fp=\(Self.encode(hostKeyFingerprint))"
         if let name { query += "&n=\(Self.encode(name))" }
+        if let rendezvous { query += "&rv=\(Self.encode(rendezvous.absoluteString))" }
         return "\(Self.scheme)://\(authority):\(port)?\(query)"
     }
 
@@ -55,7 +59,12 @@ public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
             guard let value = item.value, items.updateValue(value, forKey: item.name) == nil else { return nil } // no duplicates
         }
         guard let appPort = items["sp"].flatMap(Self.parsePort), let token = items["t"], let fingerprint = items["fp"] else { return nil }
-        self.init(host: host, port: port, appPort: appPort, token: token, hostKeyFingerprint: fingerprint, name: items["n"].flatMap { $0.isEmpty ? nil : $0 })
+        var rendezvous: URL?
+        if let text = items["rv"] {
+            guard let url = URL(string: text) else { return nil } // present but unreadable: not a payload to trust
+            rendezvous = url
+        }
+        self.init(host: host, port: port, appPort: appPort, token: token, hostKeyFingerprint: fingerprint, name: items["n"].flatMap { $0.isEmpty ? nil : $0 }, rendezvous: rendezvous)
     }
 
     /// Hides the token: a payload must not end up in logs through string interpolation.
@@ -69,6 +78,12 @@ public struct PairingPayload: Sendable, Equatable, CustomStringConvertible {
             return host.filter { $0 == ":" }.count >= 2 && host.allSatisfy { $0.isHexDigit || $0 == ":" || $0 == "." }
         }
         return host.allSatisfy { $0.isLetter || $0.isNumber || ".-_".contains($0) }
+    }
+
+    /// An http(s) URL with a host, nothing else: it is shown in a link people scan.
+    private static func isValidRendezvous(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http", url.host?.isEmpty == false else { return false }
+        return url.user == nil && url.password == nil && url.query == nil && url.fragment == nil
     }
 
     private static func parsePort(_ text: String) -> Int? {

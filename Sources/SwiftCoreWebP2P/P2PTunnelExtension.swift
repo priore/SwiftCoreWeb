@@ -18,6 +18,7 @@ final class P2PTunnelExtension: ServerExtension {
     private struct Running {
         let server: SSHTunnelServer
         let advertiser: BonjourAdvertiser?
+        let remote: RemoteAccessPublisher?
     }
 
     private static let portKey = "p2p.tunnel-port"
@@ -26,6 +27,7 @@ final class P2PTunnelExtension: ServerExtension {
     private let storage: TunnelSecretStorage
     private let name: String?
     private let requestedPort: Int
+    let remote: P2PRemoteAccess?
     private let running = NIOLockedValueBox<Running?>(nil)
     private let boundPort = NIOLockedValueBox<Int?>(nil)
     private let servedAppPort = NIOLockedValueBox<Int?>(nil)
@@ -33,7 +35,8 @@ final class P2PTunnelExtension: ServerExtension {
     /// The core's peer listener this tunnel forwards through (visible to tests).
     var peer: PeerEndpoint? { servedPeer.withLockedValue { $0 } }
 
-    init(pairing: PairingManager, storage: TunnelSecretStorage, name: String?, port: Int) {
+    init(pairing: PairingManager, storage: TunnelSecretStorage, name: String?, port: Int, remote: P2PRemoteAccess? = nil) {
+        self.remote = remote
         self.pairing = pairing
         self.storage = storage
         self.name = name
@@ -69,7 +72,9 @@ final class P2PTunnelExtension: ServerExtension {
         servedPeer.withLockedValue { $0 = peer }
         let advertiser = BonjourAdvertiser(name: name, type: Self.bonjourType, port: port, txt: [PeerDiscovery.fingerprintKey: pairing.hostFingerprint])
         if advertiser == nil { p2pLogger.error("Bonjour announcement could not start") }
-        running.withLockedValue { $0 = Running(server: server, advertiser: advertiser) }
+        let publisher = remote.map { RemoteAccessPublisher(remote: $0, pairing: pairing, server: server) }
+        publisher?.start()
+        running.withLockedValue { $0 = Running(server: server, advertiser: advertiser, remote: publisher) }
         boundPort.withLockedValue { $0 = port }
     }
 
@@ -79,6 +84,7 @@ final class P2PTunnelExtension: ServerExtension {
         servedPeer.withLockedValue { $0 = nil }
         guard let current = running.withLockedValue({ $0.take() }) else { return }
         current.advertiser?.cancel()
+        await current.remote?.stop()
         await current.server.stop()
     }
 }
