@@ -30,5 +30,8 @@ AI-Workspace/Prompts/
 # Personal / machine-local Claude files (never published)
 .claude/settings.local.json
 
+# Local signing overrides for the Showcase app (team id, bundle id)
+Showcase/ShowcaseApp/Local.xcconfig
+
 # Coverage profile written by test runs
 *.profraw

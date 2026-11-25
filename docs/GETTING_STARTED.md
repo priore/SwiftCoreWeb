@@ -43,9 +43,7 @@ Both share the same routing and middleware system — read
 
 ## Try the real thing: the Showcase app
 
-`Showcase/` is a complete, compilable sample app — not a toy. It demonstrates a macro-based
-`@Controller` alongside closure Minimal API routes on the same server, two auth schemes, SwiftUI
-lifecycle binding, and all three frontend workflows (Vite on the Mac, on-device dev-deploy, and a
-production build). It ships as source files, not an `.xcodeproj` (the framework itself is SPM-only),
-so wiring it into a project is a five-minute manual step — see `Showcase/README.md` for the full
-walkthrough.
+`Showcase/` is a complete sample app — not a toy: one iOS app with a menu where each entry runs a real
+server (a Vue page, a macro-based `@Controller` API with two auth schemes, Live Pages, SSE and WebSocket, the
+on-device dashboard, and peer-to-peer host and client). Open `Showcase/ShowcaseApp/ShowcaseApp.xcodeproj` and
+press Run; `Showcase/README.md` has the walkthrough, including the three frontend workflows.

@@ -59,6 +59,8 @@ final class Router: RouteRegistry, @unchecked Sendable {
     private var frozenRoutes: [Route] = []
     private var isFrozen = false
     private let lock = NSLock()
+    /// Which paths peers of an extension may reach; see `PeerAccessRules`.
+    let peerAccess = PeerAccessRules()
 
     /// Registers a route. Called by the closure `map*` overloads and by
     /// `@Controller`-generated `registerRoutes(into:)`. Valid only before
@@ -218,6 +220,14 @@ public final class RouteGroup: @unchecked Sendable {
         self.defaultAuth = defaultAuth
         self.bodyLimit = bodyLimit
         self.spoolBody = spoolBody
+    }
+
+    /// Whether requests that come in through an extension's peer listener (for example `SwiftCoreWebP2P`) may reach this
+    /// group's paths. Applies to the whole prefix, including nested groups, unless a more specific rule says otherwise.
+    @discardableResult
+    public func setPeerAccess(allowed: Bool) -> Self {
+        router.peerAccess.set(prefix: prefix, allowed: allowed)
+        return self
     }
 
     /// Streams the request body of every route registered on this group afterward (and nested

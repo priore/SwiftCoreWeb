@@ -1,11 +1,4 @@
-## Feedback (specific to this project)
-
-## Project
-- [SwiftCoreWebDashboard build/test command](dashboard-target-test-command.md) — needs xcodebuild + iOS Simulator destination, plain `swift test` can't compile it (UIKit)
-- [CI: verify locally before pushing to GitHub](ci-local-before-remote-workflow.md) — run scripts/ci-local.sh green first, never round-trip fixes through remote CI; must use the exact CI Xcode version or the pass proves nothing
-
-## Reference
-- (none yet)
-- [Macros tests run on the host](macros-tests-run-on-host.md) — sim run executes a stale bundle; build-for-testing then `xcrun xctest` the macOS bundle
+- [Build/test commands](build-test-commands.md) — swift build/test don't work (UIKit, old toolchain); xcodebuild commands and macros-on-host quirk
+- [CI green locally before pushing](ci-local-before-remote-workflow.md) — run scripts/ci-local.sh first; it must use the same Xcode as the CI runner
 - [CHANGELOG entries are expanded lists](feedback-changelog-expanded.md) — one detailed bullet per change, never a short summary
-- [New docs file needs a wiki PAGE_NAMES entry](wiki-page-names-new-docs.md) — else wiki-sync fails after push to master; test with wiki-flatten.py locally
+- [New docs file needs a wiki PAGE_NAMES entry](wiki-page-names-new-docs.md) — else wiki-sync fails after push to master

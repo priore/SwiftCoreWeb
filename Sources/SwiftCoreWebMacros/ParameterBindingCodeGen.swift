@@ -27,6 +27,8 @@ enum ParameterBindingKind {
 struct BindableParameter {
     let externalName: String
     let internalName: String
+    /// Declared as `_ name: T`: the call must not pass a label.
+    var isUnlabeled = false
     let typeSyntax: TypeSyntax
     /// The type with a single leading `Header<...>`/`Query<...>`/`Service<...>`
     /// wrapper unwrapped, and whether that wrapper was present.
@@ -171,8 +173,9 @@ func bindingExpression(for binding: ParameterBindingKind, parameterName: String,
         return "SwiftCoreWeb.bindOptionalHeaderOrQueryValue(ctx.request.headers[\"\(name)\"])"
     case .query(let name, _):
         return "SwiftCoreWeb.bindOptionalHeaderOrQueryValue(ctx.request.query[\"\(name)\"])"
-    case .service:
-        return "ctx.services.get(\(bodyTypeName).self)"
+    case .service(let innerType):
+        // The handler parameter is declared `Service<T>`: wrap the resolved `T` (a bare `T` would not type-check).
+        return "SwiftCoreWeb.Service(wrappedValue: ctx.services.get(\(innerType).self))"
     case .form:
         return "try SwiftCoreWeb.bindForm(ctx)"
     }
@@ -216,6 +219,7 @@ func bindableParameters(from signature: FunctionSignatureSyntax) -> [BindablePar
         return BindableParameter(
             externalName: externalName,
             internalName: internalName,
+            isUnlabeled: parameter.firstName.text == "_",
             typeSyntax: parameter.type,
             wrapperName: described.wrapperName,
             innerTypeDescription: described.innerType,

@@ -19,63 +19,54 @@ public enum WebSocketMessage: Sendable {
 /// A single WebSocket connection, handed to `app.mapWebSocket(_:_:)` handlers
 /// (the realtime and OpenAPI contract design). Wraps the NIO WebSocket frame machinery so handler code is plain
 /// `async`/`await` with no NIO types in the public surface.
-public final class WebSocket: @unchecked Sendable {
-    private let channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
+public final class WebSocket: Sendable {
+    /// What a transport provides to back a `WebSocket`: the NIO upgrade path (`WebSocketBridge`) and
+    /// any other carrier (an opt-in module, a test double) supply the same three operations.
+    public struct Transport: Sendable {
+        /// Incoming messages; completes when the peer or the socket closes. Called once per `messages()`;
+        /// a transport may support a single consumer only (the NIO one does), so handlers iterate it once.
+        public let messages: @Sendable () -> AsyncThrowingStream<WebSocketMessage, Error>
+        /// Delivers one message to the peer.
+        public let send: @Sendable (WebSocketMessage) async throws -> Void
+        /// Closes the connection with the given code (called at most once).
+        public let close: @Sendable (WebSocketErrorCode) async -> Void
+
+        public init(
+            messages: @escaping @Sendable () -> AsyncThrowingStream<WebSocketMessage, Error>,
+            send: @escaping @Sendable (WebSocketMessage) async throws -> Void,
+            close: @escaping @Sendable (WebSocketErrorCode) async -> Void
+        ) {
+            self.messages = messages
+            self.send = send
+            self.close = close
+        }
+    }
+
+    private let transport: Transport
     private let isClosed = NIOLockedValueBox(false)
 
-    init(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
-        self.channel = channel
+    public init(transport: Transport) {
+        self.transport = transport
     }
 
     /// An async sequence of incoming messages. Completes when the peer
     /// closes the connection or the socket is closed locally.
     public func messages() -> AsyncThrowingStream<WebSocketMessage, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    for try await frame in channel.inbound {
-                        switch frame.opcode {
-                        case .text:
-                            var buffer = frame.unmaskedData
-                            let text = buffer.readString(length: buffer.readableBytes) ?? ""
-                            continuation.yield(.text(text))
-                        case .binary:
-                            var buffer = frame.unmaskedData
-                            let bytes = buffer.readBytes(length: buffer.readableBytes) ?? []
-                            continuation.yield(.binary(Data(bytes)))
-                        case .connectionClose:
-                            continuation.finish()
-                            return
-                        case .ping, .pong, .continuation:
-                            continue
-                        default:
-                            continue
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
+        transport.messages()
     }
 
     /// Sends a text message to the peer.
     public func send(_ text: String) async throws {
-        var buffer = ByteBufferAllocator().buffer(capacity: text.utf8.count)
-        buffer.writeString(text)
-        try await send(WebSocketFrame(fin: true, opcode: .text, data: buffer))
+        try await transport.send(.text(text))
     }
 
     /// Sends a binary message to the peer.
     public func send(_ data: Data) async throws {
-        var buffer = ByteBufferAllocator().buffer(capacity: data.count)
-        buffer.writeBytes(data)
-        try await send(WebSocketFrame(fin: true, opcode: .binary, data: buffer))
+        try await transport.send(.binary(data))
     }
 
-    /// Closes the connection with the given close code.
+    /// Closes the connection with the given close code: sends the close frame, then waits (5 seconds at most) for the peer's
+    /// close frame before dropping the connection.
     public func close(code: WebSocketErrorCode = .normalClosure) async throws {
         let alreadyClosed = isClosed.withLockedValue { closed -> Bool in
             let wasClosed = closed
@@ -83,15 +74,7 @@ public final class WebSocket: @unchecked Sendable {
             return wasClosed
         }
         guard !alreadyClosed else { return }
-
-        var buffer = ByteBufferAllocator().buffer(capacity: 2)
-        buffer.write(webSocketErrorCode: code)
-        try? await send(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer))
-        try? await channel.channel.close()
-    }
-
-    private func send(_ frame: WebSocketFrame) async throws {
-        try await channel.outbound.write(frame)
+        await transport.close(code)
     }
 }
 

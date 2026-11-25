@@ -9,17 +9,21 @@ let package = Package(
     name: "SwiftCoreWeb",
     platforms: [
         .iOS(.v15),
-        .macOS(.v11)
+        .macOS(.v11),
+        .tvOS(.v15)
     ],
     products: [
         .library(name: "SwiftCoreWeb", targets: ["SwiftCoreWeb"]),
         .library(name: "SwiftCoreWebTesting", targets: ["SwiftCoreWebTesting"]),
         .library(name: "SwiftCoreWebDashboard", targets: ["SwiftCoreWebDashboard"]),
-        .library(name: "SwiftCoreWebKit", targets: ["SwiftCoreWebKit"])
+        .library(name: "SwiftCoreWebKit", targets: ["SwiftCoreWebKit"]),
+        .library(name: "SwiftCoreWebP2P", targets: ["SwiftCoreWebP2P"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.20.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.15.2"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         .package(url: "https://github.com/apple/swift-syntax.git", from: "604.0.0"),
         // ponytail: pinned exact — swift-collections 1.7.0 (swift-nio's own
         // transitive dependency) calls `_swift_initBorrow`, a runtime symbol
@@ -81,6 +85,21 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
 
+        // MARK: - Optional peer-to-peer transport (opt-in; nothing depends on it)
+        .target(
+            name: "SwiftCoreWebP2P",
+            dependencies: [
+                "SwiftCoreWeb",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOSSH", package: "swift-nio-ssh"),
+                .product(name: "Crypto", package: "swift-crypto")
+            ],
+            path: "Sources/SwiftCoreWebP2P",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+
         // MARK: - In-memory test host
         .target(
             name: "SwiftCoreWebTesting",
@@ -115,6 +134,16 @@ let package = Package(
             name: "SwiftCoreWebKitTests",
             dependencies: ["SwiftCoreWebKit"],
             path: "Tests/SwiftCoreWebKitTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "SwiftCoreWebP2PTests",
+            dependencies: [
+                "SwiftCoreWebP2P",
+                .product(name: "NIOSSH", package: "swift-nio-ssh"),
+                .product(name: "Crypto", package: "swift-crypto")
+            ],
+            path: "Tests/SwiftCoreWebP2PTests",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

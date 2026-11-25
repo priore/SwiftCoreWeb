@@ -1,36 +1,16 @@
 ---
 name: test-target
-description: Esegui test isolato su un target Swift specifico (core, testing, dashboard)
-disable-model-invocation: false
-user-invocable: true
+description: Run the tests of one SwiftCoreWeb target (core, dashboard, macros) with the commands that actually work on this repo.
 ---
 
-# test-target Skill
+# test-target
 
-Esegui test su un target specifico senza ricompilare gli altri.
+Plain `swift test` does not work on this repo (see memory `build-test-commands`). Run from the repo root:
 
-## Invocazione
+- core: `xcodebuild test -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftCoreWebTests`
+- dashboard: same command with `-only-testing:SwiftCoreWebDashboardTests`
+- macros (built for macOS, never for the simulator):
+  1. `xcodebuild build-for-testing -skipMacroValidation -scheme SwiftCoreWeb-Package -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftCoreWebMacrosTests`
+  2. `xcrun xctest "$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug/SwiftCoreWebMacrosTests.xctest' -not -path '*/SourcePackages/*' -maxdepth 6 | head -1)"`
 
-```bash
-/test-target core
-/test-target testing
-/test-target dashboard
-```
-
-## Cosa fa
-
-```bash
-swift test -c release --filter <target>Tests
-```
-
-Compila solo il target richiesto e relative dipendenze. Utile per feedback loop rapido durante sviluppo.
-
-## Target disponibili
-
-- `core` → SwiftCoreWebTests
-- `testing` → SwiftCoreWebTestingTests (se esiste)
-- `dashboard` → SwiftCoreWebDashboardTests
-
-## Nota
-
-Se il target non ha test, il comando fallisce silenziosamente (exit 0, nessun test trovato).
+Run the full suite with `scripts/ci-local.sh` (skill `ci-local`) before pushing.

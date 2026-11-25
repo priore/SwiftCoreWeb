@@ -33,6 +33,17 @@ final class ServerEngine: @unchecked Sendable {
     private let connectionGate: ConnectionGate
     private var watchdog: NetworkWatchdog?
     private let listenerChannels = NIOLockedValueBox<[Channel]>([])
+    private struct Lifecycle {
+        var rebinding = false
+        var rebindRequested = false
+        var stopping = false
+        var finished = false
+    }
+    private let lifecycle = NIOLockedValueBox(Lifecycle())
+    /// Completed when the engine has ended (by `stop` or because its listeners went away): what `run()` waits on.
+    private let finished: EventLoopPromise<Void>
+    /// Completed when the first `stop()` has fully finished (listeners closed, group shut down).
+    private let stopped: EventLoopPromise<Void>
     private var bonjourListener: NWListener?
     #if canImport(UIKit)
     // ponytail: KeepAwakeController is @MainActor (touches UIApplication);
@@ -42,6 +53,12 @@ final class ServerEngine: @unchecked Sendable {
     #endif
     private var previousIdleTimerApplied = false
     private let group: NIOTSEventLoopGroup
+    /// Random per run; only extensions receive it (through `RequestIngress.peer`).
+    private let peerSecret = ServerEngine.makeSecret()
+    private let peerPort = NIOLockedValueBox<Int?>(nil)
+    /// Bound once and kept for the engine's whole life: it is loopback, so a network change does not touch it, and the
+    /// extensions hold its port.
+    private let peerChannel = NIOLockedValueBox<Channel?>(nil)
 
     /// Bytes ever appended to an in-memory request-body buffer: stays 0 for spooled routes
     /// (the memory-bound test asserts on it, not on process RSS).
@@ -55,6 +72,8 @@ final class ServerEngine: @unchecked Sendable {
         self.rateLimiter = app.rateLimitOptions.map(RateLimiter.init)
         self.connectionGate = ConnectionGate(maxConcurrent: app.serverOptions.maxConcurrentConnections)
         self.group = NIOTSEventLoopGroup()
+        self.finished = group.next().makePromise(of: Void.self)
+        self.stopped = group.next().makePromise(of: Void.self)
     }
 
     /// Builds, binds, and runs the engine for `app`, suspending until
@@ -77,6 +96,24 @@ final class ServerEngine: @unchecked Sendable {
             try await bindListeners()
         } catch {
             // Undo what was set up before the bind (keep-awake, event loop group); the caller sees the bind error.
+            try? await stop(timeout: 0)
+            throw error
+        }
+        do {
+            try await bindPeerListener()
+        } catch {
+            try? await stop(timeout: 0) // also closes the HTTP listener(s) that were already bound
+            throw error
+        }
+        // Extensions start before the engine registers (`isRunning`), so a `stopAsync()` cannot land mid-start.
+        do {
+            let ingress = RequestIngress(
+                dispatcher: dispatcher, rateLimiter: rateLimiter, connectionGate: connectionGate,
+                webSocketRegistry: app.webSocketRegistry, metrics: app.metrics, port: listenerChannelsSnapshot().first?.localAddress?.port ?? app.serverOptions.port,
+                peer: peerPort.withLockedValue { $0 }.map { PeerEndpoint(port: $0, secret: peerSecret) }
+            )
+            for serverExtension in app.extensions { try await serverExtension.start(ingress: ingress) }
+        } catch {
             try? await stop(timeout: 0)
             throw error
         }
@@ -109,45 +146,70 @@ final class ServerEngine: @unchecked Sendable {
         let listeningURLs = app.urls.joined(separator: ", ")
         serverLogger.info("SwiftCoreWeb listening on \(listeningURLs, privacy: .public)")
 
-        // Suspend until every listener channel closes (i.e. until `stop()`
-        // closes them), rather than blocking the calling thread.
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for channel in listenerChannelsSnapshot() {
-                group.addTask { try await channel.closeFuture.get() }
-            }
-            try await group.next()
-            group.cancelAll()
+        // Suspend until the engine ends: `stop()`, or the OS closing a listener (a network rebind does not count).
+        try await finished.futureResult.get()
+        // Listeners that went away without `stop()`: release what the engine and its extensions still hold.
+        try? await stop(timeout: 0)
+    }
+
+    private func finish() {
+        let first = lifecycle.withLockedValue { state -> Bool in
+            let already = state.finished
+            state.finished = true
+            return !already
         }
+        if first { finished.succeed(()) }
+    }
+
+    private func listenerClosed() {
+        let unexpected = lifecycle.withLockedValue { !$0.stopping && !$0.rebinding }
+        if unexpected { finish() }
     }
 
     // MARK: - Binding
 
+    /// Extensions that forward traffic get a loopback listener that reads the peer's identity (see `PeerPreambleDecoder`).
+    private func bindPeerListener() async throws {
+        guard !app.extensions.isEmpty else { return }
+        let channel = try await makeBootstrap(tls: false, peer: true).bind(host: "127.0.0.1", port: 0).get()
+        peerChannel.withLockedValue { $0 = channel }
+        peerPort.withLockedValue { $0 = channel.localAddress?.port }
+    }
+
     private func bindListeners() async throws {
         var bound: [Channel] = []
-
-        let httpChannel = try await makeBootstrap(tls: false)
-            .bind(host: app.serverOptions.host, port: app.serverOptions.port)
-            .get()
-        bound.append(httpChannel)
-
-        if let tlsOptions = app.tlsOptions {
-            let tlsChannel = try await makeBootstrap(tls: true, tlsOptions: tlsOptions)
-                .bind(host: app.serverOptions.host, port: app.serverOptions.port + 1)
+        do {
+            let httpChannel = try await makeBootstrap(tls: false)
+                .bind(host: app.serverOptions.host, port: app.serverOptions.port)
                 .get()
-            bound.append(tlsChannel)
+            bound.append(httpChannel)
+
+            if let tlsOptions = app.tlsOptions {
+                let tlsChannel = try await makeBootstrap(tls: true, tlsOptions: tlsOptions)
+                    .bind(host: app.serverOptions.host, port: app.serverOptions.port + 1)
+                    .get()
+                bound.append(tlsChannel)
+            }
+        } catch {
+            // A listener that did bind must not outlive a failed pair: nothing else would ever close it.
+            for channel in bound { try? await channel.close() }
+            throw error
         }
 
         listenerChannels.withLockedValue { $0 = bound }
+        for channel in bound {
+            channel.closeFuture.whenComplete { [weak self] _ in self?.listenerClosed() }
+        }
     }
 
-    private func makeBootstrap(tls: Bool, tlsOptions: TlsOptions? = nil) -> NIOTSListenerBootstrap {
+    private func makeBootstrap(tls: Bool, tlsOptions: TlsOptions? = nil, peer: Bool = false) -> NIOTSListenerBootstrap {
         var bootstrap = NIOTSListenerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { [weak self] channel in
                 guard let self else {
                     return channel.eventLoop.makeFailedFuture(ServerEngineError.stopped)
                 }
-                return self.configureChildChannel(channel)
+                return self.configureChildChannel(channel, peer: peer)
             }
 
         if tls, let tlsOptions {
@@ -161,8 +223,7 @@ final class ServerEngine: @unchecked Sendable {
         return bootstrap
     }
 
-    private func configureChildChannel(_ channel: Channel) -> EventLoopFuture<Void> {
-        let remoteIP = channel.remoteAddress?.ipAddress ?? "unknown"
+    private func configureChildChannel(_ channel: Channel, peer: Bool = false) -> EventLoopFuture<Void> {
         let promise = channel.eventLoop.makePromise(of: Void.self)
 
         // Hop to the `ConnectionGate` actor to reserve a slot, then continue
@@ -178,18 +239,79 @@ final class ServerEngine: @unchecked Sendable {
             }
             self.app.metrics.connectionOpened()
             channel.eventLoop.execute {
-                self.setUpHTTPPipeline(channel, remoteIP: remoteIP).cascade(to: promise)
+                // The remote address is read once the channel is active: on NIO Transport Services it does not exist before,
+                // and every client would count as "unknown" (one rate-limit bucket, no loopback exemption).
+                let setUp: @Sendable (String) -> EventLoopFuture<Void> = { remoteIP in
+                    peer ? self.setUpPeerPipeline(channel) : self.setUpHTTPPipeline(channel, remoteIP: remoteIP, fromPeer: false)
+                }
+                if channel.isActive {
+                    setUp(channel.remoteAddress?.ipAddress ?? "unknown").cascade(to: promise)
+                    return
+                }
+                let activated = NIOLockedValueBox(false)
+                do {
+                    try channel.pipeline.syncOperations.addHandler(ChannelActivationHandler { address in
+                        activated.withLockedValue { $0 = true }
+                        setUp(address ?? "unknown").whenFailure { error in
+                            serverLogger.debug("Connection setup failed: \(String(describing: error), privacy: .public)")
+                            self.app.metrics.connectionClosed()
+                            Task { await self.connectionGate.release() }
+                            channel.close(promise: nil)
+                        }
+                    })
+                    // A connection that closes before it ever became active gives its slot back here.
+                    channel.closeFuture.whenComplete { _ in
+                        guard !activated.withLockedValue({ $0 }) else { return }
+                        self.app.metrics.connectionClosed()
+                        Task { await self.connectionGate.release() }
+                    }
+                    promise.succeed(())
+                } catch {
+                    self.app.metrics.connectionClosed()
+                    Task { await self.connectionGate.release() }
+                    promise.fail(error)
+                }
             }
         }
 
         return promise.futureResult
     }
 
+    /// A connection to the peer listener: reads the identity line first, then serves HTTP as usual with that identity as the
+    /// client address. A bad or missing line closes the connection and gives back the slot taken for it.
+    private func setUpPeerPipeline(_ channel: Channel) -> EventLoopFuture<Void> {
+        let identity = channel.eventLoop.makePromise(of: String.self)
+        identity.futureResult.whenFailure { [weak self] _ in
+            guard let self else { return }
+            self.app.metrics.connectionClosed()
+            Task { await self.connectionGate.release() }
+        }
+        do {
+            try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(PeerPreambleDecoder(secret: peerSecret, promise: identity)))
+        } catch {
+            identity.fail(error)
+            return channel.eventLoop.makeFailedFuture(error)
+        }
+        // The channel only starts reading once its initializer has finished, so this must not wait for the identity line:
+        // the HTTP handlers are added when the line arrives.
+        identity.futureResult.flatMap { [weak self] remoteIP -> EventLoopFuture<Void> in
+            guard let self else { return channel.eventLoop.makeFailedFuture(ServerEngineError.stopped) }
+            return self.setUpHTTPPipeline(channel, remoteIP: remoteIP, fromPeer: true).flatMapError { error in
+                // The identity was fine but serving could not start: give back the slot taken for this connection.
+                self.app.metrics.connectionClosed()
+                Task { await self.connectionGate.release() }
+                return channel.eventLoop.makeFailedFuture(error)
+            }
+        }.whenFailure { _ in channel.close(promise: nil) }
+        return channel.eventLoop.makeSucceededVoidFuture()
+    }
+
     /// Adds the named HTTP1 handlers (WebSocket upgrade removes them by
     /// these names) and starts serving the connection. Runs on the channel's
     /// own event loop, after `ConnectionGate` has reserved a slot.
-    private func setUpHTTPPipeline(_ channel: Channel, remoteIP: String) -> EventLoopFuture<Void> {
-        channel.eventLoop.submit {
+    private func setUpHTTPPipeline(_ channel: Channel, remoteIP: String, fromPeer: Bool) -> EventLoopFuture<Void> {
+        // Synchronous (we are on the channel's loop): the peer path relies on the handlers being in place at once.
+        channel.eventLoop.makeCompletedFuture {
             try channel.pipeline.syncOperations.addHandler(HTTPResponseEncoder(), name: Self.httpEncoderName)
             try channel.pipeline.syncOperations.addHandler(
                 ByteToMessageHandler(HTTPRequestDecoder()),
@@ -205,7 +327,7 @@ final class ServerEngine: @unchecked Sendable {
                     self.app.metrics.connectionClosed()
                     Task { await self.connectionGate.release() }
                 }
-                await self.serve(asyncChannel, remoteIP: remoteIP, rawChannel: channel)
+                await self.serve(asyncChannel, remoteIP: remoteIP, fromPeer: fromPeer, rawChannel: channel)
             }
         }
     }
@@ -215,6 +337,7 @@ final class ServerEngine: @unchecked Sendable {
     private func serve(
         _ channel: NIOAsyncChannel<HTTPServerRequestPart, HTTPServerResponsePart>,
         remoteIP: String,
+        fromPeer: Bool,
         rawChannel: Channel
     ) async {
         var rateLimited = false
@@ -232,6 +355,7 @@ final class ServerEngine: @unchecked Sendable {
                 // Every way out of this closure (413, disconnect, shutdown, error) discards a
                 // spool that was not handed to the dispatcher, which deletes the file itself.
                 var spool: BodySpool?
+                var hiddenFromPeer = false
                 defer { spool?.discard() }
 
                 // An early rejection (413, 429) is sent with `Connection: close`, then the rest of the
@@ -261,14 +385,18 @@ final class ServerEngine: @unchecked Sendable {
                         bodyBuffer.clear()
                         spool?.discard()
                         spool = nil
+                        // A path kept from peers is handled as one that matches nothing, body limits included.
+                        hiddenFromPeer = fromPeer && !dispatcher.router.peerAccess.allows(path: splitPathAndQuery(head.uri).path)
                         // A route (or group) may override the global limit and ask for the body on
                         // disk; resolved from the head alone, so an oversized body is cut off
                         // before it is buffered.
-                        let plan = dispatcher.bodyPlan(
-                            method: HttpMethod(rawValue: head.method.rawValue) ?? .get,
-                            path: splitPathAndQuery(head.uri).path,
-                            contentLength: head.headers.first(name: "Content-Length").flatMap { Int($0) }
-                        )
+                        let plan = hiddenFromPeer
+                            ? (limit: app.serverOptions.maxRequestBodySize, spool: false)
+                            : dispatcher.bodyPlan(
+                                method: HttpMethod(rawValue: head.method.rawValue) ?? .get,
+                                path: splitPathAndQuery(head.uri).path,
+                                contentLength: head.headers.first(name: "Content-Length").flatMap { Int($0) }
+                            )
                         maxBodySize = plan.limit
                         if plan.spool {
                             do {
@@ -305,15 +433,15 @@ final class ServerEngine: @unchecked Sendable {
                     case .end:
                         guard let head = requestHead else { continue }
 
-                        if isWebSocketUpgrade(head) {
-                            try await handleWebSocketUpgrade(head: head, rawChannel: rawChannel)
+                        if !hiddenFromPeer, isWebSocketUpgrade(head) {
+                            try await handleWebSocketUpgrade(head: head, rawChannel: rawChannel, remoteIP: remoteIP, outbound: outbound)
                             return
                         }
 
                         let bodyFile = spool?.finish()
                         spool = nil // the dispatcher deletes the file once the response is produced
                         let request = makeHttpRequest(head: head, body: bodyBuffer, remoteAddress: remoteIP, bodyFile: bodyFile)
-                        let response = await dispatcher.dispatch(request)
+                        let response = await dispatcher.dispatch(request, hidden: hiddenFromPeer)
                         try await write(response, method: head.method, to: outbound)
                         requestHead = nil
                         bodyBuffer.clear()
@@ -481,7 +609,12 @@ final class ServerEngine: @unchecked Sendable {
             && head.headers["Connection"].first?.lowercased().contains("upgrade") == true
     }
 
-    private func handleWebSocketUpgrade(head: HTTPRequestHead, rawChannel: Channel) async throws {
+    private func handleWebSocketUpgrade(
+        head: HTTPRequestHead,
+        rawChannel: Channel,
+        remoteIP: String,
+        outbound: NIOAsyncChannelOutboundWriter<HTTPServerResponsePart>
+    ) async throws {
         let (path, _) = splitPathAndQuery(head.uri)
         guard let route = app.webSocketRegistry.match(path: path) else {
             try? await rawChannel.close()
@@ -492,6 +625,15 @@ final class ServerEngine: @unchecked Sendable {
             try? await rawChannel.close()
             return
         }
+
+        // The route's `auth` is enforced here, before the 101: once upgraded, the HTTP pipeline is gone.
+        if case .none = route.auth {} else {
+            let request = makeHttpRequest(head: head, body: ByteBuffer(), remoteAddress: remoteIP)
+            if let denied = await dispatcher.authorizeUpgrade(request, auth: route.auth) {
+                try await write(denied, method: head.method, to: outbound)
+                return
+            }
+        }
         let acceptValue = webSocketAcceptValue(for: key)
 
         var responseHeaders = HTTPHeaders()
@@ -501,41 +643,14 @@ final class ServerEngine: @unchecked Sendable {
 
         let upgradeResponse = HTTPResponseHead(version: .http1_1, status: .switchingProtocols, headers: responseHeaders)
 
-        // Write the raw 101 response, then strip every HTTP1 handler from the
-        // pipeline (in the order they were added) before installing the
-        // WebSocket frame codec — from this point the connection speaks the
-        // WebSocket framing only, not HTTP/1.1.
-        try await writeUpgradeResponse(upgradeResponse, on: rawChannel)
-        try await removeHTTPHandlers(from: rawChannel)
-
-        try await rawChannel.eventLoop.submit {
-            try rawChannel.pipeline.syncOperations.addHandler(WebSocketFrameEncoder())
-            try rawChannel.pipeline.syncOperations.addHandler(ByteToMessageHandler(WebSocketFrameDecoder()))
-        }.get()
-
-        let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(wrappingChannelSynchronously: rawChannel)
-        let socket = WebSocket(channel: asyncChannel)
+        // The 101 goes through the HTTP encoder; the connection then speaks WebSocket frames only, through `WebSocketBridge`.
+        let socket = try await WebSocketBridge.upgrade(
+            rawChannel, response: upgradeResponse, removing: [Self.httpEncoderName, Self.httpDecoderName]
+        )
         app.metrics.webSocketOpened()
         defer { app.metrics.webSocketClosed() }
         try? await route.handler(socket)
-    }
-
-    // MARK: - WebSocket upgrade wire helpers
-
-    private func writeUpgradeResponse(_ head: HTTPResponseHead, on channel: Channel) async throws {
-        var buffer = channel.allocator.buffer(capacity: 256)
-        buffer.writeString("HTTP/1.1 101 Switching Protocols\r\n")
-        for (name, value) in head.headers {
-            buffer.writeString("\(name): \(value)\r\n")
-        }
-        buffer.writeString("\r\n")
-        try await channel.writeAndFlush(buffer).get()
-    }
-
-    private func removeHTTPHandlers(from channel: Channel) async throws {
-        for name in [Self.httpEncoderName, Self.httpDecoderName] {
-            try? await channel.pipeline.removeHandler(name: name).get()
-        }
+        try? await socket.close() // a handler that just returns still says goodbye (1000) before the connection drops
     }
 
     private static let httpEncoderName = "SwiftCoreWeb.HTTPResponseEncoder"
@@ -567,20 +682,49 @@ final class ServerEngine: @unchecked Sendable {
 
     // MARK: - Network watchdog rebind
 
-    private func rebindOnNetworkChange() async {
-        app.metrics.recordRebind()
-        serverLogger.info("Rebinding listeners after network change")
-        for channel in listenerChannelsSnapshot() {
-            try? await channel.close()
+    func rebindOnNetworkChange() async {
+        // One rebind at a time; a change that arrives meanwhile is applied right after, not lost.
+        let mayStart = lifecycle.withLockedValue { state -> Bool in
+            if state.stopping { return false }
+            if state.rebinding { state.rebindRequested = true; return false }
+            state.rebinding = true
+            return true
         }
-        do {
-            try await bindListeners()
-            app.urls = reachableURLs()
-            let listeningURLs = app.urls.joined(separator: ", ")
-            serverLogger.info("Rebound; now listening on \(listeningURLs, privacy: .public)")
-        } catch {
-            serverLogger.error("Failed to rebind listeners: \(String(describing: error), privacy: .public)")
-        }
+        guard mayStart else { return }
+        repeat {
+            app.metrics.recordRebind()
+            serverLogger.info("Rebinding listeners after network change")
+            for channel in listenerChannelsSnapshot() {
+                try? await channel.close()
+            }
+            do {
+                // The port of a listener that was just closed can take a moment to be free again.
+                var attempt = 0
+                while true {
+                    do { try await bindListeners(); break } catch {
+                        attempt += 1
+                        guard attempt < 5, !lifecycle.withLockedValue({ $0.stopping }) else { throw error }
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    }
+                }
+                if lifecycle.withLockedValue({ $0.stopping }) { break }
+                app.urls = reachableURLs()
+                let listeningURLs = app.urls.joined(separator: ", ")
+                serverLogger.info("Rebound; now listening on \(listeningURLs, privacy: .public)")
+            } catch {
+                // Not listening for now; the next network change tries again.
+                listenerChannels.withLockedValue { $0 = [] }
+                app.urls = []
+                serverLogger.error("Failed to rebind listeners: \(String(describing: error), privacy: .public)")
+            }
+        } while lifecycle.withLockedValue({ state -> Bool in
+            if state.rebindRequested && !state.stopping {
+                state.rebindRequested = false
+                return true
+            }
+            state.rebinding = false
+            return false
+        })
     }
 
     private func listenerChannelsSnapshot() -> [Channel] {
@@ -611,6 +755,21 @@ final class ServerEngine: @unchecked Sendable {
     // MARK: - Shutdown
 
     func stop(timeout: Double) async throws {
+        let first = lifecycle.withLockedValue { state -> Bool in
+            let already = state.stopping
+            state.stopping = true
+            return !already
+        }
+        guard first else {
+            // Someone else is already stopping: return when that has finished, so the port is really free.
+            try? await stopped.futureResult.get()
+            return
+        }
+        defer {
+            finish()
+            stopped.succeed(())
+        }
+        for serverExtension in app.extensions { await serverExtension.stop() }
         watchdog?.stop()
         bonjourListener?.cancel()
 
@@ -618,6 +777,8 @@ final class ServerEngine: @unchecked Sendable {
         for channel in channels {
             try? await channel.close()
         }
+        if let peer = peerChannel.withLockedValue({ $0.take() }) { try? await peer.close() }
+        peerPort.withLockedValue { $0 = nil }
 
         #if canImport(UIKit)
         await MainActor.run { keepAwake?.restoreIdleTimer() }
@@ -627,6 +788,13 @@ final class ServerEngine: @unchecked Sendable {
         app.urls = []
         app.metrics.markStopped()
         serverLogger.info("SwiftCoreWeb stopped")
+    }
+}
+
+extension ServerEngine {
+    static func makeSecret() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<16).map { _ in UInt8.random(in: 0...255, using: &generator) }).map { String(format: "%02x", $0) }.joined()
     }
 }
 

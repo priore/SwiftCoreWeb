@@ -1,0 +1,201 @@
+// SwiftCoreWeb
+// Copyright (c) 2026 SwiftCoreWeb contributors.
+// Licensed under the PolyForm Noncommercial License 1.0.0.
+// Free for noncommercial use; commercial use requires a separate license from the author.
+// See LICENSE at the repository root. Source-available, not open-source.
+//
+
+import XCTest
+import NIOConcurrencyHelpers
+import NIOCore
+import NIOPosix
+import SwiftCoreWeb
+@testable import SwiftCoreWebP2P
+
+/// The app must see each paired device as its own client, not as `127.0.0.1`, and long-lived routes must work through the tunnel.
+/// A JSON scalar, for comparing two documents without caring about key order.
+private enum JSONValue: Decodable {
+    case text(String)
+    var text: String { if case .text(let value) = self { return value } else { return "" } }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) { self = .text(value) } else { self = .text(String(try container.decode(Int.self))) }
+    }
+}
+
+final class PeerIdentityTests: XCTestCase {
+    private struct Fixture {
+        let app: WebApplication
+        let host: P2PHost
+        let appPort: Int
+    }
+
+    private func makeFixture(rateLimit: Bool = false) async throws -> Fixture {
+        let appPort = Int.random(in: 30_000..<60_000)
+        let builder = WebApplication.createBuilder()
+        builder.usePort(appPort)
+        if rateLimit { builder.rateLimit { $0.capacity = 3; $0.refillPerSecond = 0.001 } }
+        let host = try builder.useP2P(storage: InMemoryTunnelStorage())
+        let app = builder.build()
+        app.mapGet("/open") { _ in "open" }
+        app.mapGet("/admin/secret") { _ in "secret" }
+        app.mapGet("/admin/users/{id}/card") { _ in "card" }
+        app.mapGet("/admin/public/info") { _ in "info" }
+        app.mapGet("/whoami") { ctx in ctx.request.remoteAddress ?? "none" }
+        app.mapSse("/events") { writer in
+            for index in 1...3 { try await writer.send("tick \(index)") }
+        }
+        addTeardownBlock { try? await app.stopAsync() }
+        Task { try? await app.runAsync() }
+        for _ in 0..<100 where host.tunnelPort == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertNotNil(host.tunnelPort)
+        return Fixture(app: app, host: host, appPort: appPort)
+    }
+
+    private func pair(_ fixture: Fixture) async throws -> (peer: SCWPeerConnection, base: URL) {
+        let payload = try XCTUnwrap(fixture.host.openPairing(host: "127.0.0.1"))
+        let peer = try await SCWPeerConnection.pair(payload, storage: InMemoryTunnelStorage())
+        return (peer, try await peer.start())
+    }
+
+    private func status(_ url: URL) async throws -> Int {
+        let (_, response) = try await URLSession(configuration: .ephemeral).data(from: url)
+        return (response as? HTTPURLResponse)?.statusCode ?? 0
+    }
+
+    func testTheHostListsTheDeviceUnderTheNameItGave() async throws {
+        let fixture = try await makeFixture()
+        let payload = try XCTUnwrap(fixture.host.openPairing(host: "127.0.0.1"))
+        _ = try await SCWPeerConnection.pair(payload, deviceName: "Anna's iPhone", storage: InMemoryTunnelStorage())
+        XCTAssertEqual(fixture.host.pairing?.devices.map(\.name), ["Anna's iPhone"])
+    }
+
+    func testTheAppSeesTheDeviceNotLoopback() async throws {
+        let fixture = try await makeFixture()
+        let (peer, base) = try await pair(fixture)
+        let (data, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("whoami"))
+        let seen = String(decoding: data, as: UTF8.self)
+        let device = try XCTUnwrap(fixture.host.pairing?.devices.first)
+        XCTAssertEqual(seen, "p2p:" + device.id)
+        await peer.stop()
+    }
+
+    func testRoutesHiddenFromPairedDevicesAnswer404ButStayReachableDirectly() async throws {
+        let fixture = try await makeFixture()
+        fixture.app.useP2P("/admin", .disable)
+        fixture.app.useP2P("/admin/public", .enable) // the most specific rule wins
+        let (peer, base) = try await pair(fixture)
+        let direct = URL(string: "http://127.0.0.1:\(fixture.appPort)")!
+
+        for (path, viaTunnel) in [("open", 200), ("admin/secret", 404), ("admin/users/7/card", 404), ("admin/public/info", 200)] {
+            let code = try await status(base.appendingPathComponent(path))
+            XCTAssertEqual(code, viaTunnel, "/\(path) through the tunnel")
+            let directCode = try await status(direct.appendingPathComponent(path))
+            XCTAssertEqual(directCode, 200, "/\(path) on the normal listener is never affected")
+        }
+
+        // A hidden route answers like a path that matches nothing, whatever the request carries.
+        var post = URLRequest(url: base.appendingPathComponent("admin/secret"))
+        post.httpMethod = "POST"
+        post.httpBody = Data(repeating: 0x61, count: 3_000)
+        let (_, postResponse) = try await URLSession(configuration: .ephemeral).data(for: post)
+        XCTAssertEqual((postResponse as? HTTPURLResponse)?.statusCode, 404)
+        let (hiddenBody, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("admin/secret"))
+        let (missingBody, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("nothing/here"))
+        // Same problem document (key order aside).
+        func problem(_ data: Data) throws -> [String: String] {
+            try JSONDecoder().decode([String: JSONValue].self, from: data).mapValues { $0.text }
+        }
+        XCTAssertEqual(try problem(hiddenBody), try problem(missingBody), "same body as a path that does not exist")
+
+        // Deny by default, allow one group.
+        fixture.app.useP2P(.disable)
+        fixture.app.useP2P("/open", .enable)
+        let openCode = try await status(base.appendingPathComponent("open"))
+        let whoCode = try await status(base.appendingPathComponent("whoami"))
+        XCTAssertEqual(openCode, 200)
+        XCTAssertEqual(whoCode, 404)
+        await peer.stop()
+    }
+
+    func testRateLimitIsPerDevice() async throws {
+        let fixture = try await makeFixture(rateLimit: true)
+        let first = try await pair(fixture)
+        let second = try await pair(fixture)
+        let firstURL = first.base.appendingPathComponent("whoami"), secondURL = second.base.appendingPathComponent("whoami")
+
+        var codes: [Int] = []
+        for _ in 0..<5 { codes.append((try? await status(firstURL)) ?? -1) } // each request is a new connection: the limit counts connections
+        XCTAssertEqual(codes, [200, 200, 200, 429, 429]) // capacity 3 for this device
+        let secondCode = (try? await status(secondURL)) ?? -1
+        XCTAssertEqual(secondCode, 200) // another device has its own bucket
+        await first.peer.stop(); await second.peer.stop()
+    }
+
+    func testPeerListenerRefusesMissingOrWrongSecretAndAcceptsALineGluedToTheRequest() async throws {
+        let fixture = try await makeFixture()
+        let peer = try XCTUnwrap(fixture.host.tunnel?.peer)
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        defer { Task { try? await group.shutdownGracefully() } }
+        let request = "GET /whoami HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+
+        func exchange(_ payload: String) async throws -> String {
+            let received = NIOLockedValueBox("")
+            let channel = try await ClientBootstrap(group: group).channelInitializer { $0.pipeline.addHandler(Collector(received)) }
+                .connect(host: "127.0.0.1", port: peer.port).get()
+            try await channel.writeAndFlush(channel.allocator.buffer(string: payload))
+            // The server may keep the connection open after answering, so read for a moment and then hang up ourselves.
+            try await Task.sleep(nanoseconds: 600_000_000)
+            try? await channel.close()
+            return received.withLockedValue { $0 }
+        }
+
+        let noPreamble = try await exchange(request)
+        XCTAssertFalse(noPreamble.contains("200 OK"), noPreamble)
+        let wrongSecret = try await exchange("SCW-PEER wrong p2p:fake\n" + request)
+        XCTAssertFalse(wrongSecret.contains("200 OK"), wrongSecret)
+        // The identity line and the request in one write: the bytes after the line must not be lost.
+        let glued = try await exchange(peer.preamble(identity: "p2p:glued") + request)
+        XCTAssertTrue(glued.contains("200 OK"), glued)
+        XCTAssertTrue(glued.hasSuffix("p2p:glued"), glued)
+    }
+
+    func testTheConnectionIsReestablishedOnTheSameURLAfterItDrops() async throws {
+        let fixture = try await makeFixture()
+        let (peer, base) = try await pair(fixture)
+        let before = try await status(base.appendingPathComponent("open"))
+        XCTAssertEqual(before, 200)
+
+        await peer.dropConnection() // as when the network changes under the connection
+        var recovered = false
+        for _ in 0..<40 where !recovered { // the supervisor reconnects after a second
+            try await Task.sleep(nanoseconds: 250_000_000)
+            recovered = ((try? await status(base.appendingPathComponent("open"))) ?? 0) == 200
+        }
+        XCTAssertTrue(recovered, "the same URL must work again without calling start()")
+        XCTAssertEqual(peer.currentRoute, .local)
+
+        await peer.stop()
+        let afterStop = try? await status(base.appendingPathComponent("open"))
+        XCTAssertNotEqual(afterStop, 200, "a stopped connection must not come back")
+    }
+
+    func testServerSentEventsWorkThroughTheTunnel() async throws {
+        let fixture = try await makeFixture()
+        let (peer, base) = try await pair(fixture)
+        let (data, _) = try await URLSession(configuration: .ephemeral).data(from: base.appendingPathComponent("events"))
+        let body = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(body.contains("data: tick 1") && body.contains("data: tick 3"), body)
+        await peer.stop()
+    }
+}
+
+private final class Collector: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = ByteBuffer
+    private let received: NIOLockedValueBox<String>
+    init(_ received: NIOLockedValueBox<String>) { self.received = received }
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        var buffer = unwrapInboundIn(data)
+        received.withLockedValue { $0 += buffer.readString(length: buffer.readableBytes) ?? "" }
+    }
+}

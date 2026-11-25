@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![Swift](https://img.shields.io/badge/swift-6-orange?logo=swift)](https://swift.org)
-[![Platform](https://img.shields.io/badge/platform-iOS%2015%2B-lightgrey)](README.md#requirements)
+[![Platform](https://img.shields.io/badge/platform-iOS%2015%2B%20%7C%20macOS%2011%2B%20%7C%20tvOS%2015%2B-lightgrey)](README.md#requirements)
 [![SwiftNIO](https://img.shields.io/badge/SwiftNIO-2.65-blue)](https://github.com/apple/swift-nio)
 [![Vue](https://img.shields.io/badge/Vue-3-brightgreen?logo=vuedotjs)](https://vuejs.org)
 [![SQLite](https://img.shields.io/badge/SQLite-3-lightblue?logo=sqlite)](https://sqlite.org)
@@ -18,9 +18,64 @@ Your iPhone can run a real web server. SwiftCoreWeb turns any iOS 15+ app into a
 
 ---
 
+## Features
+
+### Server
+
+- **HTTP and HTTPS** on SwiftNIO. TLS comes from a PKCS#12 identity whose password stays in the Keychain.
+- **Secure by default**: the server listens on loopback only, until you opt in to the LAN.
+- **WebSocket and Server-Sent Events** routes, with limits on frame and message size, backpressure, and a clean close handshake.
+- **Static files and single-page apps**, byte ranges, file upload and download, one-time download links.
+- **Two ways to write routes, on the same server**: Minimal API closures and macro-based `@Controller`s. Route templates, parameter binding from route, query and body, per-route body limits.
+- **Middleware pipeline**: authentication, CORS, security headers, logging, exception handling, rate limiting, cookie sessions.
+- **Dependency injection**, `ProblemDetails` error bodies, generated OpenAPI documentation.
+- **Built for iOS apps**: keep-awake, scene-phase binding, restart after backgrounding, network-change handling, Bonjour announcement.
+
+### Authentication and secrets
+
+- JWT bearer and custom API-key schemes, plus authorization policies.
+- Signing keys and TLS passwords live in the Keychain (`SecretStore`), never in a file.
+- Guide: [Secrets & certificates](docs/SECRETS_AND_CERTIFICATES.md).
+
+### Front end
+
+- Plain HTML, or server-rendered templates.
+- Zero-build Vue, or a full Vite workflow with on-device dev-deploy and live reload.
+- [Live Pages](docs/web/LIVE_PAGES_GUIDE.md): Vue components wired to Swift event handlers. A click in the browser runs Swift on the server and the page updates.
+
+### Peer-to-peer access (`SwiftCoreWebP2P`, optional)
+
+Reach the app from a paired iPhone, iPad, Mac or Apple TV with no open port and no server in between. Full guide: [docs/P2P_TRANSPORT.md](docs/P2P_TRANSPORT.md).
+
+- **Standard protocol**: SSH with Ed25519 keys and `direct-tcpip` forwarding. Any HTTP client works through a loopback URL, and so does OpenSSH.
+- **Pairing**: a QR code, or a six-digit code with the host key confirmed by eye on devices without a camera (Apple TV).
+- **Control**: per-device identity and revocation, and per-route rules for what a paired device can reach.
+- **On the same network**: the host is found again by Bonjour when its address changes.
+- **From another network**: a direct connection (TCP hole punching) is tried first, then a TURN relay. The small rendezvous service they need can run on a plain SwiftCoreWeb app.
+- **Resilient**: the connection follows network changes (Wi-Fi to cellular) and reconnects by itself.
+- **Status**: verified on the simulator and the loopback. Not yet tried on real devices or across real NATs.
+
+### Testing
+
+- `TestHost` runs the real production pipeline in memory, with no sockets (`SwiftCoreWebTesting`).
+
+### Optional libraries
+
+| Library | What it adds |
+|---------|--------------|
+| `SwiftCoreWebDashboard` | Turns the device's screen into a live console for the server running on it |
+| `SwiftCoreWebKit` | Makes blob and attachment downloads work inside a `WKWebView` |
+| `SwiftCoreWebP2P` | Peer-to-peer access, as above |
+
+### Platforms
+
+iOS 15+, macOS 11+ and tvOS 15+. On tvOS there is no screen dimming, battery metrics, pasteboard or WebKit helper.
+
+---
+
 ## Requirements
 
-- iOS 15.0+ deployment target
+- iOS 15.0+ deployment target (also macOS 11+ and tvOS 15+; on tvOS screen dimming, battery metrics, the pasteboard and the WebKit helper are not available)
 - Xcode 16+ / Swift 6 language mode (macros require a Swift 5.9+ toolchain at compile time only — zero runtime cost)
 - Dependencies: `swift-nio`, `swift-nio-transport-services`, `swift-syntax` (macros only). Everything else — TLS, JWT signing/verification, logging, network monitoring — uses system frameworks (`Security`, `CryptoKit`, `os.Logger`, `Network`).
 
@@ -88,20 +143,17 @@ guide with runnable examples — the full index is [`docs/README.md`](docs/READM
 
 ## Showcase
 
-`Showcase/` is a complete, real end-to-end sample app — not a toy. It compiles against the actual API, and includes:
+`Showcase/` is one real iOS app with a menu: every entry starts its own server and shows what it serves. It compiles against the actual API, and includes:
 
-- A SwiftUI app whose device screen shows the [on-device dashboard](docs/web/DASHBOARD_GUIDE.md) while `/` keeps serving the site to browsers
-- A macro-based `@Controller` alongside closure Minimal API routes, on the same server
-- Two authentication schemes: JWT and a custom API-key header
-- SwiftUI `ScenePhase` lifecycle binding, plus keep-awake
+- Hello World: a static Vue page and a JSON route
+- A macro-based `@Controller` alongside closure Minimal API routes, JWT and API-key authentication, OpenAPI
+- [Live Pages](docs/web/LIVE_PAGES_GUIDE.md), Server-Sent Events and a WebSocket echo
+- The [on-device dashboard](docs/web/DASHBOARD_GUIDE.md)
+- [Peer-to-peer access](docs/P2P_TRANSPORT.md): host, client (pairs from a QR code scanned with the Camera app), and a rendezvous server
 
-It also walks through the three frontend workflows you'll actually use, and ships ready-to-copy `Info.plist` keys, `vite.config.js`, and both scripts:
+It also walks through the three frontend workflows (Vite on the Mac, on-device dev-deploy, a production build phase) and how to try peer-to-peer from another network.
 
-- Vite on the Mac with API proxying
-- on-device dev-deploy with live reload
-- a production Xcode build phase that copies `dist/` into the bundle
-
-See `Showcase/README.md` for the full walkthrough and how to wire the sample into an Xcode project. It ships as source files, not an `.xcodeproj`, since the framework itself is SPM-only.
+Open `Showcase/ShowcaseApp/ShowcaseApp.xcodeproj` and press Run; see `Showcase/README.md` for the details.
 
 ---
 
@@ -151,5 +203,7 @@ Scan the code below with your wallet, or copy the address. Alternatively you can
 
 |Donate with BTC (Bitcoin)|
 |:------------:|
-|![](https://www.prioregroup.com/images/priore_btc_segwit_binance.jpg)|
-|`BTC Address (SegWit) : bc1q6rj0uuwu9k2fvs5n5elmqy9v4ljazhexejykjm`|
+|![BTC QR code](docs/priore_btc_segwit_safepay.jpg)|
+|`BTC Address (SegWit) : bc1q6mxjea7xfjprl70k80jt8gyqxjvp5j6pa9yzxs`|
+
+This address can only accept BTC (Bitcoin). To avoid losing assets, do NOT send other currencies to this address.

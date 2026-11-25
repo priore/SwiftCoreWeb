@@ -1,0 +1,25 @@
+# coturn configuration for SwiftCoreWebP2P remote access (see docs/P2P_REMOTE_SETUP.md).
+# setup-vm.sh fills the three values in angle brackets and writes the result to /etc/turnserver.conf.
+# Never commit the filled-in file: it contains the shared secret.
+
+listening-port=3478
+fingerprint
+
+# Temporary credentials derived from a shared secret (P2PRemoteAccess.Relay(sharedSecret:)).
+use-auth-secret
+static-auth-secret=<SECRET>
+realm=scw
+
+# The VM only knows its private address; tell coturn which public one to announce for relayed connections.
+external-ip=<PUBLIC_IP>/<PRIVATE_IP>
+
+# The library uses TCP only (RFC 6062 TCP allocations). Keep the relay ports few and open exactly these in the firewall.
+no-udp
+no-udp-relay
+min-port=49160
+max-port=49200
+
+no-tls
+no-dtls
+no-cli
+no-multicast-peers

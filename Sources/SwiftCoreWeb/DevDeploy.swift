@@ -132,7 +132,7 @@ enum DevDeployUnpacker {
             // reader if on-device zip upload is needed.
             let zipPath = tempDir.appendingPathComponent("payload.zip")
             try body.write(to: zipPath)
-            #if canImport(Darwin) && !os(iOS)
+            #if os(macOS)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
             process.arguments = ["-oq", zipPath.path, "-d", tempDir.path]

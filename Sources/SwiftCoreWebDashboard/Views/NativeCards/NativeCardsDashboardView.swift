@@ -57,13 +57,7 @@ public struct NativeCardsDashboardView: SwiftUI.View {
                 Text(url.absoluteString)
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .contextMenu {
-                        Button {
-                            UIPasteboard.general.string = url.absoluteString
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                    }
+                    .copyMenu(url.absoluteString)
                 QRCodeView(url: url)
                     .frame(width: 96, height: 96)
             }

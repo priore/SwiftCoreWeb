@@ -58,6 +58,7 @@ public final class WebApplicationBuilder: @unchecked Sendable {
     private(set) var listenOnAllInterfacesFlag = false
     private(set) var bonjourName: String?
     private(set) var keepDeviceAwakeFlag = true
+    var extensions: [any ServerExtension] = []
 
     init() {
         loadAppSettingsIfPresent()
@@ -219,6 +220,7 @@ public final class WebApplication: @unchecked Sendable {
     let tlsOptions: TlsOptions?
     let bonjourName: String?
     let keepDeviceAwakeFlag: Bool
+    let extensions: [any ServerExtension]
 
     /// The reachable base URLs the server is listening on, populated once
     /// `runAsync()` has bound its listener(s).
@@ -230,8 +232,25 @@ public final class WebApplication: @unchecked Sendable {
     private let urlsLock = NSLock()
 
     /// Whether the server engine is currently accepting connections: `true` only while the listeners are bound. It turns
-    /// `false` when `runAsync()` fails to bind or when the listener closes for any reason, not only after `stopAsync()`.
+    /// `false` when `runAsync()` fails to bind or when a listener is closed by the system, not only after `stopAsync()`.
+    /// It stays `true` while the server waits for the next network change after a failed rebind.
     public var isRunning: Bool { engineBox.engine != nil }
+
+    /// Whether requests that come in through an extension's peer listener (for example `SwiftCoreWebP2P`) may reach
+    /// `prefix` and everything below it; a `{placeholder}` segment matches any segment. The most specific rule wins and
+    /// a denied path answers `404`. Requests on the normal listeners are never affected.
+    @discardableResult
+    public func setPeerAccess(_ prefix: String, allowed: Bool) -> Self {
+        routeRegistry.peerAccess.set(prefix: prefix, allowed: allowed)
+        return self
+    }
+
+    /// What peers may reach when no `setPeerAccess` rule names the path (initially everything).
+    @discardableResult
+    public func setPeerAccessDefault(allowed: Bool) -> Self {
+        routeRegistry.peerAccess.setDefault(allowed)
+        return self
+    }
 
     /// Backing store for the closure `map*` routing methods (see
     /// `MinimalApiRouting.swift`) and `mapControllers(_:)`.
@@ -262,6 +281,7 @@ public final class WebApplication: @unchecked Sendable {
         self.tlsOptions = builder.tlsOptions
         self.bonjourName = builder.bonjourName
         self.keepDeviceAwakeFlag = builder.keepDeviceAwakeFlag
+        self.extensions = builder.extensions
     }
 
     /// Creates a new `WebApplicationBuilder`.

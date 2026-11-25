@@ -1,3 +1,6 @@
+---
+paths: ["docs/**", "scripts/wiki-flatten.py"]
+---
 # Docs maintenance — keeping `docs/` stable and homogeneous
 
 `docs/` is organized in two parallel branches — `docs/web/` and `docs/api/` — plus a shared

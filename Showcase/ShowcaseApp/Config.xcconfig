@@ -1,0 +1,4 @@
+// Tracked defaults. Put DEVELOPMENT_TEAM and a unique PRODUCT_BUNDLE_IDENTIFIER for a real device in Local.xcconfig (git-ignored).
+PRODUCT_BUNDLE_IDENTIFIER = com.swiftcoreweb.showcase
+CODE_SIGN_STYLE = Automatic
+#include? "Local.xcconfig"

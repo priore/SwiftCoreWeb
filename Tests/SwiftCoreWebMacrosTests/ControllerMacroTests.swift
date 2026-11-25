@@ -618,6 +618,70 @@ final class ControllerMacroTests: XCTestCase {
         )
     }
 
+    func testServiceParameterIsWrappedInService() {
+        assertMacroExpansion(
+            """
+            @Controller("/api/todos")
+            final class TodoController {
+                @Get("/")
+                func list(store: Service<TodoStore>) async throws -> [Todo] {
+                    store.wrappedValue.all()
+                }
+            }
+            """,
+            expandedSource: """
+            final class TodoController {
+                func list(store: Service<TodoStore>) async throws -> [Todo] {
+                    store.wrappedValue.all()
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .get, path: "/api/todos/", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_store = SwiftCoreWeb.Service(wrappedValue: ctx.services.get(TodoStore.self))
+                        return try await Self.init().list(store: arg_store).toHttpResult()
+                    }
+                }
+            }
+
+            extension TodoController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
+    func testUnlabeledBodyParameterIsPassedWithoutLabel() {
+        assertMacroExpansion(
+            """
+            @Controller("/api/todos")
+            final class TodoController {
+                @Post("/")
+                func create(_ todo: Todo) async throws -> Todo {
+                    todo
+                }
+            }
+            """,
+            expandedSource: """
+            final class TodoController {
+                func create(_ todo: Todo) async throws -> Todo {
+                    todo
+                }
+
+                static func registerRoutes(into router: RouteRegistry) {
+                    router.register(method: .post, path: "/api/todos/", auth: AuthRequirement.none, summary: nil) { ctx in
+                        let arg_todo = try ctx.request.decode(Todo.self)
+                        return try await Self.init().create(arg_todo).toHttpResult()
+                    }
+                }
+            }
+
+            extension TodoController: RouteProvider {
+            }
+            """,
+            macros: testMacros
+        )
+    }
+
     func testApiModelGeneratesSchema() {
         assertMacroExpansion(
             """

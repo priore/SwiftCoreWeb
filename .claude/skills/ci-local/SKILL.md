@@ -23,7 +23,7 @@ The script re-parses `ci.yml` on every run — no manual sync needed when steps 
 
 ## Requires the exact Xcode version CI uses
 
-The script fails hard (does not skip) if `ci.yml`'s `xcode-select` target Xcode isn't installed at that exact path. A pass on a different Xcode is not a CI pass — Swift's strict-concurrency diagnostics and SDKs differ between Xcode versions, so a green run on e.g. Xcode 27 does not prove Xcode 16.4 (what `macos-15` runners actually use) is green. Install the matching version (`xcodes install 16.4`, or Apple Developer downloads) before trusting this script's output.
+The script fails hard (it does not skip) if the Xcode that `ci.yml` selects is not installed at that exact path. A pass on a different Xcode is not a CI pass: Swift strict-concurrency diagnostics and SDKs differ between versions. The runner label and Xcode version are defined in `.github/workflows/ci.yml` (`runs-on`); re-match them when the local Xcode changes.
 
 ## Workflow
 
