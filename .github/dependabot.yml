@@ -4,6 +4,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Package.swift pins swift-collections exactly on purpose (1.7.x needs a runtime symbol that older host systems lack).
+      - dependency-name: "github.com/apple/swift-collections"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
