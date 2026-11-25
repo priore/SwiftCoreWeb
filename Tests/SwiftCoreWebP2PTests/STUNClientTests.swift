@@ -23,7 +23,7 @@ final class STUNClientTests: XCTestCase {
             .bind(host: "127.0.0.1", port: 0).get()
     }
 
-    private final class StubServer: ChannelInboundHandler {
+    private final class StubServer: ChannelInboundHandler, @unchecked Sendable {
         typealias InboundIn = ByteBuffer
         let mode: Mode
         init(mode: Mode) { self.mode = mode }

@@ -28,6 +28,9 @@ public struct P2PPairingView: View {
     @State private var expires = Date.distantPast
     @State private var now = Date()
     @State private var devices: [PairedDevice] = []
+    @State private var renaming: String?
+    @State private var draft = ""
+    @State private var revoking: PairedDevice?
 
     /// `address` is where the other device will connect; by default the first address `LocalAddresses.ipv4()` finds.
     public init(host: P2PHost, name: String? = nil, address: String? = nil, validFor lifetime: TimeInterval = 120) {
@@ -66,11 +69,7 @@ public struct P2PPairingView: View {
                 Divider()
                 Text("Paired devices").font(.title3)
                 ForEach(devices) { device in
-                    HStack {
-                        Text(device.name)
-                        Spacer()
-                        Button("Revoke") { revoke(device) }
-                    }
+                    deviceRow(device)
                 }
             }
         }
@@ -84,6 +83,51 @@ public struct P2PPairingView: View {
             }
         }
         .onDisappear { host.pairing?.closePairing() }
+        .confirmationDialog(
+            revoking.map { "Revoke \"\($0.name)\"?" } ?? "",
+            isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
+            titleVisibility: .visible,
+            presenting: revoking
+        ) { device in
+            Button("Revoke", role: .destructive) { revoke(device) }
+        } message: { device in
+            Text(Self.caption(for: device) + ". It is refused from now on and its open connections are closed.")
+        }
+    }
+
+    /// One paired device: its name (changeable here, so the list can say who is who), when it paired and a short form of its
+    /// key, which the device shows too (`SCWPeerConnection.deviceFingerprint`).
+    @ViewBuilder
+    private func deviceRow(_ device: PairedDevice) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                if renaming == device.id {
+                    TextField("Name", text: $draft).onSubmit { saveName(device) }
+                } else {
+                    Text(device.name)
+                }
+                Text(Self.caption(for: device)).font(.footnote).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if renaming == device.id {
+                Button("Save") { saveName(device) }
+            } else {
+                Button("Rename") { draft = device.name; renaming = device.id }
+                Button("Revoke", role: .destructive) { revoking = device }
+            }
+        }
+    }
+
+    private func saveName(_ device: PairedDevice) {
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { _ = host.pairing?.rename(deviceID: device.id, to: name) }
+        renaming = nil
+        devices = host.pairing?.devices ?? []
+    }
+
+    /// "Paired 25 Nov 2026 · key AbCdEf123456".
+    static func caption(for device: PairedDevice) -> String {
+        "Paired \(device.pairedAt.formatted(date: .abbreviated, time: .omitted)) · key \(TunnelFingerprint.short(device.id))"
     }
 
     private func open() {

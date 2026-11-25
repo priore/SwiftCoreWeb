@@ -9,7 +9,8 @@ import NIOCore
 import NIOSSH
 
 /// Converts between the `SSHChannelData` of an SSH child channel and plain bytes, so a byte-for-byte relay can sit on it.
-final class SSHDataCodec: ChannelDuplexHandler {
+/// Lives on one event loop only, hence `@unchecked Sendable` (NIO asks handlers to be `Sendable` when added from outside the loop).
+final class SSHDataCodec: ChannelDuplexHandler, @unchecked Sendable {
     typealias InboundIn = SSHChannelData
     typealias InboundOut = ByteBuffer
     typealias OutboundIn = ByteBuffer
@@ -17,8 +18,9 @@ final class SSHDataCodec: ChannelDuplexHandler {
 
     func handlerAdded(context: ChannelHandlerContext) {
         // A peer that finishes sending must still be able to receive the reply.
+        let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
         context.channel.setOption(ChannelOptions.allowRemoteHalfClosure, value: true).whenFailure { error in
-            context.fireErrorCaught(error)
+            bound.value.fireErrorCaught(error)
         }
     }
 

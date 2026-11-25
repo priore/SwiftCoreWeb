@@ -1,0 +1,66 @@
+name: ShowcaseApp
+options:
+  bundleIdPrefix: com.swiftcoreweb.showcase
+  deploymentTarget:
+    iOS: "16.0"
+
+packages:
+  SwiftCoreWeb:
+    path: ../..
+
+# Config.xcconfig is tracked; Local.xcconfig (git-ignored) overrides the team and bundle id for a real device.
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+
+targets:
+  ShowcaseApp:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: www
+        type: folder
+        buildPhase: resources
+      - path: Views
+        type: folder
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: SCW Showcase
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: "The showcase runs local servers and finds paired devices on your network."
+        NSBonjourServices:
+          - _scw-p2p._tcp
+        CFBundleURLTypes:
+          - CFBundleURLName: SwiftCoreWeb P2P pairing
+            CFBundleURLSchemes:
+              - scw-p2p
+    # Mac Catalyst: the same app runs as a native Mac process (the P2P host on the Mac). The sandbox needs both network entitlements.
+    entitlements:
+      path: ShowcaseApp.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+        # Catalyst uses the iOS-style keychain: SecretStore (JWT secret, tunnel keys) needs an access group.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
+    settings:
+      base:
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        SWIFT_VERSION: 6.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - package: SwiftCoreWeb
+        product: SwiftCoreWeb
+      - package: SwiftCoreWeb
+        product: SwiftCoreWebDashboard
+      - package: SwiftCoreWeb
+        product: SwiftCoreWebKit
+      - package: SwiftCoreWeb
+        product: SwiftCoreWebP2P

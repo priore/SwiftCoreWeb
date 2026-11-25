@@ -28,7 +28,7 @@ struct PairingAuthDelegate: NIOSSHServerUserAuthenticationDelegate {
             }
         case .password(let offered):
             if pairing.isPairingOpen, let device = DeviceUsername.decode(request.username),
-               pairing.attemptPairing(device: device, token: offered.password) {
+               pairing.attemptPairing(device: device, token: offered.password, name: DeviceUsername.name(of: request.username)) {
                 onAuthenticated(TunnelFingerprint.of(device))
                 return responsePromise.succeed(.success)
             }
@@ -46,8 +46,9 @@ final class CredentialAuthDelegate: NIOSSHClientUserAuthenticationDelegate {
     private let credential: TunnelCredential
     private var offered = false
 
-    init(key: NIOSSHPrivateKey, credential: TunnelCredential) {
-        self.username = DeviceUsername.encode(key.publicKey)
+    init(key: NIOSSHPrivateKey, credential: TunnelCredential, deviceName: String? = nil) {
+        // The name is only for the host's list at pairing; a later connection proves itself with the key alone.
+        if case .pairing = credential { self.username = DeviceUsername.encode(key.publicKey, name: deviceName) } else { self.username = DeviceUsername.encode(key.publicKey) }
         self.key = key
         self.credential = credential
     }

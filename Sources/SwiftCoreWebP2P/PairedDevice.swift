@@ -15,4 +15,7 @@ public struct PairedDevice: Codable, Sendable, Equatable, Identifiable {
     /// The device's public key in OpenSSH form (`ssh-ed25519 AAAA...`).
     public let publicKey: String
     public let pairedAt: Date
+    /// `true` once the host's own side changed the name (`PairingManager.rename`): a later pairing of the same device does
+    /// not overwrite it with the name the device sends. `nil` for lists saved before this existed.
+    public var nameSetByHost: Bool? = nil
 }

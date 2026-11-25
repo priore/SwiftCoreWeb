@@ -45,7 +45,7 @@ struct PeerPreambleDecoder: ByteToMessageDecoder {
         }
         accepted = true
         promise.succeed(String(parts[2])) // synchronous: the HTTP handlers are in place before any byte is forwarded
-        context.pipeline.removeHandler(context: context, promise: nil)
+        _ = context.pipeline.syncOperations.removeHandler(context: context)
         // ByteToMessageHandler does not pass leftover bytes on by itself: forward what followed the line now.
         return forward(&buffer, context)
     }

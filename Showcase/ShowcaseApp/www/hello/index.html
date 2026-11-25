@@ -7,15 +7,15 @@
   See LICENSE at the repository root. Source-available, not open-source.
 
   This is a plain static file, not a Swift string embedded in
-  HelloWorldServer.swift: the framework's static-file/SPA hosting serves it
-  as-is (HelloWorldServer.swift: app.useSpa(root: .bundle("www"))), the same
-  way ShowcaseServer.swift serves its release-mode Vue build. Keeping HTML
+  HelloServer.swift: the framework's static-file/SPA hosting serves it
+  as-is (HelloServer.swift: app.useSpa(root: .bundle("www/hello"))), the same
+  way TodoServer.swift serves its page. Keeping HTML
   out of Swift code means the framework's routing/DI/middleware pipeline
   stays purely a backend concern, and this file can be edited, previewed, or
   swapped out without recompiling the app.
 
   Rendered with the framework's built-in Vue 3 runtime
-  (app.useVue() in HelloWorldServer.swift — serves /_framework/vue.js and
+  (app.useVue() in HelloServer.swift — serves /_framework/vue.js and
   /_framework/api.js) instead of manual DOM manipulation
   (document.getElementById, textContent, …): Vue's `{{ }}` bindings below
   update automatically whenever the underlying data changes, and Vue is
@@ -65,7 +65,7 @@
     -->
     <script type="module">
         // Both imports resolve against routes the framework registers via
-        // app.useVue() in HelloWorldServer.swift — not real files on disk,
+        // app.useVue() in HelloServer.swift — not real files on disk,
         // and not a CDN URL, so this page works fully offline on the
         // device. See Sources/SwiftCoreWeb/VueRuntime.swift for exactly
         // what each one serves.
@@ -95,7 +95,7 @@
             async mounted() {
                 try {
                     // Calls the /api/device-name route registered in
-                    // HelloWorldServer.swift. Same-origin request (the page
+                    // HelloServer.swift. Same-origin request (the page
                     // and the API are served by the same WebApplication on
                     // the same port), so no CORS configuration is needed.
                     const result = await api.get('/api/device-name')

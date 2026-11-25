@@ -4,8 +4,6 @@
 // Free for noncommercial use; commercial use requires a separate license from the author.
 // See LICENSE at the repository root. Source-available, not open-source.
 //
-// Showcase sample. Not part of the SwiftCoreWeb library targets — see
-// Showcase/README.md for how to wire these files into an Xcode app target.
 
 import Foundation
 import SwiftCoreWeb
@@ -13,12 +11,12 @@ import SwiftCoreWeb
 /// A macro-based controller (the pluggable authentication schemes design): `@Controller` generates
 /// `registerRoutes(into:)` at compile time from the `@Get`/`@Post` markers
 /// below — zero runtime reflection, zero type discovery beyond the explicit
-/// `app.mapControllers(TodoController.self)` call in `ShowcaseServer`.
+/// `app.mapControllers(TodoController.self)` call in `TodoServer`.
 ///
 /// Every handler resolves `TodoStore` from the DI container with the
 /// `Service<T>` parameter-binding wrapper (the parameter-binding rules.5) rather than a global, so
 /// the same store instance is shared with the Minimal API closure routes in
-/// `ShowcaseServer.registerMinimalApiRoutes`. Note the explicit generic
+/// `TodoServer.make()`. Note the explicit generic
 /// spelling `Service<TodoStore>` — the macro reads the parameter's declared
 /// type syntax, so the wrapper must appear as a type, not as a
 /// `@propertyWrapper` attribute on the parameter.
@@ -38,7 +36,7 @@ final class TodoController {
     }
 
     /// Requires any authenticated identity — either the JWT or the API-key
-    /// scheme registered in `ShowcaseServer.makeApplication()` satisfies this.
+    /// scheme registered in `TodoServer.make()` satisfies this.
     @Post("/", auth: .authenticated, summary: "Creates a new todo item.")
     func create(_ todo: Todo, store: Service<TodoStore>) async throws -> Todo {
         store.wrappedValue.add(todo)
@@ -47,8 +45,7 @@ final class TodoController {
 
     /// Restricted to the `admin` role, on top of requiring authentication.
     @Delete("/{id:int}", auth: .roles(["admin"]), summary: "Deletes a todo item (admin only).")
-    func delete(id: Int) async throws {
-        // ponytail: the in-memory demo store has no delete method yet;
-        // add one if the showcase grows a real delete flow.
+    func delete(id: Int, store: Service<TodoStore>) async throws {
+        guard store.wrappedValue.remove(id) else { throw HttpError(.notFound, "No todo with id \(id)") }
     }
 }

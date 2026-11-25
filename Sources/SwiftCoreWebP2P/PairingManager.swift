@@ -118,7 +118,7 @@ public final class PairingManager: Sendable {
 
     /// Checks `token` for `device` and, if it is the open session's, registers the device and ends the session.
     /// Every call uses up an attempt, right or wrong.
-    func attemptPairing(device: NIOSSHPublicKey, token: String) -> Bool {
+    func attemptPairing(device: NIOSSHPublicKey, token: String, name: String? = nil) -> Bool {
         let current = now()
         let accepted = state.withLockedValue { state -> Bool in
             guard var session = state.session, session.expiresAt > current, session.attemptsLeft > 0 else {
@@ -135,11 +135,14 @@ public final class PairingManager: Sendable {
         guard accepted else { return false }
         let id = TunnelFingerprint.of(device)
         return state.withLockedValue { state in
-            // A device already paired keeps its name and date. The new list is saved first: a pairing that could not be
+            // A device already paired keeps its date, and its name only if the host's owner renamed it. The new list is saved first: a pairing that could not be
             // made durable is not granted.
             var devices = state.devices
-            if !devices.contains(where: { $0.id == id }) {
-                devices.append(PairedDevice(id: id, name: "Device " + id.dropFirst(7).prefix(6), publicKey: String(openSSHPublicKey: device), pairedAt: current))
+            if let index = devices.firstIndex(where: { $0.id == id }) {
+                // A device paired again takes the name it gives now, unless the host's owner renamed it.
+                if let name, devices[index].nameSetByHost != true { devices[index].name = name }
+            } else {
+                devices.append(PairedDevice(id: id, name: name ?? "Device " + id.dropFirst(7).prefix(6), publicKey: String(openSSHPublicKey: device), pairedAt: current))
             }
             guard persist(devices) else { return false }
             state.devices = devices
@@ -170,6 +173,7 @@ public final class PairingManager: Sendable {
             guard let index = state.devices.firstIndex(where: { $0.id == deviceID }) else { return false }
             var devices = state.devices
             devices[index].name = name
+            devices[index].nameSetByHost = true
             guard persist(devices) else { return false }
             state.devices = devices
             state.pendingSave = false

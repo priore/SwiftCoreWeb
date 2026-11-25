@@ -10,7 +10,7 @@ import NIOCore
 /// Relays bytes between two channels that live on the same event loop, with backpressure and half-close:
 /// each handler writes what its partner reads, pauses its own reads while the partner's channel is not writable,
 /// and passes on end-of-input and closure.
-final class TunnelRelayHandler: ChannelDuplexHandler {
+final class TunnelRelayHandler: ChannelDuplexHandler, @unchecked Sendable { // both sides live on one event loop
     typealias InboundIn = ByteBuffer
     typealias OutboundIn = ByteBuffer
     typealias OutboundOut = ByteBuffer
@@ -51,7 +51,8 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
         guard let partner, let partnerContext = partner.context else { return context.close(promise: nil) }
         partnerContext.write(wrapOutboundOut(unwrapInboundIn(data)), promise: nil)
         if !partnerContext.channel.isWritable {
-            context.channel.setOption(ChannelOptions.autoRead, value: false).whenFailure { _ in context.close(promise: nil) }
+            let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
+            context.channel.setOption(ChannelOptions.autoRead, value: false).whenFailure { _ in bound.value.close(promise: nil) }
         }
     }
 
@@ -61,7 +62,8 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
 
     func channelWritabilityChanged(context: ChannelHandlerContext) {
         if context.channel.isWritable, let partnerContext = partner?.context {
-            partnerContext.channel.setOption(ChannelOptions.autoRead, value: true).whenFailure { _ in partnerContext.close(promise: nil) }
+            let bound = NIOLoopBound(partnerContext, eventLoop: partnerContext.eventLoop)
+            partnerContext.channel.setOption(ChannelOptions.autoRead, value: true).whenFailure { _ in bound.value.close(promise: nil) }
         }
         context.fireChannelWritabilityChanged()
     }
@@ -85,7 +87,8 @@ final class TunnelRelayHandler: ChannelDuplexHandler {
         guard let context else { return }
         let marker = context.eventLoop.makePromise(of: Void.self)
         context.writeAndFlush(wrapOutboundOut(context.channel.allocator.buffer(capacity: 0)), promise: marker)
-        marker.futureResult.whenComplete { _ in context.close(mode: mode, promise: nil) }
+        let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
+        marker.futureResult.whenComplete { _ in bound.value.close(mode: mode, promise: nil) }
     }
 
     func errorCaught(context: ChannelHandlerContext, error: Error) {

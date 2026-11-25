@@ -27,16 +27,16 @@ extension WebApplication {
             } catch let httpError as HttpError {
                 logger.error("Unhandled HttpError: \(httpError.status.rawValue, privacy: .public) \(httpError.detail ?? "", privacy: .private)")
                 let detail = isDevelopment ? httpError.detail : nil
-                ctx.response = try Results.problem(status: httpError.status, detail: detail).response
+                ctx.response = Results.problem(status: httpError.status, detail: detail).response
             } catch let problem as ProblemDetails {
                 logger.error("Unhandled ProblemDetails: \(problem.status, privacy: .public)")
                 var adjusted = problem
                 if !isDevelopment { adjusted.detail = nil }
-                ctx.response = try Results.json(adjusted, status: HttpStatusCode(problem.status)).response
+                ctx.response = Results.json(adjusted, status: HttpStatusCode(problem.status)).response
             } catch {
                 logger.error("Unhandled error: \(String(describing: error), privacy: .private)")
                 let detail = isDevelopment ? String(describing: error) : nil
-                ctx.response = try Results.problem(status: .internalServerError, detail: detail).response
+                ctx.response = Results.problem(status: .internalServerError, detail: detail).response
             }
         }
     }

@@ -143,20 +143,17 @@ guide with runnable examples — the full index is [`docs/README.md`](docs/READM
 
 ## Showcase
 
-`Showcase/` is a complete, real end-to-end sample app — not a toy. It compiles against the actual API, and includes:
+`Showcase/` is one real iOS app with a menu: every entry starts its own server and shows what it serves. It compiles against the actual API, and includes:
 
-- A SwiftUI app whose device screen shows the [on-device dashboard](docs/web/DASHBOARD_GUIDE.md) while `/` keeps serving the site to browsers
-- A macro-based `@Controller` alongside closure Minimal API routes, on the same server
-- Two authentication schemes: JWT and a custom API-key header
-- SwiftUI `ScenePhase` lifecycle binding, plus keep-awake
+- Hello World: a static Vue page and a JSON route
+- A macro-based `@Controller` alongside closure Minimal API routes, JWT and API-key authentication, OpenAPI
+- [Live Pages](docs/web/LIVE_PAGES_GUIDE.md), Server-Sent Events and a WebSocket echo
+- The [on-device dashboard](docs/web/DASHBOARD_GUIDE.md)
+- [Peer-to-peer access](docs/P2P_TRANSPORT.md): host, client (pairs from a QR code scanned with the Camera app), and a rendezvous server
 
-It also walks through the three frontend workflows you'll actually use, and ships ready-to-copy `Info.plist` keys, `vite.config.js`, and both scripts:
+It also walks through the three frontend workflows (Vite on the Mac, on-device dev-deploy, a production build phase) and how to try peer-to-peer from another network.
 
-- Vite on the Mac with API proxying
-- on-device dev-deploy with live reload
-- a production Xcode build phase that copies `dist/` into the bundle
-
-See `Showcase/README.md` for the full walkthrough and how to wire the sample into an Xcode project. It ships as source files, not an `.xcodeproj`, since the framework itself is SPM-only.
+Open `Showcase/ShowcaseApp/ShowcaseApp.xcodeproj` and press Run; see `Showcase/README.md` for the details.
 
 ---
 

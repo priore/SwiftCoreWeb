@@ -19,6 +19,6 @@ final class ChannelActivationHandler: ChannelInboundHandler, RemovableChannelHan
     func channelActive(context: ChannelHandlerContext) {
         onActive(context.remoteAddress?.ipAddress)
         context.fireChannelActive()
-        context.pipeline.removeHandler(self, promise: nil)
+        _ = context.pipeline.syncOperations.removeHandler(context: context)
     }
 }

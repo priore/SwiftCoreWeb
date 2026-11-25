@@ -12,12 +12,12 @@ import SwiftCoreWeb
 @testable import SwiftCoreWebP2P
 
 final class RendezvousTests: XCTestCase {
-    private func startRendezvous(maxHosts: Int = 1000) async throws -> RendezvousClient {
+    private func startRendezvous(maxHosts: Int = 1000, trustForwardedFor: Bool = false) async throws -> RendezvousClient {
         let port = Int.random(in: 30_000..<60_000)
         let builder = WebApplication.createBuilder()
         builder.usePort(port)
         let app = builder.build()
-        P2PRendezvous(maxHosts: maxHosts).mount(on: app)
+        P2PRendezvous(maxHosts: maxHosts, trustForwardedFor: trustForwardedFor).mount(on: app)
         Task { try? await app.runAsync() }
         for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
         addTeardownBlock { try? await app.stopAsync() }
@@ -57,6 +57,29 @@ final class RendezvousTests: XCTestCase {
         XCTAssertEqual(knocks.first?.address, "127.0.0.1", "the address the rendezvous saw")
         let again = try await rendezvous.collectKnocks(hostKey: host.key, hostFingerprint: host.fingerprint)
         XCTAssertEqual(again, [], "knocks are read once")
+    }
+
+    /// Posts a signed knock by hand, with a header a proxy would add, and returns the address the host reads back.
+    private func knockAddress(trusting: Bool, forwardedFor: String) async throws -> String? {
+        let rendezvous = try await startRendezvous(trustForwardedFor: trusting)
+        let host = identity(), device = identity()
+        try await rendezvous.publish([.init(kind: "relay", host: "198.51.100.7", port: 7)], hostKey: host.key, hostFingerprint: host.fingerprint)
+        let knock = RendezvousKnockRequest(hostFingerprint: host.fingerprint, issued: Int(Date().timeIntervalSince1970))
+        let envelope = try SignedEnvelope.sign(JSONEncoder().encode(knock), with: device.key)
+        var request = URLRequest(url: rendezvous.baseURL.appendingPathComponent("p2p/v1/hosts/\(RendezvousPath.hostID(host.fingerprint))/knocks"))
+        request.httpMethod = "POST"
+        request.httpBody = try JSONEncoder().encode(envelope)
+        request.setValue(forwardedFor, forHTTPHeaderField: "X-Forwarded-For")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 204)
+        return try await rendezvous.collectKnocks(hostKey: host.key, hostFingerprint: host.fingerprint).first?.address
+    }
+
+    func testForwardedForIsUsedOnlyWhenTrusted() async throws {
+        let trusted = try await knockAddress(trusting: true, forwardedFor: "198.51.100.9, 203.0.113.7")
+        XCTAssertEqual(trusted, "203.0.113.7", "the last entry is the one the trusted proxy appended")
+        let ignored = try await knockAddress(trusting: false, forwardedFor: "203.0.113.7")
+        XCTAssertEqual(ignored, "127.0.0.1", "without the option a header never chooses the address")
     }
 
     func testKnocksNeedARegisteredHostAndAForgedOneIsDropped() async throws {

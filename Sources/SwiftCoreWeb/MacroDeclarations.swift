@@ -75,5 +75,5 @@ public macro Route(_ method: HttpMethod, _ path: String, auth: AuthRequirement =
 /// Declares a `Codable` struct's JSON schema for `/openapi.json` generation
 /// (the realtime and OpenAPI contract design), computed entirely at compile time from the struct's stored
 /// properties — no reflection.
-@attached(member)
+@attached(member, names: named(openApiSchema))
 public macro ApiModel() = #externalMacro(module: "SwiftCoreWebMacros", type: "ApiModelMacro")

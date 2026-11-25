@@ -96,7 +96,7 @@ final class CodePairingTests: XCTestCase {
         await peer.stop()
     }
 
-    func testTheViewShowsTheCodeInTwoGroups() {
+    @MainActor func testTheViewShowsTheCodeInTwoGroups() {
         XCTAssertEqual(P2PPairingView.spaced("123456"), "123 456")
         XCTAssertEqual(P2PPairingView.spaced("abc"), "abc")
     }

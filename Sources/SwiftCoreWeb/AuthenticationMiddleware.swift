@@ -74,12 +74,12 @@ extension WebApplication {
                 }
                 guard roles.contains(where: user.isInRole) else {
                     securityLogger.notice("Authorization denied: user lacks required role for \(ctx.request.path, privacy: .public)")
-                    ctx.response = try Results.forbidden().response
+                    ctx.response = Results.forbidden().response
                     return
                 }
             case .scheme(let schemeName):
                 guard let user = ctx.user, user.scheme == schemeName else {
-                    ctx.response = ctx.user == nil ? self.unauthorizedResponse() : (try Results.forbidden().response)
+                    ctx.response = ctx.user == nil ? self.unauthorizedResponse() : (Results.forbidden().response)
                     return
                 }
             case .policy(let policyName):
@@ -89,7 +89,7 @@ extension WebApplication {
                 }
                 guard let policy = policies[policyName], policy(user) else {
                     securityLogger.notice("Authorization denied: policy '\(policyName, privacy: .public)' failed for \(ctx.request.path, privacy: .public)")
-                    ctx.response = try Results.forbidden().response
+                    ctx.response = Results.forbidden().response
                     return
                 }
             }
@@ -98,7 +98,7 @@ extension WebApplication {
     }
 
     private func unauthorizedResponse() -> HttpResponse {
-        var response = (try? Results.unauthorized().response) ?? HttpResponse(status: .unauthorized)
+        var response = Results.unauthorized().response
         response.headers["WWW-Authenticate"] = "Bearer"
         return response
     }

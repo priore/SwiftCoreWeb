@@ -2,49 +2,58 @@
 
 Free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0); commercial use requires a separate commercialization agreement with the author. Source-available, not open-source. See `LICENSE` at the repository root.
 
-This directory is a real, compilable set of Swift source files demonstrating every piece of SwiftCoreWeb end to end: a macro-based controller and closure Minimal API routes on one server, two authentication schemes, a `WKWebView`-hosted Vue frontend, SwiftUI lifecycle binding, and keep-awake. **It is not an Xcode project** — there is no `.xcodeproj` here — because the framework itself only ships as an SPM package; wiring these files into an app target is a five-minute manual step, below.
+One iOS app with a menu: every entry starts a real server and shows what it serves. Open `ShowcaseApp/ShowcaseApp.xcodeproj` and press Run (iOS 16+, simulator or device).
 
-## Contents
-
-```
-Showcase/
-├── README.md                    (this file)
-├── Info.plist.snippet.xml       Required Info.plist keys (spec the concurrency/lifecycle/network watchdog design)
-├── vite.config.js               Ready-to-copy Mode A dev-server config
-└── ShowcaseApp/
-    ├── Sources/
-    │   ├── ShowcaseApp.swift        @main entry point
-    │   ├── ShowcaseRootView.swift   WKWebView host + ScenePhase lifecycle binding
-    │   ├── ShowcaseWebView.swift    WKWebView UIViewRepresentable wrapper
-    │   ├── ShowcaseServer.swift     Builds the WebApplication: auth, middleware, routes
-    │   └── Models.swift             Todo (@ApiModel) + TodoStore (DI service)
-    ├── Controllers/
-    │   └── TodoController.swift     @Controller macro-based routes
-    └── www/
-        └── index.html                Zero-build Vue page (the built-in Vue runtime design)
+```sh
+cd Showcase/ShowcaseApp
+xcodegen generate        # only after editing project.yml (brew install xcodegen)
+open ShowcaseApp.xcodeproj
 ```
 
-`scripts/deploy-to-device.mjs` (Mode B pusher) and `scripts/copy-dist-to-bundle.sh` (Mode C build phase) live at the repository root's `scripts/` directory, alongside the existing `scripts/update-vue.sh`.
+## The menu
 
-## Wiring this into an Xcode project
+| Entry | What it runs | Source |
+|-------|--------------|--------|
+| Hello World | Static Vue page (built-in Vue runtime, no build step) and one JSON route, listening on the LAN (`http://<device-ip>:8080/`) | `HelloServer.swift`, `www/hello/` |
+| Todo API | `@Controller` with `Service<T>` injection, closure routes and groups, JWT + `X-Api-Key` schemes, `@ApiModel` + `/openapi.json`, security headers | `TodoServer.swift`, `TodoController.swift`, `TodoModels.swift`, `www/todos/` |
+| Live Pages | Server-driven page: state in Swift, template in `Views/counter.html` | `LivePagesServer.swift`, `Views/` |
+| Realtime | Server-Sent Events and a WebSocket echo | `RealtimeServer.swift`, `www/realtime/` |
+| Device dashboard | The on-device metrics dashboard for a running server | `DashboardDemoView.swift` |
+| P2P host | `useP2P`, `P2PPairingView` (QR code, short code, paired devices), routes reachable through the tunnel (`/whoami`, `/api/users`) | `P2PHostView.swift` |
+| P2P client | Pairs from a `scw-p2p://` link and calls the host through the tunnel; shows the route used (`local`, `discovered`, `direct`, `relay`), timings and errors | `P2PClientView.swift` |
+| Rendezvous server | `P2PRendezvous` on port 9090, running beside the host | `RendezvousView.swift` |
+| Remote access settings | Rendezvous URL and TURN server for the host; the shared secret goes to the Keychain (`SecretStore`) | `SettingsView.swift`, `RemoteSettings.swift` |
 
-1. Create a new iOS App target (SwiftUI lifecycle, iOS 15.0 minimum deployment target) in Xcode, or use an existing one.
-2. Add the SwiftCoreWeb package: File > Add Package Dependencies… and point it at this repository (or a local path), then link the `SwiftCoreWeb` library to your app target (and `SwiftCoreWebKit` for the optional download helper used by `ShowcaseWebView.swift`). Do **not** link `SwiftCoreWebTesting` into the app target — that library is for test targets only.
-3. Drag `Showcase/ShowcaseApp/Sources/*.swift` and `Showcase/ShowcaseApp/Controllers/*.swift` into your app target (checking "Copy items if needed" and your target's membership checkbox).
-4. Add `Showcase/ShowcaseApp/www/` as a folder reference (blue folder icon, not a group) in "Copy Bundle Resources", or copy it into your Vue project's `dist/` output for Mode C — see below.
-5. Merge `Info.plist.snippet.xml`'s keys into your target's Info.plist (Xcode's target > Info tab, or the raw file if you don't use `GENERATE_INFOPLIST_FILE`).
-6. Build and run. The app starts the server, waits for its listener to bind, then shows a `WKWebView` pointed at `http://127.0.0.1:8080/`.
+Shared plumbing: `ServerRunner` (`AppModel.swift`) stops the previous server before the next one binds port 8080; `ServerGate.swift` starts a server with the screen, stops it when the screen goes away or the app is backgrounded and starts it again when active; `WebHostView.swift` is the `WKWebView` (with the `SwiftCoreWebKit` blob-download helper). Launch with `-demo todos` (any entry's raw name: `hello`, `todos`, `livePages`, `realtime`, `dashboard`, `p2pHost`, `p2pClient`, `rendezvous`, `settings`) to open that screen directly.
 
-## What each file demonstrates
+## Running on a real device
 
-- **`ShowcaseServer.swift`** — the framework's full request pipeline assembled in one place: `.useExceptionHandler()`, `.useSecurityHeaders()`, `.useCors()`, `.useRequestLogging()`, two authentication schemes (`.jwt` and a `.custom("apiKey")` header scheme) via one `.useAuthentication(...)` call, `.useAuthorization()`, a macro-based controller (`mapControllers(TodoController.self)`), closure Minimal API routes and route groups (`mapGroup(...).requireAuthorization(...)`), `mapOpenApi()`, `mapSse(...)`, `mapWebSocket(...)`, and the Vue/SPA hosting split between DEBUG (`useDevDeploy` + `useSpa(root: .documents("www"))`, Mode B) and release (`useSpa(root: .bundle("dist"))`, Mode C).
-- **`Controllers/TodoController.swift`** — `@Controller`/`@Get`/`@Post`/`@Delete` macro-based routing: path parameters (`{id:int}`), a JSON request body, DI-resolved services via the `Service<T>` parameter-binding wrapper, and `auth: .authenticated` / `auth: .roles(["admin"])` route metadata.
-- **`Models.swift`** — `@ApiModel` on a `Codable` struct (compile-time OpenAPI schema, no reflection) and a simple lock-protected in-memory store registered with `builder.services.addSingleton { TodoStore() }`.
-- **`ShowcaseWebView.swift`** — the `WKWebView` that loads the same-origin site the server just started, so its API calls need no CORS. It also shows the optional `SwiftCoreWebKit` helper (`BlobDownloadSupport`) forwarded to from the sample's own `WKNavigationDelegate`, paired with `app.useBlobDownloads()` in `ShowcaseServer.swift`, so `blob:` and `Content-Disposition: attachment` downloads work inside the web view (see [Blob downloads in WKWebView](../docs/web/BLOB_DOWNLOADS.md)).
-- **`ShowcaseRootView.swift`** — SwiftUI's `@Environment(\.scenePhase)` driving `stopAsync()`/`runAsync()` directly. The framework ships a UIKit-notifications lifecycle binding (`WebApplication.bindToLifecycle()`); this file is the SwiftUI-idiomatic alternative the framework's own documentation points to, since `ScenePhase` is a SwiftUI concern the core library does not need to depend on.
-- **`ShowcaseApp.swift`** — builds the `WebApplication` once at process launch (in a `UIApplicationDelegateAdaptor`) so it exists before the first view appears.
+The project builds for the simulator without any setup. For a device, create `ShowcaseApp/Local.xcconfig` (git-ignored, never commit it):
 
-Keep-awake (`builder.keepDeviceAwake(true)`) is on by default and shown explicitly in `ShowcaseServer.makeApplication()`; no extra code is needed to keep the device from auto-locking while the server runs in the foreground.
+```
+DEVELOPMENT_TEAM = <your team id>
+PRODUCT_BUNDLE_IDENTIFIER = com.example.yourname.showcase
+```
+
+The app's `Info.plist` already carries what the framework needs: `NSAppTransportSecurity/NSAllowsLocalNetworking`, `NSLocalNetworkUsageDescription`, `NSBonjourServices` (`_scw-p2p._tcp`) and the `scw-p2p` URL scheme, so the Camera app can open a pairing QR code in the showcase.
+
+## Running on the Mac
+
+The target supports Mac Catalyst, so the same app runs as a native Mac process (no simulator): select the *My Mac (Mac Catalyst)* destination, or
+
+```sh
+xcodebuild -project ShowcaseApp.xcodeproj -scheme ShowcaseApp -destination 'platform=macOS,variant=Mac Catalyst' -allowProvisioningUpdates build
+```
+
+It needs the signing team from `Local.xcconfig` (the sandbox's network-server entitlement and the Keychain access group, both declared in `project.yml`, require a signed app). Use it as the P2P host with an iPhone as the client.
+
+## Trying peer-to-peer
+
+**On the same network.** Run the app on the Mac (iOS Simulator) and open *P2P host*. On an iPhone on the same Wi-Fi, scan the QR code with the Camera app: it opens the showcase on *P2P client* with the link filled in. Tap *Pair*, then *Connect* and *Call /whoami and /api/users*. The log shows the route (`local`) and the time each call took.
+
+**From another network (4G/5G).** Needs a relay (coturn, TCP allocations) and a rendezvous both devices can reach from the internet. A router port-forward does not work behind CGNAT (an address in `100.64.0.0/10` on the router's WAN side). Follow [Peer-to-peer from another network: set-up guide](../docs/P2P_REMOTE_SETUP.md): a free Google Cloud server and `scripts/p2p-remote/setup-vm.sh`, then enter the printed values in *Remote access settings* and run the *Rendezvous server* screen with *Behind a proxy or SSH tunnel* on. Then pair on the local network first and, with the iPhone's Wi-Fi off and the cable unplugged, tap *Connect* in *P2P client*: `relay (TURN)` is the route to expect (`direct` means nothing when the relay shares the host's NAT).
+
+If pairing on the local network fails with `no route to host`, the QR code holds an address the phone cannot reach (a Mac with Ethernet and Wi-Fi has two): pick the other one in the *Address in the QR code* selector, and check *Settings > Privacy > Local Network* on the phone.
 
 ## Frontend development workflows (spec the frontend development workflows)
 
@@ -58,7 +67,7 @@ Full HMR, zero framework code on the frontend side.
 
 ### Mode B — Vue running on the device (DEBUG only)
 
-`ShowcaseServer.makeApplication()` already calls `app.useDevDeploy(root: .documents("www"))` under `#if DEBUG`. On launch, the Xcode console prints a random deploy token. To push a build:
+Add `app.useDevDeploy(root: .documents("www"))` under `#if DEBUG` next to `useSpa(root: .documents("www"))` in your server (the showcase screens serve from the app bundle and do not enable it). On launch, the Xcode console prints a random deploy token. To push a build:
 
 ```sh
 npm run build          # writes dist/
@@ -71,11 +80,11 @@ The device writes the upload atomically to `Documents/www` and signals every con
 
 1. Build your Vue project: `npm run build` (writes `dist/`).
 2. Add `scripts/copy-dist-to-bundle.sh` as a Run Script build phase on your app target, after "Copy Bundle Resources" (see the comment header in that script for the exact Xcode wiring, including Input/Output Files).
-3. `ShowcaseServer.makeApplication()`'s release branch already calls `app.useSpa(root: .bundle("dist"))`.
+3. The showcase servers already use this shape: `app.useSpa(root: .bundle("www/todos"))`; point it at `.bundle("dist")` for your build.
 
 ## Auth quick reference
 
-- **JWT**: `Authorization: Bearer <token>` signed with the HS256 secret written to the Keychain via `SecretStore.write("showcase-demo-signing-secret", forKey: "jwtSigningSecret")` in `ShowcaseServer.swift`. Issue a demo token with any JWT tool using that secret and `alg: HS256`.
+- **JWT**: `Authorization: Bearer <token>` signed with the HS256 secret written to the Keychain via `SecretStore.write(...)` in `TodoServer.swift`. Issue a demo token with any JWT tool using that secret and `alg: HS256`.
 - **API key**: `X-Api-Key: showcase-demo-key` — resolves a principal with the `admin` role, satisfying both `auth: .authenticated` and `auth: .roles(["admin"])` routes (e.g. `DELETE /api/todos/{id}`).
 
 Both schemes are registered in one `.useAuthentication(.jwt(...), .custom("apiKey") { ... })` call; whichever one resolves a principal first wins, and `ctx.user?.scheme` (or `AuthRequirement.scheme("apiKey")` on a route) can require one specifically.

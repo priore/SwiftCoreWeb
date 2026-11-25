@@ -177,4 +177,41 @@ final class PairingManagerTests: XCTestCase {
         }
         XCTAssertThrowsError(try PairingManager(storage: Refusing())) { XCTAssertEqual($0 as? TunnelError, .storageUnavailable) }
     }
+
+    func testDeviceNameTravelsWithThePairingAndIsCleaned() throws {
+        let key = deviceKey()
+        XCTAssertNotNil(DeviceUsername.decode(DeviceUsername.encode(key)), "no name: the key alone still decodes")
+        XCTAssertNil(DeviceUsername.name(of: DeviceUsername.encode(key)))
+        let username = DeviceUsername.encode(key, name: "  Anna's iPhone\n\u{7}  ")
+        XCTAssertEqual(DeviceUsername.name(of: username), "Anna's iPhone")
+        XCTAssertEqual(DeviceUsername.decode(username).map { TunnelFingerprint.of($0) }, TunnelFingerprint.of(key))
+        XCTAssertEqual(DeviceUsername.name(of: DeviceUsername.encode(key, name: String(repeating: "x", count: 100)))?.count, 40)
+
+        let manager = try PairingManager(storage: InMemoryTunnelStorage())
+        manager.openPairing()
+        let token = try XCTUnwrap(manager.payload(host: "127.0.0.1", port: 1, appPort: 2)?.token)
+        XCTAssertTrue(manager.attemptPairing(device: key, token: token, name: DeviceUsername.name(of: username)))
+        XCTAssertEqual(manager.devices.first?.name, "Anna's iPhone")
+
+        // Paired again: a name set by hand stays; the automatic label (an older pairing without a name) is replaced.
+        XCTAssertTrue(manager.rename(deviceID: TunnelFingerprint.of(key), to: "Kitchen iPad"))
+        manager.openPairing()
+        let again = try XCTUnwrap(manager.payload(host: "127.0.0.1", port: 1, appPort: 2)?.token)
+        XCTAssertTrue(manager.attemptPairing(device: key, token: again, name: "Anna's iPhone"))
+        XCTAssertEqual(manager.devices.first?.name, "Kitchen iPad")
+
+        let other = deviceKey()
+        manager.openPairing()
+        let third = try XCTUnwrap(manager.payload(host: "127.0.0.1", port: 1, appPort: 2)?.token)
+        XCTAssertTrue(manager.attemptPairing(device: other, token: third))
+        XCTAssertTrue(manager.devices.last?.name.hasPrefix("Device ") ?? false)
+        manager.openPairing()
+        let fourth = try XCTUnwrap(manager.payload(host: "127.0.0.1", port: 1, appPort: 2)?.token)
+        XCTAssertTrue(manager.attemptPairing(device: other, token: fourth, name: "Office Mac"))
+        XCTAssertEqual(manager.devices.last?.name, "Office Mac")
+        manager.openPairing()
+        let fifth = try XCTUnwrap(manager.payload(host: "127.0.0.1", port: 1, appPort: 2)?.token)
+        XCTAssertTrue(manager.attemptPairing(device: other, token: fifth, name: "Office Mac Pro"))
+        XCTAssertEqual(manager.devices.last?.name, "Office Mac Pro", "a name the device sent is replaced by the one it sends now")
+    }
 }

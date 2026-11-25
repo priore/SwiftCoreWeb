@@ -27,7 +27,7 @@ final class TURNAllocationTests: XCTestCase {
         }
     }
 
-    private final class Echo: ChannelInboundHandler {
+    private final class Echo: ChannelInboundHandler, @unchecked Sendable {
         typealias InboundIn = ByteBuffer
         func channelRead(context: ChannelHandlerContext, data: NIOAny) { context.writeAndFlush(data, promise: nil) }
     }
@@ -37,7 +37,7 @@ final class TURNAllocationTests: XCTestCase {
         let received = NIOLockedValueBox(ByteBuffer())
         func channelRead(context: ChannelHandlerContext, data: NIOAny) {
             var bytes = unwrapInboundIn(data)
-            received.withLockedValue { $0.writeBuffer(&bytes) }
+            _ = received.withLockedValue { $0.writeBuffer(&bytes) }
         }
     }
 

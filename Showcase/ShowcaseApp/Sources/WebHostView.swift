@@ -3,17 +3,14 @@
 // Licensed under the PolyForm Noncommercial License 1.0.0.
 // Free for noncommercial use; commercial use requires a separate license from the author.
 // See LICENSE at the repository root. Source-available, not open-source.
-//
-// Showcase sample. Not part of the SwiftCoreWeb library targets — see
-// Showcase/README.md for how to wire these files into an Xcode app target.
 
 import SwiftUI
 import WebKit
 import SwiftCoreWebKit
 
-/// A `WKWebView` hosting the site served by `ShowcaseServer.makeApplication()`
+/// A `WKWebView` hosting the site served by the demo server
 /// on the same device, same origin — no CORS needed (the SPA hosting design). Requires
-/// `NSAllowsLocalNetworking = YES` in Info.plist; see `Showcase/Info.plist.snippet.xml`.
+/// `NSAllowsLocalNetworking = YES` in Info.plist; see `Showcase/README.md`.
 ///
 /// The web view and its navigation delegate are this sample's own code;
 /// `BlobDownloadSupport` is a plain helper the coordinator forwards to, so a page that does

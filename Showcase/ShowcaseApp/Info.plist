@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>SCW Showcase</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -16,6 +18,17 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>SwiftCoreWeb P2P pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>scw-p2p</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSAppTransportSecurity</key>
@@ -23,8 +36,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_scw-p2p._tcp</string>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>This app runs a local web server so its Hello World page and API can be reached from this device on the same network.</string>
+	<string>The showcase runs local servers and finds paired devices on your network.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

@@ -63,6 +63,13 @@ final class PeerIdentityTests: XCTestCase {
         return (response as? HTTPURLResponse)?.statusCode ?? 0
     }
 
+    func testTheHostListsTheDeviceUnderTheNameItGave() async throws {
+        let fixture = try await makeFixture()
+        let payload = try XCTUnwrap(fixture.host.openPairing(host: "127.0.0.1"))
+        _ = try await SCWPeerConnection.pair(payload, deviceName: "Anna's iPhone", storage: InMemoryTunnelStorage())
+        XCTAssertEqual(fixture.host.pairing?.devices.map(\.name), ["Anna's iPhone"])
+    }
+
     func testTheAppSeesTheDeviceNotLoopback() async throws {
         let fixture = try await makeFixture()
         let (peer, base) = try await pair(fixture)
@@ -183,7 +190,7 @@ final class PeerIdentityTests: XCTestCase {
     }
 }
 
-private final class Collector: ChannelInboundHandler {
+private final class Collector: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = ByteBuffer
     private let received: NIOLockedValueBox<String>
     init(_ received: NIOLockedValueBox<String>) { self.received = received }

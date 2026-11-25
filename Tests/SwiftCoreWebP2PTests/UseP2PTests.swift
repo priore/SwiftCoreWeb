@@ -29,7 +29,7 @@ final class UseP2PTests: XCTestCase {
         XCTAssertNil(host.tunnelPort) // not running yet
         XCTAssertNil(host.openPairing(host: "127.0.0.1"))
 
-        Task { try await app.runAsync() }
+        Task { try? await app.runAsync() }
         let started = try await waitUntil { host.tunnelPort != nil }
         XCTAssertTrue(started)
         let payload = try XCTUnwrap(host.openPairing(host: "127.0.0.1", name: "Test"))
@@ -44,7 +44,7 @@ final class UseP2PTests: XCTestCase {
         // Stopping the server stops the tunnel; starting it again brings the tunnel back and the device is still paired.
         try await app.stopAsync()
         XCTAssertNil(host.tunnelPort)
-        Task { try await app.runAsync() }
+        Task { try? await app.runAsync() }
         let restarted = try await waitUntil { host.tunnelPort != nil }
         XCTAssertTrue(restarted)
         let pong = try await URLSession(configuration: .ephemeral).data(from: try await peer.start().appendingPathComponent("ping")).0
@@ -62,7 +62,7 @@ final class UseP2PTests: XCTestCase {
         let app = builder.build()
         addTeardownBlock { try? await app.stopAsync() }
         app.mapGet("/ping") { _ in "pong" }
-        Task { try await app.runAsync() }
+        Task { try? await app.runAsync() }
         let started = try await waitUntil { app.isRunning }
         XCTAssertTrue(started)
         XCTAssertFalse(host.isEnabled)

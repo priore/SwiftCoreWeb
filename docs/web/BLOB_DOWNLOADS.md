@@ -92,7 +92,7 @@ func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome dow
 func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { downloads.adopt(download) }
 ```
 
-The sample app does exactly this: `Showcase/ShowcaseApp/Sources/ShowcaseWebView.swift`.
+The sample app does exactly this: `Showcase/ShowcaseApp/Sources/WebHostView.swift`.
 
 Without the helper you can write the same two answers yourself: return `.download` for `<a download>` links and for responses with `Content-Disposition: attachment`.
 

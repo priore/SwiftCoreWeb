@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realtime</title>
+  <style>body { font: 16px -apple-system, sans-serif; margin: 1rem; } pre { background: #8882; padding: .5rem; min-height: 4rem; }</style>
+</head>
+<body>
+  <h1>Server-Sent Events</h1>
+  <button id="sse">Start stream</button>
+  <pre id="sseLog"></pre>
+  <h1>WebSocket echo</h1>
+  <input id="msg" value="hello"> <button id="send">Send</button>
+  <pre id="wsLog"></pre>
+  <script>
+    const log = (id, text) => { const el = document.getElementById(id); el.textContent += text + '\n' }
+    document.getElementById('sse').onclick = () => {
+      const es = new EventSource('/api/events')
+      es.onmessage = e => log('sseLog', e.data)
+      es.onerror = () => { log('sseLog', '(closed)'); es.close() }
+    }
+    const ws = new WebSocket(`ws://${location.host}/ws/echo`)
+    ws.onmessage = e => log('wsLog', e.data)
+    ws.onopen = () => log('wsLog', '(connected)')
+    document.getElementById('send').onclick = () => ws.send(document.getElementById('msg').value)
+  </script>
+</body>
+</html>

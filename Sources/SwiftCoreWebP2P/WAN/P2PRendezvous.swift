@@ -36,15 +36,22 @@ public final class P2PRendezvous: Sendable {
 
     private let maxHosts: Int
     private let recordLifetime: TimeInterval
+    private let trustForwardedFor: Bool
     private let maxKnocksPerHost = 16
     private let maxClockSkew = 300
     private let state = NIOLockedValueBox(State())
 
     /// `maxHosts` bounds the memory a flood of registrations can take; a record is dropped `recordLifetime` seconds after
     /// its host last published it.
-    public init(maxHosts: Int = 1000, recordLifetime: TimeInterval = 600) {
+    ///
+    /// `trustForwardedFor`: set it only when a reverse proxy on the same machine (or a tunnel that ends on it) sits in front of
+    /// the rendezvous. The address of a device is then read from the last entry of the `X-Forwarded-For` header the proxy
+    /// adds, instead of the address of the proxy. The header is used only when the connection itself comes from the
+    /// loopback address, so a request that reaches the rendezvous directly can never choose the address it is recorded under.
+    public init(maxHosts: Int = 1000, recordLifetime: TimeInterval = 600, trustForwardedFor: Bool = false) {
         self.maxHosts = maxHosts
         self.recordLifetime = recordLifetime
+        self.trustForwardedFor = trustForwardedFor
     }
 
     public func mount(on app: WebApplication) {
@@ -86,7 +93,7 @@ public final class P2PRendezvous: Sendable {
               RendezvousPath.hostID(request.hostFingerprint) == id, fresh(request.issued) else {
             return Results.problem(status: .badRequest, detail: "The knock must be signed, recent and for this host.")
         }
-        let entry = RendezvousKnock(address: ctx.request.remoteAddress ?? "unknown", envelope: envelope)
+        let entry = RendezvousKnock(address: clientAddress(ctx), envelope: envelope)
         let accepted = state.withLockedValue { state -> Bool in
             guard let stored = state.records[id], stored.expires > Date() else { return false } // only hosts that registered can be knocked on
             var list = state.knocks[id, default: []].filter { $0.envelope.key != envelope.key }
@@ -115,6 +122,15 @@ public final class P2PRendezvous: Sendable {
               let envelope = try? JSONDecoder().decode(SignedEnvelope.self, from: ctx.request.body),
               let (payload, signer) = envelope.verified() else { return nil }
         return (id, payload, signer, envelope)
+    }
+
+    /// The address a knock came from: the connection's, or, behind a trusted loopback proxy, the one the proxy saw.
+    private func clientAddress(_ ctx: HttpContext) -> String {
+        let peer = ctx.request.remoteAddress ?? "unknown"
+        guard trustForwardedFor, peer == "127.0.0.1" || peer == "::1",
+              let last = ctx.request.headers["X-Forwarded-For"]?.split(separator: ",").last else { return peer }
+        let forwarded = last.trimmingCharacters(in: .whitespaces)
+        return forwarded.isEmpty ? peer : forwarded
     }
 
     private func fresh(_ issued: Int) -> Bool {

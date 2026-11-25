@@ -37,7 +37,7 @@ final class SSHTunnelIntegrationTests: XCTestCase {
             }
         }
         app.mapPost("/echo") { ctx in String(decoding: ctx.request.body, as: UTF8.self) }
-        Task { try await app.runAsync() }
+        Task { try? await app.runAsync() }
         for _ in 0..<100 where !app.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
 
         let pairing = try PairingManager(storage: InMemoryTunnelStorage())

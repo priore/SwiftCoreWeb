@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Todo API</title>
+  <style>
+    body { font: 16px -apple-system, sans-serif; margin: 1rem; }
+    li { margin: .3rem 0; }
+    code { background: #8882; padding: 0 .3em; border-radius: 3px; }
+    .err { color: #c00; } .ok { color: #070; }
+    button { margin-right: .4rem; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>Todo API</h1>
+    <ul>
+      <li v-for="todo in todos" :key="todo.id">
+        <input type="checkbox" :checked="todo.isDone" disabled>
+        {{ todo.title }}
+        <button @click="remove(todo.id)">delete</button>
+      </li>
+    </ul>
+    <p>
+      <input v-model="title" placeholder="New todo">
+      <button @click="add(false)">Add without key</button>
+      <button @click="add(true)">Add with API key</button>
+    </p>
+    <p :class="ok ? 'ok' : 'err'">{{ status }}</p>
+    <p>Delete needs the <code>admin</code> role; adding needs any authenticated caller.
+       <a href="/openapi.json">openapi.json</a>, <a href="/api/admin/stats">/api/admin/stats</a> (401 without key).</p>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

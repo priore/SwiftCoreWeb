@@ -22,7 +22,7 @@ public enum LocalAddresses {
                   Int32(interface.ifa_flags) & IFF_UP != 0, Int32(interface.ifa_flags) & IFF_RUNNING != 0, Int32(interface.ifa_flags) & IFF_LOOPBACK == 0 else { continue }
             var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             guard getnameinfo(address, socklen_t(address.pointee.sa_len), &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
-            let text = String(cString: buffer)
+            let text = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
             if !found.contains(where: { $0.address == text }) { found.append((String(cString: interface.ifa_name), text)) }
         }
         // Wi-Fi and Ethernet (`en*`) first: cellular, VPN and bridge interfaces are rarely where a nearby device connects.

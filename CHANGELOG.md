@@ -7,40 +7,115 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- **Network resilience**: `SCWPeerConnection` follows the network path (`NWPathMonitor`): reconnects at once on a change of interface, pauses without a network; `P2PTimeouts` (short on the LAN, wider across the internet); retries limited to idempotent rendezvous calls.
+- **`P2PPairingView` shows whom you revoke.**
+  - Each paired device lists its name, when it paired and a short form of its key.
+  - **Rename** changes the name in place (`PairingManager.rename`).
+  - **Revoke** asks for confirmation and names the device.
+  - `SCWPeerConnection.deviceFingerprint` is the same key seen from the device, so both screens can be compared.
+- **Paired devices are listed under a name, not a code.**
+  - `SCWPeerConnection.pair(_:deviceName:)` and `pair(code:with:deviceName:)` send the device's name in the pairing request.
+  - The host's list (and `P2PPairingView`) shows it instead of `Device <fingerprint>`.
+  - The name is a label chosen by the device: cleaned (one line, at most 40 characters) and never used to decide anything.
+  - Default name: `SCWPeerConnection.defaultDeviceName()`. On iOS 16+ the system hides the name the user gave the device, so it is the model plus four characters of the vendor identifier.
+  - A device that pairs again sends its name again and the host takes it, unless the owner renamed it on the host (`PairedDevice.nameSetByHost`).
+- **`P2PRendezvous(trustForwardedFor:)`.**
+  - Behind a reverse proxy or an SSH tunnel on the same machine, a knock is recorded under the last `X-Forwarded-For` entry the proxy added.
+  - Without it the proxy's own address was recorded and the relay let the wrong address in.
+  - The header is honoured only for connections from the loopback address, so a direct request cannot choose its address.
+  - Off by default.
+- **Set-up guide for access from another network** (`docs/P2P_REMOTE_SETUP.md`).
+  - Step by step: the relay (coturn) and the rendezvous on a free Google Cloud server.
+  - `scripts/p2p-remote/` holds `setup-vm.sh`, `turnserver.conf.example` and `Caddyfile.example`.
+  - Includes the app code, a test checklist and troubleshooting.
+- **Showcase is now one iOS app with a menu** (`Showcase/ShowcaseApp`, project generated from `project.yml`).
+  - Examples: Hello World, Todo API (`@Controller`, JWT + API key, OpenAPI), Live Pages, Realtime (SSE + WebSocket), Device dashboard.
+  - P2P: host, client, rendezvous server and a settings screen for the relay (the TURN secret stays in the Keychain).
+  - The client pairs from a `scw-p2p://` link opened by the Camera app and shows the route used, timings and errors.
+  - It replaces `HelloWorldApp` and the source-only `ShowcaseApp`; signing overrides go in a git-ignored `Local.xcconfig`.
+  - It also runs as a native Mac process (Mac Catalyst), for example as the P2P host.
+- **Network resilience.**
+  - `SCWPeerConnection` follows the network path (`NWPathMonitor`): it reconnects at once when the interface changes and pauses without a network.
+  - `P2PTimeouts` are short on the LAN and wider across the internet.
+  - Only idempotent rendezvous calls are retried.
 - **NAT mapping check** (`P2PRemoteAccess(stunServers:)`): with a second STUN server a device detects a symmetric NAT and skips the direct attempt.
-- **Direct connection across networks (TCP hole punching)** tried before the relay: the host and device learn their public addresses from the TURN server's STUN service and connect to each other at the same time; `PeerRoute.direct`, `TunnelError.directConnectionFailed`. Verified on the loopback only; falls back to the relay.
-- **Pairing without a camera**: `SCWPeerConnection.discoverHosts()` and `pair(code:with:confirm:)` (six-digit code shown by the host, host key confirmed by the user), `P2PHost.openPairing(shortCode:)`; `P2PPairingView` shows the code.
+- **Direct connection across networks (TCP hole punching)**, tried before the relay.
+  - Host and device learn their public addresses from the TURN server's STUN service and connect to each other at the same time.
+  - New: `PeerRoute.direct` and `TunnelError.directConnectionFailed`.
+  - Verified on the loopback only; falls back to the relay.
+- **Pairing without a camera.**
+  - The host shows a six-digit code (`P2PHost.openPairing(shortCode:)`, also shown by `P2PPairingView`).
+  - The device finds hosts with `SCWPeerConnection.discoverHosts()` and pairs with `pair(code:with:confirm:)`; the user confirms the host key.
 - **OpenSSH interoperability check** (`scripts/p2p-openssh-interop.sh`): the machine's `ssh` forwards a request through the tunnel with a paired key.
-- **`SCWPeerConnection` reconnects by itself** on the same loopback URL when the SSH connection drops, and TCP keepalive notices a vanished peer in about a minute.
-- **`P2PPairingView`**: a SwiftUI pairing screen for the host (QR code, countdown, host key fingerprint, paired devices with revoke) that works on iOS, macOS and tvOS.
-- **tvOS 15+ support** for `SwiftCoreWeb`, `SwiftCoreWebDashboard` and `SwiftCoreWebP2P` (no screen dimming, battery metrics, pasteboard or `Process`-based zip deploy on tvOS; `SwiftCoreWebKit` is empty there). CI builds for tvOS.
-- **`SwiftCoreWebP2P`: access from another network through a TURN relay.** `useP2P(remote:)` with `P2PRemoteAccess` (a TURN server with TCP allocations, RFC 6062, and a rendezvous), `P2PRendezvous` (mountable on an SCW app: signed host records and device knocks), `SCWPeerConnection.currentRoute` (`.local`, `.discovered`, `.relay`). Supports temporary TURN credentials from a shared secret. Includes a STUN message codec and Binding client (RFC 8489) and a TURN client; verified against `coturn` on the loopback.
-- **Per-route exposure for peers.** `WebApplication.setPeerAccess(_:allowed:)`, `setPeerAccessDefault(allowed:)` and `RouteGroup.setPeerAccess(allowed:)` decide which paths requests from an extension's peer listener may reach (most specific prefix wins; denied paths answer `404`, including WebSocket upgrades). `SwiftCoreWebP2P` wraps them as `app.useP2P(_:)`, `app.useP2P(_:_:)` and `RouteGroup.useP2P(_:)`.
+- **`SCWPeerConnection` reconnects by itself** on the same loopback URL when the SSH connection drops; TCP keepalive notices a vanished peer in about a minute.
+- **`P2PPairingView`: a SwiftUI pairing screen for the host** (iOS, macOS, tvOS).
+  - QR code, countdown and host key fingerprint.
+  - Paired devices with revoke.
+- **tvOS 15+ support** for `SwiftCoreWeb`, `SwiftCoreWebDashboard` and `SwiftCoreWebP2P`.
+  - Not available on tvOS: screen dimming, battery metrics, pasteboard and `Process`-based zip deploy; `SwiftCoreWebKit` is empty.
+  - CI builds for tvOS.
+- **`SwiftCoreWebP2P`: access from another network through a TURN relay.**
+  - `useP2P(remote:)` takes a `P2PRemoteAccess`: a TURN server with TCP allocations (RFC 6062) and a rendezvous.
+  - `P2PRendezvous` mounts on an SCW app and keeps signed host records and device knocks.
+  - `SCWPeerConnection.currentRoute` reports `.local`, `.discovered` or `.relay`.
+  - Temporary TURN credentials can be derived from a shared secret.
+  - Includes a STUN codec and Binding client (RFC 8489) and a TURN client, verified against `coturn` on the loopback.
+- **Per-route exposure for peers.**
+  - `WebApplication.setPeerAccess(_:allowed:)`, `setPeerAccessDefault(allowed:)` and `RouteGroup.setPeerAccess(allowed:)` decide which paths an extension's peer listener may reach.
+  - The most specific prefix wins; denied paths answer `404`, WebSocket upgrades included.
+  - `SwiftCoreWebP2P` wraps them as `app.useP2P(_:)`, `app.useP2P(_:_:)` and `RouteGroup.useP2P(_:)`.
 - **`SwiftCoreWebP2P`: SSH tunnel to the local server (first step, LAN).**
-  - New opt-in product built on `swift-nio-ssh`: `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
-  - `SCWPeerConnection.start()` looks the host up again over Bonjour (by the fingerprint in the TXT record) when the stored address no longer answers, and remembers the new one.
+  - New opt-in product built on `swift-nio-ssh`.
+  - `SSHTunnelServer` accepts only authorized Ed25519 keys and forwards `direct-tcpip` channels to one allow-listed destination (the local SCW listener); anything else is refused.
   - `SSHTunnelClient` pins the host key; `LoopbackProxy` lets any HTTP client reach the remote app through `http://127.0.0.1:<port>`.
-  - Pairing: the host opens a session on request and shows a payload (`scw-p2p://…`, with the host key fingerprint and a one-time token); `SCWPeerConnection.pair(_:)` registers the device, which then reconnects with its key alone. Keys and the device list live in the Keychain (`TunnelSecretStorage`), and `PairingManager.revoke(deviceID:)` also closes the device's open connections.
-  - `builder.useP2P()` starts the tunnel with the server and announces it on the local network as `_scw-p2p._tcp` (the hosting app declares that service and a local network usage description). It returns a `P2PHost` to open pairing sessions; `LocalAddresses.ipv4()` lists the addresses to put in the payload.
-  - The app sees each paired device as its own client: with an extension registered the server also listens on a loopback-only "peer" port that reads the client's identity from a first line carrying a per-run secret (`RequestIngress.peer`, `PeerEndpoint`), so `HttpRequest.remoteAddress` is `p2p:<device fingerprint>` and rate limiting is per device. Server-Sent Events work through the tunnel.
-  - Not part of this step: per-route exposure, discovery on the client, WAN.
+  - `SCWPeerConnection.start()` looks the host up again over Bonjour (by the fingerprint in the TXT record) when the stored address no longer answers.
+  - Pairing: the host shows a payload (`scw-p2p://…`) with its key fingerprint and a one-time token; `SCWPeerConnection.pair(_:)` registers the device, which then reconnects with its key alone.
+  - Keys and the device list live in the Keychain (`TunnelSecretStorage`); `PairingManager.revoke(deviceID:)` also closes the device's open connections.
+  - `builder.useP2P()` starts the tunnel with the server and announces it as `_scw-p2p._tcp` (the app declares that service and a local network usage description).
+  - It returns a `P2PHost` to open pairing sessions; `LocalAddresses.ipv4()` lists the addresses to put in the payload.
+  - Each paired device is its own client: with an extension registered the server also listens on a loopback-only "peer" port, and the client's identity arrives in a first line carrying a per-run secret (`RequestIngress.peer`, `PeerEndpoint`).
+  - So `HttpRequest.remoteAddress` is `p2p:<device fingerprint>` and rate limiting is per device. Server-Sent Events work through the tunnel.
 - **`ServerExtension` and `RequestIngress`: an entry point for transports other than the HTTP listener.**
   - `builder.addExtension(_:)` registers a module that starts once the listeners are bound and stops with the server.
-  - It receives a `RequestIngress`: the same dispatcher, connection gate and rate limiter the HTTP engine uses, plus `acceptWebSocket` (route lookup and `auth` enforced) over a `WebSocket.Transport`.
+  - It receives a `RequestIngress`: the same dispatcher, connection gate and rate limiter as the HTTP engine, plus `acceptWebSocket` (route lookup and `auth` enforced) over a `WebSocket.Transport`.
   - Nothing runs unless an extension is registered.
 - **`WebSocket.Transport` and `WebSocket(transport:)`.**
-  - A `WebSocket` is no longer tied to a NIO channel: any carrier that supplies `messages`, `send` and `close` can back one, which lets an opt-in module hand `mapWebSocket` handlers sockets that do not come from the HTTP upgrade.
+  - A `WebSocket` is no longer tied to a NIO channel: any carrier that supplies `messages`, `send` and `close` can back one.
+  - An opt-in module can then hand `mapWebSocket` handlers sockets that do not come from the HTTP upgrade.
   - Handlers and the HTTP upgrade path are unchanged.
 
 ### Fixed
-- **The client address of connections on the public listener is no longer `unknown`.** It was read before the connection was active, so on NIO Transport Services every client shared one rate-limit bucket and `exemptLoopback` never applied. It is now read when the channel becomes active.
-- **WebSocket upgrade no longer crashes the engine.** The 101 now goes through the HTTP encoder, and the frame codec plus a bridge handler are installed in the same event-loop turn as the HTTP handlers' removal (a client's first frame can no longer arrive in between). Pings are answered, fragmented messages are reassembled, frames up to 1 MiB and messages up to 16 MiB are accepted (larger ones close with 1009), unmasked frames, invalid UTF-8 and a reader that falls behind close with 1002/1007/1008, a handler that returns closes with 1000 and waits (5 s at most) for the peer's close frame before dropping the connection. A handler that falls behind sees `WebSocketError.slowConsumer`; invalid close payloads and reserved bits are refused with 1002/1007.
-- **A network change no longer ends `runAsync()`.** Rebinding the listeners used to make the server's wait return, leaving extensions, Bonjour and the watchdog running with no way to stop them; it now waits for `stop()` or for a listener the OS closed on its own, rebinds one at a time, and keeps the server alive (retrying on the next change) when a rebind fails. The watchdog's first reading is a baseline, not a change, so a server on a non-loopback host no longer rebinds right after starting.
-- **A server-initiated close could drop the tail of a response in the tunnel.** The relay now sends what was already written before closing or half-closing a side.
+- **`@Controller` handlers with a `Service<T>` parameter did not compile.**
+  - The generated code passed the bare service to a parameter declared `Service<T>` and could not infer `T`.
+  - It now wraps the resolved service in `Service(wrappedValue:)`; a macro expansion test covers it.
+- **`@Controller` handlers with an unlabeled parameter (`func create(_ todo: Todo)`) did not compile.**
+  - The generated call passed the parameter name as a label.
+  - It now passes no label for `_` and the external label otherwise; a macro expansion test covers it.
+- **`@ApiModel` did not compile in an app target** ("declaration name 'openApiSchema' is not covered by macro"): the macro declaration now names the member it generates.
+- **The client address on the public listener is no longer `unknown`.**
+  - It was read before the connection was active, so on NIO Transport Services every client shared one rate-limit bucket and `exemptLoopback` never applied.
+  - It is now read when the channel becomes active.
+- **WebSocket upgrade no longer crashes the engine.**
+  - The 101 goes through the HTTP encoder.
+  - The frame codec and a bridge handler are installed in the same event-loop turn as the HTTP handlers' removal, so a client's first frame can no longer arrive in between.
+  - Pings are answered and fragmented messages are reassembled.
+  - Frames up to 1 MiB and messages up to 16 MiB are accepted; larger ones close with 1009.
+  - Unmasked frames, invalid UTF-8 and a reader that falls behind close with 1002/1007/1008; invalid close payloads and reserved bits are refused with 1002/1007.
+  - A handler that returns closes with 1000 and waits at most 5 s for the peer's close frame before dropping the connection.
+  - A handler that falls behind sees `WebSocketError.slowConsumer`.
+- **A network change no longer ends `runAsync()`.**
+  - Rebinding the listeners used to make the server's wait return, leaving extensions, Bonjour and the watchdog running with no way to stop them.
+  - It now waits for `stop()` or for a listener the OS closed on its own.
+  - It rebinds one listener at a time and keeps the server alive (retrying on the next change) when a rebind fails.
+  - The watchdog's first reading is a baseline, not a change, so a server on a non-loopback host no longer rebinds right after starting.
+- **A server-initiated close could drop the tail of a response in the tunnel**: the relay now sends what was already written before closing or half-closing a side.
 - **`mapWebSocket(_:auth:_:)` ignored its `auth` requirement.**
   - The route's `AuthRequirement` was stored but never checked, so any client could open a protected WebSocket.
   - The upgrade now runs the authentication and authorization middleware first and answers 401/403 instead of switching protocols.
+- **Compiler warnings cleared in the library, the macros and the tests.**
+  - Removed `try` where nothing throws (authentication and exception-handler middleware) and the deprecated `String(cString:)` and `removeHandler(context:promise:)` calls.
+  - `TunnelRelayHandler` and `SSHDataCodec` live on one event loop and are marked `@unchecked Sendable`.
+  - Closures capture `ChannelHandlerContext` through `NIOLoopBound`, so Swift 6 concurrency checks no longer warn.
+  - `@Controller` and `@ApiModel` implement the current `MemberMacro` `expansion(... conformingTo:...)` requirement and read `throwsClause`.
 
 ## [1.3.3] - 2026-11-09
 

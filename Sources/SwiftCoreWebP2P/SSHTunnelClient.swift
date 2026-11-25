@@ -34,6 +34,7 @@ final class SSHTunnelClient: Sendable {
         port: Int,
         key: Curve25519.Signing.PrivateKey,
         credential: TunnelCredential,
+        deviceName: String? = nil,
         localPort: Int? = nil,
         connectTimeout: TimeAmount = .seconds(4),
         handshakeTimeout: TimeAmount = .seconds(15),
@@ -50,7 +51,7 @@ final class SSHTunnelClient: Sendable {
             .channelInitializer { channel in
                 TCPKeepAlive.apply(to: channel).flatMapThrowing {
                     let configuration = SSHClientConfiguration(
-                        userAuthDelegate: CredentialAuthDelegate(key: privateKey, credential: credential),
+                        userAuthDelegate: CredentialAuthDelegate(key: privateKey, credential: credential, deviceName: deviceName),
                         serverAuthDelegate: PinnedHostKeyDelegate(isTrusted: trustedHostKey)
                     )
                     try channel.pipeline.syncOperations.addHandler(NIOSSHHandler(role: .client(configuration), allocator: channel.allocator, inboundChildChannelInitializer: nil))

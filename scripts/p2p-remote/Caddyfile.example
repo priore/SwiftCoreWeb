@@ -1,0 +1,6 @@
+# HTTPS in front of the rendezvous (see docs/P2P_REMOTE_SETUP.md). setup-vm.sh writes the result to /etc/caddy/Caddyfile.
+# Caddy gets the certificate by itself and adds the X-Forwarded-For header that
+# P2PRendezvous(trustForwardedFor: true) reads.
+<HOSTNAME> {
+	reverse_proxy 127.0.0.1:9090
+}

@@ -54,19 +54,31 @@ public final class SCWPeerConnection: Sendable {
         self.deviceKey = deviceKey
     }
 
+    /// This device's key fingerprint: the host lists the device under the same one (`PairedDevice.id`, shown shortened as
+    /// "key …" in `P2PPairingView`), so it tells the host's owner which entry is this device.
+    public var deviceFingerprint: String { TunnelFingerprint.of(NIOSSHPrivateKey(ed25519Key: deviceKey).publicKey) }
+
     /// The label the host gave itself in the pairing payload.
     public var name: String? { record.withLockedValue { $0.name } }
 
     /// Pairs this device with the host in `payload`, remembering it in `storage`, and returns the connection.
     /// Fails with `TunnelError.untrustedHostKey` when the host's key is not the one in the payload, and with
     /// `TunnelError.authenticationRefused` when the token is wrong, used or expired.
-    public static func pair(_ payload: PairingPayload, storage: TunnelSecretStorage = KeychainTunnelStorage()) async throws -> SCWPeerConnection {
+    /// The name `pair` uses for this device when none is given (see the `deviceName` parameter): handy as the suggestion in a name field.
+    public static func defaultDeviceName() async -> String { await DeviceName.system() }
+
+    /// `deviceName` is how this device appears in the host's list of paired devices (default: the system's name for it, which
+    /// on iOS 16 and later is only the model; pass something like "Anna's iPhone" for a list people can tell apart). The host
+    /// only uses it as a label.
+    public static func pair(_ payload: PairingPayload, deviceName: String? = nil, storage: TunnelSecretStorage = KeychainTunnelStorage()) async throws -> SCWPeerConnection {
         let deviceKey = try loadOrCreateDeviceKey(storage)
+        let name: String
+        if let given = deviceName { name = given } else { name = await DeviceName.system() }
         let seenHostKey = NIOLockedValueBox<NIOSSHPublicKey?>(nil)
         let expected = payload.hostKeyFingerprint
         let client = SSHTunnelClient()
         do {
-            try await client.connect(host: payload.host, port: payload.port, key: deviceKey, credential: .pairing(token: payload.token)) { key in
+            try await client.connect(host: payload.host, port: payload.port, key: deviceKey, credential: .pairing(token: payload.token), deviceName: name) { key in
                 guard TunnelFingerprint.of(key) == expected else { return false }
                 seenHostKey.withLockedValue { $0 = key }
                 return true
@@ -96,10 +108,12 @@ public final class SCWPeerConnection: Sendable {
     /// `true` is the code sent, and only to that key. Fails with `TunnelError.untrustedHostKey` when it returns `false` or
     /// when the host answers with another key the second time.
     public static func pair(
-        code: String, with host: DiscoveredHost, rendezvous: URL? = nil, storage: TunnelSecretStorage = KeychainTunnelStorage(),
+        code: String, with host: DiscoveredHost, rendezvous: URL? = nil, deviceName: String? = nil, storage: TunnelSecretStorage = KeychainTunnelStorage(),
         confirm: @escaping @Sendable (_ shortFingerprint: String) async -> Bool
     ) async throws -> SCWPeerConnection {
         let deviceKey = try loadOrCreateDeviceKey(storage)
+        let name: String
+        if let given = deviceName { name = given } else { name = await DeviceName.system() }
         // First connection: only to see the host key. It is refused after the key exchange, before any credential is sent, so
         // the user can take as long as they need to compare fingerprints without a handshake deadline running.
         let seenHostKey = NIOLockedValueBox<NIOSSHPublicKey?>(nil)
@@ -119,7 +133,7 @@ public final class SCWPeerConnection: Sendable {
         // Second connection: pinned to the key the user confirmed; the code goes only to that key.
         let client = SSHTunnelClient()
         do {
-            try await client.connect(host: host.host, port: host.port, key: deviceKey, credential: .pairing(token: code)) { $0 == hostKey }
+            try await client.connect(host: host.host, port: host.port, key: deviceKey, credential: .pairing(token: code), deviceName: name) { $0 == hostKey }
         } catch {
             await client.close()
             throw error

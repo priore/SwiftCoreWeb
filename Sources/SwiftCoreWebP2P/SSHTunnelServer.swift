@@ -132,14 +132,17 @@ public final class SSHTunnelServer: Sendable {
         let (sshSide, targetSide) = TunnelRelayHandler.makePair()
         // With a peer listener the connection goes there, announcing which paired device it belongs to, so the app sees
         // that device (not 127.0.0.1) as the client. Without one (tests of the tunnel alone) it goes straight to the target.
-        var destination = (host: target.targetHost, port: target.targetPort)
-        var preamble: ByteBuffer?
+        let destination: (host: String, port: Int)
+        let preamble: ByteBuffer?
         if let peer {
             guard let parent = child.parent, let deviceID = registry.deviceID(for: parent) else {
                 return child.eventLoop.makeFailedFuture(TunnelError.notConnected)
             }
             destination = ("127.0.0.1", peer.port)
             preamble = child.allocator.buffer(string: peer.preamble(identity: "p2p:" + deviceID))
+        } else {
+            destination = (host: target.targetHost, port: target.targetPort)
+            preamble = nil
         }
         // The target side is installed as the channel is created, so a close during the connect is not missed.
         let targetSideBox = UncheckedSendableBox(targetSide)

@@ -29,6 +29,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
+        conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard isSendableEligible(declaration) else {
@@ -71,7 +72,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
 
             let isVoidReturn = function.signature.returnClause == nil
                 || describeType(function.signature.returnClause!.type).base == "Void"
-            let isThrowing = function.signature.effectSpecifiers?.throwsSpecifier != nil
+            let isThrowing = function.signature.effectSpecifiers?.throwsClause?.throwsSpecifier != nil
             let isAsync = function.signature.effectSpecifiers?.asyncSpecifier != nil
 
             registrations.append(generateRegistration(
@@ -207,7 +208,7 @@ public struct ControllerMacro: MemberMacro, ExtensionMacro {
             let expr = bindingExpression(for: binding, parameterName: parameter.externalName, bodyTypeName: bodyTypeName)
             let localName = "arg_\(parameter.internalName)"
             argumentLines.append("let \(localName) = \(expr)")
-            callArguments.append("\(parameter.internalName): \(localName)")
+            callArguments.append(parameter.isUnlabeled ? localName : "\(parameter.externalName): \(localName)")
         }
 
         // Mirrors .NET's per-request controller instantiation: a fresh

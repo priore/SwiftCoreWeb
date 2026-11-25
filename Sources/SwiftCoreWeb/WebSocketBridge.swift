@@ -91,7 +91,7 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
                 let buffer = closeBuffer
                 // Say goodbye, then give the peer a moment to answer with its own close frame before dropping the TCP
                 // connection: closing at once can reset a peer that is still sending.
-                let sent = try? await channel.eventLoop.submit {
+                let sent: Void? = try? await channel.eventLoop.submit {
                     // A close frame is already on its way (the peer's echo, or a protocol failure): never send a second one.
                     guard !bridge.isClosing else { return channel.eventLoop.makeSucceededVoidFuture() }
                     bridge.markCloseSent()
@@ -146,8 +146,9 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
             if let rejection = Self.closeRejection(frame.unmaskedData) { return fail(context, rejection) }
             closing = true
             continuation.finish()
+            let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
             context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .connectionClose, data: frame.unmaskedData)))
-                .whenComplete { _ in context.close(promise: nil) }
+                .whenComplete { _ in bound.value.close(promise: nil) }
         case .pong:
             break
         default:
@@ -204,8 +205,9 @@ final class WebSocketBridge: ChannelInboundHandler, @unchecked Sendable {
         continuation.finish(throwing: error)
         var buffer = context.channel.allocator.buffer(capacity: 2)
         buffer.write(webSocketErrorCode: code)
+        let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
         context.writeAndFlush(wrapOutboundOut(WebSocketFrame(fin: true, opcode: .connectionClose, data: buffer)))
-            .whenComplete { _ in context.close(promise: nil) }
+            .whenComplete { _ in bound.value.close(promise: nil) }
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
