@@ -6,6 +6,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-25
+
 ### Added
 - **`P2PPairingView` shows whom you revoke.**
   - Each paired device lists its name, when it paired and a short form of its key.
