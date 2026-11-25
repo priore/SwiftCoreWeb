@@ -6,9 +6,10 @@ You are here if: your app uses `SwiftCoreWebP2P` and a device must reach it **fr
 Wi-Fi), not only from the same Wi-Fi. This page takes you from nothing to a working set-up, one step at a time, on a free
 Google Cloud server. You do not need to know anything about networking beforehand.
 
-> **Status.** The coturn settings below were checked against a real `coturn` on the loopback; the `X-Forwarded-For` option
-> has a test. The set-up script has not yet been run on a real server, and nothing here has been measured across a real
-> mobile carrier. Treat the first run as a test and read [Troubleshooting](#troubleshooting).
+> **Status.** Tested end to end once: a Mac behind a carrier-grade NAT (no port forwarding possible) as host, a free-tier
+> `e2-micro` Ubuntu 24.04 server with `coturn` and Caddy, and an iPhone on mobile data with Wi-Fi off. The connection used
+> the relay (`peer.currentRoute == .relay`). The direct route (`.direct`) was not seen working in that test. Other carriers
+> and networks may behave differently, so read [Troubleshooting](#troubleshooting) and [Diagnosing](#diagnosing-what-reaches-the-server).
 
 ## Do I need this?
 
@@ -43,6 +44,20 @@ Both pieces are the same for every app that uses the library, so you set them up
 - About 30 minutes.
 
 Any Debian or Ubuntu server with a public IPv4 address works the same way: open the ports of step 2 in its firewall and run the script of step 3 on it.
+
+## The short way: one script
+
+If you have `gcloud` installed and logged in (`gcloud auth login`) and a project with billing on, [`scripts/p2p-remote/gcloud-deploy.sh`](../scripts/p2p-remote/gcloud-deploy.sh) does steps 1 to 3 for you:
+
+```sh
+scripts/p2p-remote/gcloud-deploy.sh up --project <your-project-id>      # creates (or starts) the server and sets it up
+scripts/p2p-remote/gcloud-deploy.sh tunnel --project <your-project-id>  # step 4's tunnel; leave it running
+scripts/p2p-remote/gcloud-deploy.sh down --project <your-project-id>    # stops the server (add --delete to remove it)
+```
+
+`up` ends by printing the values for step 5, the secret included. Run it again after `down`: the secret is kept, and if the
+server came back with another public address the values it prints are the new ones. Options: `--zone`, `--name`, and `--port` for `tunnel`.
+The rest of this page explains what the script does, one step at a time, for when you want to do it by hand or on another provider.
 
 ## Step 1: create the server
 
@@ -178,9 +193,46 @@ relay only lets IPv4 through. The Showcase app has the same fields in *Remote ac
 | Works on Wi-Fi, not on 5G | the TURN host is a name with an `AAAA` (IPv6) record, or the relay address is not IPv4 | use the IPv4 address of the server |
 | The relay refuses the host (authentication) | wrong shared secret, or the clock of the host is wrong | copy the secret again; the credentials carry a time stamp, so set the host's clock automatically |
 | Error `-1022` on the phone | the rendezvous URL is `http://`: iOS blocks plain HTTP to the internet | use the HTTPS address |
+| The relay log shows `CREATE_PERMISSION ... error 403` and then `peer has no permission to connect` | the rendezvous recorded the wrong address for the device (the tunnel's own, `127.0.0.1`) | start the rendezvous with `trustForwardedFor: true` (in the Showcase: switch on *Behind a proxy or SSH tunnel* **before** pressing *Start*) |
+| `badResponse(status: 502)` | the rendezvous is not running, or the `ssh -R` tunnel is down | start both again; restarting the rendezvous needs no new pairing |
+| `badResponse(status: 404)` right after the rendezvous was restarted | the rendezvous keeps host records in memory only; the host publishes again every 60 seconds | wait a minute and try again |
+| *Address already in use* when starting the rendezvous or the host | it is already running in that window | do nothing: it is already listening |
+| The route says Bonjour, though Wi-Fi and Bluetooth are off | the phone is connected to the Mac by a cable, which is a network too | unplug the cable before the test |
 | `no route to host` (errno 65) when pairing on the Wi-Fi | the QR code holds an address the phone cannot reach (a Mac with Ethernet and Wi-Fi has two) | pick the other address in the pairing screen; check *Settings > Privacy > Local Network* for your app on the phone |
 
 On the server, `sudo journalctl -u coturn -n 50` and `sudo journalctl -u caddy -n 50` show what each service saw.
+
+## Diagnosing what reaches the server
+
+If a connection from outside fails, find out how far it got. Every command below runs on your own server over `ssh`
+(`gcloud compute ssh scw-p2p --zone us-central1-a -- '<command>'`). Remove the extra logging afterwards: it records the
+addresses of whoever connects.
+
+**Did the phone reach the rendezvous?** Add `log` inside the site block of `/etc/caddy/Caddyfile`, run `sudo systemctl reload caddy`, then:
+
+```sh
+sudo journalctl -u caddy --since "-5min" -o cat | grep "handled request"
+```
+
+One JSON line per request (`remote_ip`, `uri`, `status`). The phone's requests end in `/knocks` (`204` = accepted); the host's end in `/knocks/collect`.
+
+**Did the phone reach the relay?** Watch for new connections on the relay's control port and on the relay port range:
+
+```sh
+sudo tcpdump -n -i any "(tcp port 3478 or portrange 49160-49200) and tcp[tcpflags] & tcp-syn != 0"
+```
+
+**What did the relay decide?** Add `verbose`, `log-file=stdout` and `simple-log` to `/etc/turnserver.conf`, run `sudo systemctl restart coturn`, then:
+
+```sh
+sudo journalctl -u coturn --since "-5min" -o cat | grep -vE "usage:"
+```
+
+A working connection shows, in order: `ALLOCATE ... success` (the host), `CREATE_PERMISSION ... success` (the host lets the device in),
+`tcp accepted from: <the device's address>` and `CONNECTION_BIND ... success`.
+
+Stopping the server and starting it again may give it a new public address; unless you reserved a static one
+(`gcloud compute addresses create`), repeat step 3 and update the settings after each start.
 
 ## Costs, safety and cleaning up
 

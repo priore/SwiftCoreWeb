@@ -19,14 +19,18 @@ final class RemoteSettings: ObservableObject {
     @Published var turnHost: String { didSet { defaults.set(turnHost, forKey: "turnHost") } }
     @Published var turnPort: String { didSet { defaults.set(turnPort, forKey: "turnPort") } }
     @Published var turnUser: String { didSet { defaults.set(turnUser, forKey: "turnUser") } }
-    @Published var turnSecret: String { didSet { SecretStore.write(turnSecret, forKey: Self.secretKey) } }
+    @Published var turnSecret: String { didSet { secretSaved = SecretStore.write(turnSecret, forKey: Self.secretKey) } }
+    /// Whether the last write to the Keychain succeeded (a failed write would otherwise go unnoticed).
+    @Published private(set) var secretSaved: Bool
 
     init() {
         rendezvous = defaults.string(forKey: "rendezvous") ?? ""
         turnHost = defaults.string(forKey: "turnHost") ?? ""
         turnPort = defaults.string(forKey: "turnPort") ?? "3478"
         turnUser = defaults.string(forKey: "turnUser") ?? "scw"
-        turnSecret = SecretStore.read(Self.secretKey) ?? ""
+        let stored = SecretStore.read(Self.secretKey)
+        turnSecret = stored ?? ""
+        secretSaved = stored != nil
     }
 
     /// `nil` while the settings are incomplete: the host then stays on the local network.

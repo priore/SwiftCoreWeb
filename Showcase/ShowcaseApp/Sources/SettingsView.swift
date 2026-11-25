@@ -24,9 +24,18 @@ struct SettingsView: SwiftUI.View {
                 TextField("User", text: Binding(get: { settings.turnUser }, set: { settings.turnUser = $0 }))
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Shared secret (kept in the Keychain)", text: Binding(get: { settings.turnSecret }, set: { settings.turnSecret = $0 }))
+                Text(settings.turnSecret.isEmpty ? "No secret yet." : settings.secretSaved ? "Secret saved in the Keychain (\(settings.turnSecret.count) characters)." : "The Keychain refused the secret: it is not saved.")
+                    .font(.footnote).foregroundStyle(settings.turnSecret.isEmpty || settings.secretSaved ? Color.secondary : Color.red)
             }
             Section {
-                Text("Applies the next time the P2P host screen is opened.").font(.footnote).foregroundStyle(.secondary)
+                Text("Applies the next time the P2P host screen is opened. Changes are saved as you type.").font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
             }
         }
     }

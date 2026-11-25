@@ -26,13 +26,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Set-up guide for access from another network** (`docs/P2P_REMOTE_SETUP.md`).
   - Step by step: the relay (coturn) and the rendezvous on a free Google Cloud server.
   - `scripts/p2p-remote/` holds `setup-vm.sh`, `turnserver.conf.example` and `Caddyfile.example`.
-  - Includes the app code, a test checklist and troubleshooting.
+  - `scripts/p2p-remote/gcloud-deploy.sh` (`up`, `tunnel`, `down`) creates, sets up and stops the Google Cloud server from your own computer.
+  - Includes the app code, a test checklist, troubleshooting and the commands to see how far a connection from outside got.
+  - Tested once end to end: a Mac behind a carrier-grade NAT as host and an iPhone on mobile data, through the relay (`.relay`).
 - **Showcase is now one iOS app with a menu** (`Showcase/ShowcaseApp`, project generated from `project.yml`).
   - Examples: Hello World, Todo API (`@Controller`, JWT + API key, OpenAPI), Live Pages, Realtime (SSE + WebSocket), Device dashboard.
   - P2P: host, client, rendezvous server and a settings screen for the relay (the TURN secret stays in the Keychain).
   - The client pairs from a `scw-p2p://` link opened by the Camera app and shows the route used, timings and errors.
   - It replaces `HelloWorldApp` and the source-only `ShowcaseApp`; signing overrides go in a git-ignored `Local.xcconfig`.
   - It also runs as a native Mac process (Mac Catalyst), for example as the P2P host.
+  - The settings screen says whether the TURN secret reached the Keychain and has a *Done* button above the keyboard.
 - **Network resilience.**
   - `SCWPeerConnection` follows the network path (`NWPathMonitor`): it reconnects at once when the interface changes and pauses without a network.
   - `P2PTimeouts` are short on the LAN and wider across the internet.
